@@ -1,0 +1,7 @@
+node_modules/
+out/frames/
+out/smoke/
+out/*.log
+out/qa_*.jpg
+.DS_Store
+*.tmp

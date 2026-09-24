@@ -1,0 +1,15 @@
+{
+  "name": "purpose-of-life",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure-JS hand-drawn collage animation: \"What is the purpose of life?\"",
+  "scripts": {
+    "render": "bun run render.mjs",
+    "encode": "bun run encode.mjs",
+    "all": "bun run render.mjs && bun run encode.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

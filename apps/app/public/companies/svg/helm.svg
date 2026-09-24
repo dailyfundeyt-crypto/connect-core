@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" shape-rendering="geometricPrecision">
+  <defs>
+    <radialGradient id="orb" cx="36%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#eab308"/>
+      <stop offset="50%" stop-color="#ca8a04"/>
+      <stop offset="100%" stop-color="#1c1408"/>
+    </radialGradient>
+    <radialGradient id="spec" cx="30%" cy="26%" r="32%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.65"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="#000000"/>
+  <circle cx="512" cy="512" r="434" fill="url(#orb)"/>
+  <circle cx="512" cy="512" r="434" fill="url(#spec)"/>
+  <circle cx="512" cy="512" r="434" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="4"/>
+  
+      <g transform="translate(512 512)">
+        <path d="M0 -235 L190 -145 L175 75 L0 235 L-175 75 L-190 -145 Z" fill="#FFFFFF"/>
+      </g>
+</svg>

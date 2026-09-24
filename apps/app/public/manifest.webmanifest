@@ -1,0 +1,26 @@
+{
+  "name": "Connect",
+  "short_name": "Connect",
+  "description": "AI coworkers on your machine — channels, agents, and browser.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "lang": "de",
+  "icons": [
+    {
+      "src": "/brand/connect-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/connect-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

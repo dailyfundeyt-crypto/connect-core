@@ -1,0 +1,113 @@
+# Music Prompt for
+# "What is the Purpose of Life?" (50-second hand-drawn collage)
+
+Two prompts below — pick one, or generate both and duck between them.
+
+---
+
+## Prompt A — INSTRUMENTAL UNDERLAY (recommended)
+
+**Use:** Drop under the ElevenLabs voiceover at -18 to -22 dB. Music swells
+slightly during the silent landscape section (40–46s) so the video doesn't
+feel empty there.
+
+**Style tags (Suno v4 / Udio):**
+```
+cinematic indie folk, fingerpicked acoustic guitar, soft brushed drums,
+warm upright bass, gentle piano, celesta, lo-fi vinyl crackle,
+inspirational, hopeful, contemplative, slow build, cinematic,
+no vocals, no lyrics
+```
+
+**Negative prompt (if your tool supports it):**
+```
+no vocals, no heavy drums, no distortion, no EDM, no rap, no autotune
+```
+
+**Length:** Generate a 60-second piece — Suno's free tier is 60s and you'll
+trim the tail. Use **extend** if you need exactly 50s and your first
+generation lands short.
+
+**Tempo / key guidance (paste into the "lyrics" or "style" field if
+your tool accepts it):**
+- Tempo: **78 BPM** (slow but not funereal)
+- Key: **D major** (warm, hopeful — natural guitar key)
+- Structure: 4 bars intro → 8 bars verse mood → drop to piano + bass
+  for the contemplation → gentle build with brushed snare →
+  resolve on a single piano note + soft cello underneath
+
+**Reference tracks (mood board, not for Suno itself):**
+- Bon Iver — "Skinny Love" (the gentleness)
+- Novo Amor — "Anchor" (the build)
+- Ludovico Einaudi — "Nuvole Bianche" (the piano resolves)
+- Iron & Wine — "Flightless Bird" (the folk warmth)
+
+---
+
+## Prompt B — FULL VOCAL TRACK (if you don't want to do voice yourself)
+
+Only use this if you skip ElevenLabs entirely. Quality of voiceover usually
+sounds better with ElevenLabs, but Suno v4 vocals are now genuinely usable
+for short-form.
+
+**Style tags:**
+```
+indie folk, soft male vocal, acoustic guitar, brushed drums, contemplative,
+hopeful, lo-fi warmth, gentle build, cinematic short film
+```
+
+**Lyrics (paste into Suno's "lyrics" box — note the [Intro]/[Verse] tags):**
+
+```
+[Intro - fingerpicked guitar, soft]
+[Verse - gentle, half-whispered]
+People have been asking this for a very long time
+Money, maybe — fame — a family — success
+None of them feel quite right
+[Verse - lower, slower]
+The clock keeps ticking, the hourglass runs out
+You look around and wonder — was any of it enough
+[Chorus - lift slightly, hopeful]
+Maybe it isn't a destination
+Maybe it's something quieter than that
+[Verse - intimate]
+A quiet cup of coffee, someone's hand in yours
+A sky that someone painted just for tonight
+The laugh of a child who doesn't know they matter
+Yet does
+[Outro - resolve softly]
+You don't find the answer, you make it
+Then you live it
+[End - single piano note]
+```
+
+**Length:** Generate 60s, trim the head/tail in your DAW or in ffmpeg
+(`-ss 3 -to 53` to chop 3s off the front and 4s off the back).
+
+---
+
+## FFMPEG one-liner: combine video + voiceover + music
+
+After ElevenLabs generates `voice.wav` and your music tool generates
+`music.mp3` (or `music.wav`):
+
+```bash
+# 1. mix voice + music with sidechain-style ducking (music quieter when voice plays)
+ffmpeg -y \
+  -i out/purpose-of-life.mp4 \
+  -i voice.wav \
+  -i music.mp3 \
+  -filter_complex "
+    [1:a]volume=1.0[voice];
+    [2:a]volume=0.35,afade=t=in:st=0:d=2,afade=t=out:st=46:d=4[music];
+    [voice][music]amix=inputs=2:duration=shortest:dropout_transition=0[mix]
+  " \
+  -map 0:v -map "[mix]" \
+  -c:v copy -c:a aac -b:a 192k \
+  -shortest \
+  out/purpose-of-life-FINAL.mp4
+```
+
+If you'd rather not script ffmpeg, just drag both files into DaVinci Resolve,
+CapCut, or Premiere, lay them on the timeline, and export. The voice markers
+in `prompts/ELEVENLABS.txt` line up exactly with the video.

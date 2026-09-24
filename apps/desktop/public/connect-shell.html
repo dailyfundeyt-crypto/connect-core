@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Connect</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #f4f1ea;
+        color: #1c1917;
+        font-family: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+        cursor: default;
+        user-select: none;
+      }
+      main {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .panel {
+        width: min(440px, calc(100% - 48px));
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 32px;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+      p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.5;
+        color: #57534e;
+      }
+      button {
+        margin-top: 20px;
+        appearance: none;
+        border: 1px solid #d6d3d1;
+        background: #fff;
+        color: #1c1917;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font: inherit;
+        font-size: 13px;
+        cursor: default;
+      }
+      button:hover {
+        background: #fafaf9;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: #171412;
+          color: #f5f5f4;
+        }
+        p {
+          color: #a8a29e;
+        }
+        button {
+          background: #292524;
+          color: #f5f5f4;
+          border-color: #44403c;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="panel">
+        <h1>Connect</h1>
+        <!-- Keep this sentence identical to Status::opening in connect_window.rs. -->
+        <p id="status">Connect wird geöffnet.</p>
+        <button id="retry" type="button" hidden>Erneut versuchen</button>
+      </div>
+    </main>
+    <script>
+      const status = document.getElementById("status");
+      const retry = document.getElementById("retry");
+
+      function show(payload) {
+        if (!payload || typeof payload.detail !== "string") return;
+        status.textContent = payload.detail;
+        retry.hidden = payload.phase !== "offline";
+      }
+
+      function boot() {
+        const tauri = window.__TAURI__;
+        if (!tauri || !tauri.core || !tauri.event) {
+          status.textContent =
+            "Connect konnte die Anwendungsbrücke nicht laden. Fenster schließen und erneut öffnen.";
+          return;
+        }
+        tauri.event.listen("connect-status", (event) => show(event.payload));
+        tauri.core
+          .invoke("connect_window_status")
+          .then(show)
+          .catch(() => {});
+        retry.addEventListener("click", () => {
+          retry.hidden = true;
+          status.textContent = "Connect wird geöffnet.";
+          tauri.core.invoke("attach_connect_window").catch(() => {
+            status.textContent =
+              "Connect ist noch nicht bereit. Starte den Dienst auf diesem PC und versuche es erneut.";
+            retry.hidden = false;
+          });
+        });
+        tauri.core.invoke("attach_connect_window").catch(() => {
+          status.textContent =
+            "Connect ist noch nicht bereit. Starte den Dienst auf diesem PC und versuche es erneut.";
+          retry.hidden = false;
+        });
+      }
+
+      boot();
+    </script>
+  </body>
+</html>

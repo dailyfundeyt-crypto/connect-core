@@ -1,0 +1,416 @@
+import { createFileRoute } from "@tanstack/react-router";
+import React, { useEffect, useState } from "react";
+import {
+  PageRows,
+  PageSection,
+  PageShell,
+} from "@/components/layout/page-shell";
+import { StandingInstructions } from "@/components/settings/standing-instructions";
+import { ProfileEditDialog } from "@/components/settings/profile-edit-dialog";
+import { ShortcutsPanel } from "@/components/settings/shortcuts-panel";
+import { VoiceSettingsPanel } from "@/components/settings/voice-settings";
+import { CompanySettingsPanel } from "@/components/settings/company-settings";
+import { ApiKeysSettingsPanel } from "@/components/settings/api-keys-settings";
+import { CodexUsagePanel } from "@/components/settings/codex-usage-panel";
+import { DeploymentModePanel } from "@/components/settings/deployment-mode-panel";
+import { ModelProviderSettingsPanel } from "@/components/settings/model-provider-settings";
+import { DonatePanel } from "@/components/settings/donate-panel";
+import { UbuntuMachinesPanel } from "@/components/settings/ubuntu-machines-settings";
+import { LanguageSwitcher } from "@/components/i18n/language-gate";
+import { useTheme } from "@/components/theme-provider";
+import { Button } from "@/components/ui/button";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import {
+  clearSecurityPassword,
+  getSecurityEmail,
+  hasSecurityPassword,
+  lockSecurity,
+  setSecurityEmail,
+  setSecurityPassword,
+} from "@/lib/auth/local-security";
+import {
+  getLocalProfile,
+  subscribeLocalProfile,
+} from "@/lib/auth/local-profile";
+import {
+  formatFocusTimer,
+  getFocusTimer,
+  resetFocusTimer,
+  subscribeFocusTimer,
+  toggleFocusTimer,
+} from "@/lib/focus-timer";
+import {
+  CHAR_BUDGET,
+  getVoiceSettings,
+  subscribeVoiceSettings,
+} from "@/lib/voice/elevenlabs";
+import {
+  getLabPrefs,
+  setLabKeepLoggedIn,
+  subscribeLabPrefs,
+} from "@/lib/ui/lab-prefs";
+
+export const Route = createFileRoute("/_authed/settings/")({
+  component: RouteComponent,
+});
+
+function RouteComponent() {
+  const { dark, setDark } = useTheme();
+  const [profile, setProfile] = useState(() => getLocalProfile());
+  const [voice, setVoice] = useState(() => getVoiceSettings());
+  const [timer, setTimer] = useState(() => getFocusTimer());
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [labKeepLogin, setLabKeepLogin] = useState(
+    () => getLabPrefs().keepLoggedIn,
+  );
+  const [securityEmail, setSecurityEmailState] = useState(() =>
+    getSecurityEmail(),
+  );
+  const [newPassword, setNewPassword] = useState("");
+  const [securityMsg, setSecurityMsg] = useState<string | null>(null);
+
+  useEffect(() => subscribeLocalProfile(() => setProfile(getLocalProfile())), []);
+  useEffect(() => subscribeVoiceSettings(() => setVoice(getVoiceSettings())), []);
+  useEffect(() => subscribeFocusTimer(() => setTimer(getFocusTimer())), []);
+  useEffect(
+    () =>
+      subscribeLabPrefs(() => setLabKeepLogin(getLabPrefs().keepLoggedIn)),
+    [],
+  );
+
+  useEffect(() => {
+    const scrollToHash = () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return;
+      document.getElementById(hash)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    };
+    scrollToHash();
+    const id = window.setTimeout(scrollToHash, 80);
+    window.addEventListener("hashchange", scrollToHash);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener("hashchange", scrollToHash);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!timer.running) return;
+    const id = window.setInterval(() => setTimer(getFocusTimer()), 250);
+    return () => window.clearInterval(id);
+  }, [timer.running]);
+
+  const charsUsed = voice.keys.reduce((sum, k) => sum + k.charsUsed, 0);
+  const timerLabel = formatFocusTimer(timer.seconds);
+
+  return (
+    <PageShell
+      description="Profil, KI, Speicher und Integrationen — klar gruppiert."
+      title="Einstellungen"
+    >
+      <div className="scroll-mt-8" id="profile">
+        <PageSection title="Profil">
+          <PageRows>
+            <Item size="sm">
+              <ItemContent>
+                <ItemTitle>Name & Foto</ItemTitle>
+                <ItemDescription>
+                  {profile.name !== "Connect User" && profile.name.trim()
+                    ? profile.name
+                    : "Noch nicht gesetzt"}
+                  {" · "}
+                  Sidebar-Button
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <div className="flex items-center gap-2">
+                  <div className="size-9 overflow-hidden rounded-full bg-muted">
+                    {profile.avatarUrl ? (
+                      <img
+                        alt=""
+                        className="size-full object-cover"
+                        src={profile.avatarUrl}
+                      />
+                    ) : null}
+                  </div>
+                  <Button
+                    onClick={() => setProfileOpen(true)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Bearbeiten
+                  </Button>
+                </div>
+              </ItemActions>
+            </Item>
+          </PageRows>
+        </PageSection>
+        <ProfileEditDialog onOpenChange={setProfileOpen} open={profileOpen} />
+      </div>
+
+      <div className="scroll-mt-8" id="ubuntu">
+        <UbuntuMachinesPanel />
+      </div>
+
+      <PageSection title="Darstellung">
+        <PageRows>
+          <Item size="sm">
+            <ItemContent>
+              <ItemTitle>Dark Mode</ItemTitle>
+              <ItemDescription>Hell / Dunkel</ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Switch
+                aria-label="Dark theme"
+                checked={dark}
+                onCheckedChange={setDark}
+              />
+            </ItemActions>
+          </Item>
+          <Separator />
+          <Item size="sm">
+            <ItemContent>
+              <ItemTitle>Sprache</ItemTitle>
+              <ItemDescription>
+                Deutsch, English und weitere
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <LanguageSwitcher />
+            </ItemActions>
+          </Item>
+          <Separator />
+          <Item size="sm">
+            <ItemContent>
+              <ItemTitle>Lab angemeldet lassen</ItemTitle>
+              <ItemDescription>
+                Connect-Chrome-Profil behält Logins und Extensions
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Switch
+                aria-label="Lab dauerhaft angemeldet"
+                checked={labKeepLogin}
+                onCheckedChange={(checked) => {
+                  setLabKeepLoggedIn(checked);
+                  setLabKeepLogin(checked);
+                }}
+              />
+            </ItemActions>
+          </Item>
+        </PageRows>
+      </PageSection>
+
+      <div className="scroll-mt-8" id="storage">
+        <DeploymentModePanel />
+      </div>
+
+      <div className="scroll-mt-8" id="model-provider">
+        <ModelProviderSettingsPanel />
+      </div>
+
+      <div className="scroll-mt-8" id="api-keys">
+        <PageSection title="API-Keys">
+          <ApiKeysSettingsPanel />
+        </PageSection>
+      </div>
+
+      <CompanySettingsPanel />
+      <VoiceSettingsPanel />
+
+      <div className="scroll-mt-8" id="security">
+        <PageSection title="Sicherheit">
+          <PageRows>
+            <Item size="sm">
+              <ItemContent>
+                <ItemTitle>E-Mail</ItemTitle>
+                <ItemDescription>Login für diese lokale App</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <input
+                  className="h-8 w-56 rounded-lg border border-border bg-background px-2 text-sm"
+                  onBlur={() => setSecurityEmail(securityEmail)}
+                  onChange={(e) => setSecurityEmailState(e.target.value)}
+                  type="email"
+                  value={securityEmail}
+                />
+              </ItemActions>
+            </Item>
+            <Item size="sm">
+              <ItemContent>
+                <ItemTitle>App-Passwort</ItemTitle>
+                <ItemDescription>
+                  {hasSecurityPassword()
+                    ? "Gesetzt — Session sperrt beim Tab-Schließen"
+                    : "Optional — schützt Handys und freigegebene Geräte"}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions className="flex flex-col items-end gap-1 sm:flex-row sm:items-center">
+                <input
+                  className="h-8 w-40 rounded-lg border border-border bg-background px-2 text-sm"
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Neues Passwort"
+                  type="password"
+                  value={newPassword}
+                />
+                <Button
+                  onClick={() => {
+                    void (async () => {
+                      try {
+                        await setSecurityPassword(newPassword);
+                        setNewPassword("");
+                        setSecurityMsg("Passwort gespeichert.");
+                      } catch (caught) {
+                        setSecurityMsg(
+                          caught instanceof Error
+                            ? caught.message
+                            : "Fehler",
+                        );
+                      }
+                    })();
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  Speichern
+                </Button>
+                {hasSecurityPassword() ? (
+                  <>
+                    <Button
+                      onClick={() => lockSecurity()}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Sperren
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        clearSecurityPassword();
+                        setSecurityMsg("Passwort entfernt.");
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Entfernen
+                    </Button>
+                  </>
+                ) : null}
+              </ItemActions>
+            </Item>
+            {securityMsg ? (
+              <p className="text-xs text-muted-foreground">{securityMsg}</p>
+            ) : null}
+          </PageRows>
+        </PageSection>
+      </div>
+
+      <StandingInstructions />
+
+      <div className="scroll-mt-8" id="shortcuts">
+        <PageSection
+          title="Shortcuts"
+          description="Alle Tastenkürzel lassen sich hier individuell anpassen. Klicke in ein Feld und drücke die gewünschte Kombination."
+        >
+          <ShortcutsPanel />
+        </PageSection>
+      </div>
+
+      <div className="scroll-mt-8" id="usage">
+        <CodexUsagePanel />
+        <PageSection title="Voice-Nutzung">
+          <PageRows>
+            <Item size="sm">
+              <ItemContent>
+                <ItemTitle>Zeichen (ElevenLabs)</ItemTitle>
+                <ItemDescription>
+                  Rotation alle {CHAR_BUDGET} Zeichen
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <span className="text-sm font-semibold tabular-nums">
+                  {charsUsed} / {voice.keys.length * CHAR_BUDGET || CHAR_BUDGET}
+                </span>
+              </ItemActions>
+            </Item>
+          </PageRows>
+        </PageSection>
+      </div>
+
+      <div className="scroll-mt-8" id="timer">
+        <PageSection title="Timer">
+          <PageRows>
+            <Item size="sm">
+              <ItemContent>
+                <ItemTitle>Focus-Timer</ItemTitle>
+                <ItemDescription>Kurzer Countdown für Fokus</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-lg tabular-nums">
+                    {timerLabel}
+                  </span>
+                  <Button
+                    onClick={() => toggleFocusTimer()}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {timer.running ? "Pause" : "Start"}
+                  </Button>
+                  <Button
+                    onClick={() => resetFocusTimer()}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </ItemActions>
+            </Item>
+          </PageRows>
+        </PageSection>
+      </div>
+
+      <div className="scroll-mt-8" id="donate">
+        <PageSection title="Spenden">
+          <DonatePanel />
+        </PageSection>
+      </div>
+
+      <PageSection className="opacity-80" title="Desktop">
+        <PageRows>
+          <Item id="lab-desktop" size="sm">
+            <ItemContent>
+              <ItemTitle>Connect Desktop</ItemTitle>
+              <ItemDescription>
+                Connect ist der Browser (Host-Chrome mit Profil).{" "}
+                <code className="rounded bg-muted px-1 text-[11px]">
+                  ./START-APP.sh
+                </code>{" "}
+                · Windows:{" "}
+                <code className="rounded bg-muted px-1 text-[11px]">
+                  packaging/build-windows-exe.sh
+                </code>
+                — kein Website-Fenster.
+              </ItemDescription>
+            </ItemContent>
+          </Item>
+        </PageRows>
+      </PageSection>
+    </PageShell>
+  );
+}

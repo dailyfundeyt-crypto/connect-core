@@ -1,0 +1,1370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>What is the Purpose of Life?</title>
+<style>
+  :root {
+    --paper-1: #f3ead7;
+    --paper-2: #ead7b3;
+    --ink: #1b1a17;
+    --ink-soft: #3a352a;
+    --accent: #b0413e;
+    --accent-2: #2e6a55;
+    --gold: #d6a955;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #2b261f; overflow: hidden; }
+  body {
+    font-family: 'Comic Sans MS', 'Segoe Print', 'Bradley Hand', 'Marker Felt', cursive;
+    color: var(--ink);
+  }
+  #stage {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    display: grid; place-items: center;
+    background: #1c1813;
+  }
+  canvas {
+    width: 100%; height: 100%;
+    background: var(--paper-1);
+    image-rendering: auto;
+    box-shadow: 0 0 80px rgba(0,0,0,.55);
+    cursor: default;
+  }
+  /* loading overlay */
+  #boot {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    color: #f3ead7; font-family: 'Segoe UI', sans-serif; letter-spacing: .25em;
+    background: #1c1813; z-index: 10;
+  }
+  #boot span { opacity: .6; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div id="stage"><canvas id="c" width="1920" height="1080"></canvas></div>
+  <div id="boot"><span>PREPARING COLLAGE…</span></div>
+<script>
+"use strict";
+
+/* =========================================================================
+ * "What is the Purpose of Life?" — pure-JS hand-drawn collage animation
+ * No external libraries. Renders to an offscreen canvas, exports PNG frames.
+ * Length: 50 seconds @ 30fps = 1500 frames.
+ * ========================================================================= */
+
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const randi = (a, b) => Math.floor(rand(a, b + 1));
+const choice = arr => arr[randi(0, arr.length - 1)];
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp  = (a, b, t) => a + (b - a) * t;
+const easeInOut = t => t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeIn  = t => t * t * t;
+const smoothstep = (a, b, t) => {
+  t = clamp((t - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+/* -------- deterministic pseudo-random (Mulberry32) so frames are stable -- */
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ----------------------------------------------------------------------------
+ * Canvas setup — render at 1920x1080 so the output video is crisp.
+ * ------------------------------------------------------------------------- */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+const rng = mulberry32(0xC0FFEE);
+const texRng = mulberry32(0xBADF00D);
+
+/* pre-computed texture canvases so they don't churn every frame */
+const paperTexture = createPaperTexture();
+const noiseTexture = createNoiseTexture();
+
+function createPaperTexture() {
+  const s = document.createElement('canvas');
+  s.width = 512; s.height = 512;
+  const x = s.getContext('2d');
+  // base paper
+  const grad = x.createRadialGradient(256, 256, 80, 256, 256, 360);
+  grad.addColorStop(0, '#fbf3df');
+  grad.addColorStop(1, '#d9c79f');
+  x.fillStyle = grad;
+  x.fillRect(0, 0, 512, 512);
+  // fibers & specks
+  for (let i = 0; i < 1400; i++) {
+    const px = texRng() * 512;
+    const py = texRng() * 512;
+    x.fillStyle = `rgba(60,40,20,${texRng() * .08})`;
+    x.fillRect(px, py, texRng() < .5 ? 1 : 2, 1);
+  }
+  for (let i = 0; i < 80; i++) {
+    x.strokeStyle = `rgba(40,30,15,${texRng() * .25})`;
+    x.lineWidth = texRng() < .5 ? .6 : 1;
+    x.beginPath();
+    x.moveTo(texRng() * 512, texRng() * 512);
+    x.lineTo(texRng() * 512, texRng() * 512);
+    x.stroke();
+  }
+  // vignette darkening
+  const v = x.createRadialGradient(256, 256, 100, 256, 256, 380);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(40,25,10,.35)');
+  x.fillStyle = v;
+  x.fillRect(0, 0, 512, 512);
+  return s;
+}
+
+function createNoiseTexture() {
+  const s = document.createElement('canvas');
+  s.width = 256; s.height = 256;
+  const x = s.getContext('2d');
+  const id = x.createImageData(256, 256);
+  for (let i = 0; i < id.data.length; i += 4) {
+    const v = (Math.random() * 255) | 0;
+    id.data[i] = id.data[i+1] = id.data[i+2] = v;
+    id.data[i+3] = 255;
+  }
+  x.putImageData(id, 0, 0);
+  return s;
+}
+
+/* ----------------------------------------------------------------------------
+ * Tiny "hand-drawn" primitives. We give every stroke a tiny random wobble
+ * and use multiple overlapping passes to simulate ink.
+ * ------------------------------------------------------------------------- */
+
+function roughLine(x1, y1, x2, y2, opts = {}) {
+  const {
+    color = '#1b1a17',
+    width = 4,
+    jitter = 1.2,
+    seed = Math.random() * 1e6
+  } = opts;
+  const r = mulberry32(seed);
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  const steps = Math.max(8, Math.floor(len / 14));
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // pass 1: thick soft
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = .25;
+  ctx.lineWidth = width * 1.7;
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const px = x1 + dx * t + (r() - .5) * jitter;
+    const py = y1 + dy * t + (r() - .5) * jitter;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  // pass 2: thin ink
+  ctx.globalAlpha = .95;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const px = x1 + dx * t + (r() - .5) * jitter * .8;
+    const py = y1 + dy * t + (r() - .5) * jitter * .8;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function roughRect(x, y, w, h, opts = {}) {
+  const { color = '#1b1a17', width = 3, jitter = 1.0, seed = Math.random() * 1e6, fill = null } = opts;
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, w, h);
+  }
+  roughLine(x, y, x + w, y, { color, width, jitter, seed });
+  roughLine(x + w, y, x + w, y + h, { color, width, jitter, seed: seed + 1 });
+  roughLine(x + w, y + h, x, y + h, { color, width, jitter, seed: seed + 2 });
+  roughLine(x, y + h, x, y, { color, width, jitter, seed: seed + 3 });
+}
+
+function roughCircle(cx, cy, r, opts = {}) {
+  const { color = '#1b1a17', width = 3, jitter = 1.0, fill = null, seed = Math.random() * 1e6, startA = 0, endA = TAU } = opts;
+  const r2 = mulberry32(seed);
+  const steps = Math.max(24, Math.floor(r * 1.5));
+  ctx.lineCap = 'round';
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = startA + (endA - startA) * t;
+      const rr = r + (r2() - .5) * jitter * 2;
+      const px = cx + Math.cos(a) * rr;
+      const py = cy + Math.sin(a) * rr;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = .9;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const a = startA + (endA - startA) * t;
+    const rr = r + (r2() - .5) * jitter * 2;
+    const px = cx + Math.cos(a) * rr;
+    const py = cy + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function roughPath(points, opts = {}) {
+  const { color = '#1b1a17', width = 3, jitter = 1.0, seed = Math.random() * 1e6, fill = null, closed = false } = opts;
+  const r = mulberry32(seed);
+  const pts = points.map(([x, y]) => [x + (r() - .5) * jitter, y + (r() - .5) * jitter]);
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    if (closed) ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  if (closed) ctx.closePath();
+  ctx.stroke();
+}
+
+/* handwriting-style label. We use a real font but pass it through a wobble
+ * pass and a thin underlay + thick overprint to fake the marker look. */
+function handText(text, x, y, opts = {}) {
+  const {
+    size = 56,
+    color = '#1b1a17',
+    align = 'center',
+    baseline = 'middle',
+    rotate = 0,
+    family = "'Caveat', 'Comic Sans MS', 'Bradley Hand', 'Segoe Print', cursive",
+    opacity = 1,
+    stroke = null,
+    weight = '700'
+  } = opts;
+  ctx.save();
+  ctx.translate(x, y);
+  if (rotate) ctx.rotate(rotate);
+  ctx.font = `${weight} ${size}px ${family}`;
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  ctx.globalAlpha = opacity;
+  if (stroke) {
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = stroke;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(text, 0, 0);
+  }
+  ctx.fillStyle = color;
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+
+/* a torn-paper rectangle, used as a "photo" or "card" */
+function tornCard(x, y, w, h, opts = {}) {
+  const { fill = '#f7eed5', border = '#7a6a4a', seed = Math.random() * 1e6, tilt = 0, shadow = true } = opts;
+  ctx.save();
+  ctx.translate(x, y);
+  if (tilt) ctx.rotate(tilt);
+  // shadow
+  if (shadow) {
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    drawTornShape(8, 10, w, h, seed, true);
+  }
+  // body
+  ctx.fillStyle = fill;
+  drawTornShape(0, 0, w, h, seed + 1, true);
+  // darker border
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 2;
+  drawTornShape(0, 0, w, h, seed + 2, false);
+  ctx.restore();
+}
+
+function drawTornShape(ox, oy, w, h, seed, fill) {
+  const r = mulberry32(seed);
+  const step = 18;
+  const pts = [];
+  // top
+  for (let x = 0; x <= w; x += step) {
+    pts.push([ox + x, oy + (r() - .5) * 6]);
+  }
+  pts.push([ox + w + (r() - .5) * 6, oy + step]);
+  // right
+  for (let y = step; y <= h; y += step) {
+    pts.push([ox + w + (r() - .5) * 6, oy + y]);
+  }
+  pts.push([ox + w - step * .5 + (r() - .5) * 6, oy + h + (r() - .5) * 6]);
+  // bottom (right -> left)
+  for (let x = w - step; x >= 0; x -= step) {
+    pts.push([ox + x + (r() - .5) * 6, oy + h + (r() - .5) * 6]);
+  }
+  pts.push([ox + (r() - .5) * 6, oy + h - step * .5]);
+  // left
+  for (let y = h - step; y >= 0; y -= step) {
+    pts.push([ox + (r() - .5) * 6, oy + y + (r() - .5) * 4]);
+  }
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  if (fill) ctx.fill(); else ctx.stroke();
+}
+
+/* a strip of washi tape holding a card down */
+function washiTape(x, y, w, opts = {}) {
+  const { color = 'rgba(176, 65, 62, .55)', tilt = -.05, h = 28 } = opts;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(tilt);
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, w, h);
+  // subtle ridges
+  ctx.fillStyle = 'rgba(255,255,255,.18)';
+  for (let i = 4; i < w; i += 10) ctx.fillRect(i, 0, 1, h);
+  ctx.strokeStyle = 'rgba(0,0,0,.12)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, w, h);
+  ctx.restore();
+}
+
+/* an ink splotch */
+function inkSplat(x, y, r, color = '#1b1a17', seed = Math.random() * 1e6) {
+  const rr = mulberry32(seed);
+  const points = 26;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < points; i++) {
+    const a = (i / points) * TAU;
+    const rad = r * (.5 + rr() * .9);
+    const px = x + Math.cos(a) * rad;
+    const py = y + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // drips
+  for (let i = 0; i < 5; i++) {
+    if (rr() < .5) {
+      ctx.beginPath();
+      ctx.arc(x + (rr() - .5) * r * 1.5, y + (rr() - .5) * r * 1.5, 1 + rr() * 2, 0, TAU);
+      ctx.fill();
+    }
+  }
+}
+
+/* a stamp circle */
+function stampCircle(x, y, r, text, opts = {}) {
+  const { color = 'rgba(176, 65, 62, .85)', size = 22 } = opts;
+  ctx.save();
+  ctx.translate(x, y);
+  // outer ring
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.stroke();
+  // inner ring
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, r - 12, 0, TAU);
+  ctx.stroke();
+  // text around top
+  ctx.fillStyle = color;
+  ctx.font = `900 ${size}px 'Impact', 'Arial Black', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const chars = text.split('');
+  const arc = Math.PI * .9;
+  const start = Math.PI + (Math.PI - arc) / 2;
+  for (let i = 0; i < chars.length; i++) {
+    const a = start + (arc / (chars.length - 1)) * i;
+    ctx.save();
+    ctx.rotate(a - Math.PI / 2);
+    ctx.translate(0, -r + 18);
+    ctx.fillText(chars[i], 0, 0);
+    ctx.restore();
+  }
+  // center mark
+  ctx.font = `900 ${size * 1.4}px 'Impact', 'Arial Black', sans-serif`;
+  ctx.fillText('★', 0, 4);
+  ctx.restore();
+}
+
+/* ----------------------------------------------------------------------------
+ * Asset "patches" — each frame we composite a few of these as the collage.
+ * A patch is a function drawPatch(time, x, y, opts).
+ * ------------------------------------------------------------------------- */
+
+function drawClock(cx, cy, r, t) {
+  const r2 = mulberry32(42);
+  const ang = (t * .0008) % TAU;
+  // body
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = '#fbf3df';
+  ctx.strokeStyle = '#1b1a17';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+  // ticks
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU;
+    const x1 = Math.cos(a) * (r - 10);
+    const y1 = Math.sin(a) * (r - 10);
+    const x2 = Math.cos(a) * (r - (i % 3 ? 18 : 26));
+    const y2 = Math.sin(a) * (r - (i % 3 ? 18 : 26));
+    roughLine(x1, y1, x2, y2, { color: '#1b1a17', width: i % 3 ? 2 : 4, jitter: .5, seed: r2() * 999 });
+  }
+  // hour hand
+  const ha = -Math.PI / 2 + ang * 2;
+  const ma = -Math.PI / 2 + ang * 14;
+  roughLine(0, 0, Math.cos(ha) * r * .5, Math.sin(ha) * r * .5, { color: '#1b1a17', width: 6, jitter: .5 });
+  roughLine(0, 0, Math.cos(ma) * r * .7, Math.sin(ma) * r * .7, { color: '#1b1a17', width: 4, jitter: .5 });
+  roughCircle(0, 0, 5, { color: '#b0413e', fill: '#b0413e' });
+  ctx.restore();
+}
+
+function drawHourglass(cx, cy, w, h) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // wood frame
+  ctx.fillStyle = '#7a5230';
+  ctx.fillRect(-w / 2, -h / 2, w, 14);
+  ctx.fillRect(-w / 2, h / 2 - 14, w, 14);
+  // glass
+  roughPath([
+    [-w / 2 + 10, -h / 2 + 18],
+    [w / 2 - 10, -h / 2 + 18],
+    [4, -8],
+    [4, h / 2 - 18],
+    [w / 2 - 10, h / 2 - 18],
+    [-w / 2 + 10, h / 2 - 18],
+    [-4, 8],
+    [-4, -h / 2 + 18],
+  ], { color: '#1b1a17', width: 3, jitter: .5, closed: true, fill: 'rgba(220, 200, 150, .35)' });
+  // sand top
+  ctx.fillStyle = '#d6a955';
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + 14, -h / 2 + 22);
+  ctx.lineTo(w / 2 - 14, -h / 2 + 22);
+  ctx.lineTo(2, -10);
+  ctx.closePath();
+  ctx.fill();
+  // sand pile bottom
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + 14, h / 2 - 22);
+  ctx.lineTo(w / 2 - 14, h / 2 - 22);
+  ctx.lineTo(2, h / 2 - 30);
+  ctx.lineTo(2, h / 2 - 24);
+  ctx.closePath();
+  ctx.fill();
+  // falling grain
+  roughCircle(0, h / 4, 1.5, { color: '#d6a955', fill: '#d6a955' });
+  ctx.restore();
+}
+
+function drawEmptyChair(cx, cy, w, h) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  const col = '#3a2a1c';
+  // back
+  roughLine(-w/2, -h/2, -w/2, -h/4, { color: col, width: 8, jitter: .6 });
+  roughLine(-w/2 + 8, -h/2, -w/2 + 8, -h/4, { color: col, width: 8, jitter: .6 });
+  roughLine(w/2, -h/2, w/2, -h/4, { color: col, width: 8, jitter: .6 });
+  roughLine(w/2 - 8, -h/2, w/2 - 8, -h/4, { color: col, width: 8, jitter: .6 });
+  // seat
+  roughLine(-w/2, -h/4, w/2, -h/4, { color: col, width: 8, jitter: .6 });
+  // legs
+  roughLine(-w/2 + 4, -h/4, -w/2 + 12, h/2, { color: col, width: 8, jitter: .6 });
+  roughLine(w/2 - 4, -h/4, w/2 - 12, h/2, { color: col, width: 8, jitter: .6 });
+  roughLine(-w/2 + 16, -h/4, -w/2 + 24, h/2, { color: col, width: 8, jitter: .6 });
+  roughLine(w/2 - 16, -h/4, w/2 - 24, h/2, { color: col, width: 8, jitter: .6 });
+  ctx.restore();
+}
+
+function drawCoffee(cx, cy, r) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // saucer
+  roughCircle(0, r * .9, r * 1.4, { color: '#3a352a', fill: '#fff8e7', width: 3 });
+  // cup body
+  roughPath([
+    [-r, -r], [r, -r],
+    [r * .8, r * .8], [-r * .8, r * .8]
+  ], { color: '#3a352a', width: 3, jitter: .6, closed: true, fill: '#fff8e7' });
+  // coffee surface
+  roughCircle(0, -r * .25, r * .85, { color: '#5a3a1c', fill: '#3a2410' });
+  // steam
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    const x0 = -r * .5 + i * r * .5;
+    for (let s = 0; s <= 20; s++) {
+      const t = s / 20;
+      const px = x0 + Math.sin(t * 6 + i) * 12;
+      const py = -r * .6 - t * 90;
+      if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  // handle
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#3a352a';
+  ctx.beginPath();
+  ctx.arc(r * .95, 0, r * .25, -Math.PI / 2, Math.PI / 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHand(cx, cy, scale, color = '#e6b794') {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  // palm
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#3a2410';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(0, 20, 60, 90, 0, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+  // fingers
+  const fingers = [
+    [-40, -50, -30, -120],
+    [-15, -65, -10, -150],
+    [ 12, -68,  12, -150],
+    [ 38, -55,  35, -125],
+  ];
+  for (const [x, y, x2, y2] of fingers) {
+    ctx.beginPath();
+    ctx.moveTo(x - 12, y);
+    ctx.quadraticCurveTo(x - 4, y2 + 30, x2, y2);
+    ctx.quadraticCurveTo(x2 + 22, y2 + 30, x2 + 22, y - 10);
+    ctx.quadraticCurveTo(x2 + 8, y, x + 12, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  // thumb
+  ctx.beginPath();
+  ctx.moveTo(-55, 0);
+  ctx.quadraticCurveTo(-90, -20, -100, -50);
+  ctx.quadraticCurveTo(-85, -10, -55, 20);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMountain(cx, cy, w, h) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // back mountain
+  ctx.fillStyle = '#7c8e9c';
+  ctx.beginPath();
+  ctx.moveTo(-w, h);
+  ctx.lineTo(-w * .4, -h * .7);
+  ctx.lineTo(-w * .1, -h * .3);
+  ctx.lineTo(w * .15, -h * .6);
+  ctx.lineTo(w * .4, -h * .25);
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fill();
+  // snow caps
+  ctx.fillStyle = '#fbf3df';
+  ctx.beginPath();
+  ctx.moveTo(-w * .45, -h * .65);
+  ctx.lineTo(-w * .4, -h * .7);
+  ctx.lineTo(-w * .33, -h * .55);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(w * .1, -h * .55);
+  ctx.lineTo(w * .15, -h * .6);
+  ctx.lineTo(w * .22, -h * .48);
+  ctx.closePath();
+  ctx.fill();
+  // front mountain
+  ctx.fillStyle = '#4d606e';
+  ctx.beginPath();
+  ctx.moveTo(-w, h);
+  ctx.lineTo(-w * .15, -h * .25);
+  ctx.lineTo(w * .2, -h * .6);
+  ctx.lineTo(w * .55, -h * .15);
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fill();
+  // pine trees
+  for (let i = 0; i < 6; i++) {
+    const tx = -w * .7 + i * (w * .25);
+    const ty = h * .3 + (i % 2) * 16;
+    drawPineTree(tx, ty, 22);
+  }
+  ctx.restore();
+}
+
+function drawPineTree(x, y, s) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#2e4a35';
+  ctx.beginPath();
+  ctx.moveTo(-s, 0); ctx.lineTo(0, -s * 2.2); ctx.lineTo(s, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#3d5e44';
+  ctx.beginPath();
+  ctx.moveTo(-s * .75, -s * .5); ctx.lineTo(0, -s * 2.6); ctx.lineTo(s * .75, -s * .5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#3a2a1c';
+  ctx.fillRect(-3, 0, 6, 14);
+  ctx.restore();
+}
+
+function drawSun(cx, cy, r, t) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // rays
+  ctx.strokeStyle = '#d6a955';
+  ctx.lineWidth = 5;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU + t * .0004;
+    const x1 = Math.cos(a) * r * 1.1;
+    const y1 = Math.sin(a) * r * 1.1;
+    const x2 = Math.cos(a) * r * 1.5;
+    const y2 = Math.sin(a) * r * 1.5;
+    roughLine(x1, y1, x2, y2, { color: '#d6a955', width: 5, jitter: .5, seed: i });
+  }
+  roughCircle(0, 0, r, { color: '#d6a955', fill: '#e9c071', width: 4, jitter: 1.2 });
+  ctx.restore();
+}
+
+function drawCandle(cx, cy, h) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = '#f7eed5';
+  ctx.strokeStyle = '#1b1a17';
+  ctx.lineWidth = 3;
+  // body
+  ctx.fillRect(-18, 0, 36, h);
+  ctx.strokeRect(-18, 0, 36, h);
+  // wax drips
+  ctx.fillStyle = 'rgba(247, 238, 213, .55)';
+  ctx.beginPath();
+  ctx.moveTo(-18, 10);
+  ctx.quadraticCurveTo(-22, 40, -16, 70);
+  ctx.lineTo(-16, 0);
+  ctx.closePath();
+  ctx.fill();
+  // wick
+  ctx.strokeStyle = '#1b1a17';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, -14);
+  ctx.stroke();
+  // flame
+  ctx.fillStyle = '#f0b54a';
+  ctx.beginPath();
+  ctx.moveTo(0, -14);
+  ctx.quadraticCurveTo(-10, -38, 0, -56);
+  ctx.quadraticCurveTo(10, -38, 0, -14);
+  ctx.fill();
+  ctx.fillStyle = '#ffd66b';
+  ctx.beginPath();
+  ctx.moveTo(0, -22);
+  ctx.quadraticCurveTo(-4, -36, 0, -48);
+  ctx.quadraticCurveTo(4, -36, 0, -22);
+  ctx.fill();
+  // glow
+  const grad = ctx.createRadialGradient(0, -32, 4, 0, -32, 80);
+  grad.addColorStop(0, 'rgba(255, 200, 90, .55)');
+  grad.addColorStop(1, 'rgba(255, 200, 90, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(-90, -120, 180, 180);
+  ctx.restore();
+}
+
+function drawCrossedOut(x, y, w, h, seed = Math.random() * 1e6) {
+  const r = mulberry32(seed);
+  ctx.strokeStyle = '#b0413e';
+  ctx.lineWidth = 10;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x + 6 + (r() - .5) * 4, y + 6 + (r() - .5) * 4);
+  ctx.lineTo(x + w - 6 + (r() - .5) * 4, y + h - 6 + (r() - .5) * 4);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + w - 6 + (r() - .5) * 4, y + 6 + (r() - .5) * 4);
+  ctx.lineTo(x + 6 + (r() - .5) * 4, y + h - 6 + (r() - .5) * 4);
+  ctx.stroke();
+}
+
+function drawArrowDoodle(x1, y1, x2, y2, color = '#3a352a') {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  // bezier with a wobble
+  const mx = (x1 + x2) / 2 + (Math.random() - .5) * 40;
+  const my = (y1 + y2) / 2 + (Math.random() - .5) * 40;
+  ctx.quadraticCurveTo(mx, my, x2, y2);
+  ctx.stroke();
+  // arrow head
+  const a = Math.atan2(y2 - my, x2 - mx);
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - Math.cos(a - .5) * 22, y2 - Math.sin(a - .5) * 22);
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - Math.cos(a + .5) * 22, y2 - Math.sin(a + .5) * 22);
+  ctx.stroke();
+}
+
+function drawStringLights(x, y, count, spacing, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  // wire
+  ctx.strokeStyle = '#1b1a17';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-count * spacing / 2, 0);
+  for (let i = 0; i <= count; i++) {
+    const px = -count * spacing / 2 + i * spacing;
+    const py = Math.sin(i * .7 + t * .001) * 10;
+    ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  // bulbs
+  for (let i = 1; i < count; i++) {
+    const px = -count * spacing / 2 + i * spacing;
+    const py = Math.sin(i * .7 + t * .001) * 10 + 16;
+    const hue = ['#b0413e', '#d6a955', '#2e6a55', '#3a4b8a', '#a05a9a'][i % 5];
+    roughCircle(px, py, 9, { color: hue, fill: hue, width: 2 });
+    // glow
+    const grad = ctx.createRadialGradient(px, py, 1, px, py, 28);
+    grad.addColorStop(0, hue + 'cc');
+    grad.addColorStop(1, hue + '00');
+    ctx.fillStyle = grad;
+    ctx.fillRect(px - 30, py - 30, 60, 60);
+  }
+  ctx.restore();
+}
+
+function drawEnvelope(cx, cy, w, h) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = '#f7eed5';
+  ctx.strokeStyle = '#1b1a17';
+  ctx.lineWidth = 3;
+  ctx.fillRect(-w/2, -h/2, w, h);
+  ctx.strokeRect(-w/2, -h/2, w, h);
+  // flap
+  ctx.beginPath();
+  ctx.moveTo(-w/2, -h/2);
+  ctx.lineTo(0, h * .1);
+  ctx.lineTo(w/2, -h/2);
+  ctx.stroke();
+  // heart stamp
+  ctx.fillStyle = '#b0413e';
+  ctx.beginPath();
+  const hx = w/2 - 38, hy = -h/2 + 30;
+  ctx.moveTo(hx, hy + 8);
+  ctx.bezierCurveTo(hx, hy, hx - 14, hy - 12, hx - 14, hy + 4);
+  ctx.bezierCurveTo(hx - 14, hy + 16, hx, hy + 22, hx, hy + 30);
+  ctx.bezierCurveTo(hx, hy + 22, hx + 14, hy + 16, hx + 14, hy + 4);
+  ctx.bezierCurveTo(hx + 14, hy - 12, hx, hy, hx, hy + 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawChildSilhouette(cx, cy, scale) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#3a2a1c';
+  // head
+  ctx.beginPath();
+  ctx.arc(0, -40, 18, 0, TAU);
+  ctx.fill();
+  // body
+  ctx.beginPath();
+  ctx.moveTo(-22, -22);
+  ctx.lineTo(22, -22);
+  ctx.lineTo(28, 50);
+  ctx.lineTo(-28, 50);
+  ctx.closePath();
+  ctx.fill();
+  // arms
+  ctx.beginPath();
+  ctx.moveTo(-22, -10);
+  ctx.lineTo(-44, 20);
+  ctx.lineTo(-40, 30);
+  ctx.lineTo(-18, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(22, -10);
+  ctx.lineTo(50, 14);
+  ctx.lineTo(46, 24);
+  ctx.lineTo(18, 0);
+  ctx.closePath();
+  ctx.fill();
+  // legs
+  ctx.fillRect(-22, 48, 18, 36);
+  ctx.fillRect(4, 48, 18, 36);
+  ctx.restore();
+}
+
+function drawFlower(cx, cy, r, color = '#b0413e') {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // petals
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a) * r * .5, Math.sin(a) * r * .5, r * .5, r * .3, a, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = '#3a2410';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  // center
+  ctx.fillStyle = '#d6a955';
+  ctx.beginPath();
+  ctx.arc(0, 0, r * .3, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = '#3a2410';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPaperPlane(cx, cy, s, rot = 0) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.scale(s, s);
+  ctx.fillStyle = '#fbf3df';
+  ctx.strokeStyle = '#1b1a17';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-40, -20);
+  ctx.lineTo(40, 0);
+  ctx.lineTo(-40, 20);
+  ctx.lineTo(-10, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // fold line
+  ctx.beginPath();
+  ctx.moveTo(-10, 0);
+  ctx.lineTo(40, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ----------------------------------------------------------------------------
+ * THE STORY. 50 seconds, 1500 frames @ 30fps. Each beat is a function that
+ * draws into the canvas for its time window.
+ * ------------------------------------------------------------------------- */
+
+const FPS = 30;
+const DURATION = 50;     // seconds
+const TOTAL = DURATION * FPS;
+const S = TOTAL;
+
+function inBeat(t, a, b) { return t >= a * FPS && t < b * FPS; }
+function beatT(t, a, b) { return clamp((t - a * FPS) / ((b - a) * FPS), 0, 1); }
+function fadeIn(t, a, b, dur = 0.4) {
+  const t0 = a * FPS;
+  return smoothstep(t0, t0 + dur * FPS, t) * (1 - smoothstep(b * FPS - dur * FPS, b * FPS, t));
+}
+
+function drawBackground(t) {
+  // paper texture fills everything; gentle dust drift via seeded noise
+  ctx.drawImage(paperTexture, 0, 0, W, H);
+  // subtle global grain on top
+  ctx.save();
+  ctx.globalAlpha = .05;
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.drawImage(noiseTexture, (t * .3) % 256 - 128, (t * .21) % 256 - 128, W + 256, H + 256);
+  ctx.restore();
+}
+
+function drawTitleCard(t) {
+  // 0-3s: title
+  if (!inBeat(t, 0, 3.5)) return;
+  const k = beatT(t, 0, 3.5);
+  const a = easeOut(k) * fadeIn(t, 0, 3.5, .4);
+  ctx.save();
+  ctx.globalAlpha = a;
+  // big yellow card
+  const cardW = 1300, cardH = 380;
+  const cx = W / 2, cy = H / 2 - 60;
+  ctx.translate(cx, cy);
+  ctx.rotate(-.04);
+  tornCard(-cardW/2, -cardH/2, cardW, cardH, { fill: '#f6df9c', border: '#7a6a4a', seed: 7, tilt: 0, shadow: true });
+  washiTape(-180, -cardH/2 - 14, 200, { color: 'rgba(176,65,62,.55)' });
+  washiTape(cardW/2 - 80, -cardH/2 - 14, 240, { color: 'rgba(46,106,85,.55)', tilt: .06 });
+  handText('what is the purpose', 0, -90, { size: 130, color: '#1b1a17' });
+  handText('of life?', 0, 80, { size: 200, color: '#b0413e', rotate: -.04 });
+  // doodle arrow pointing to question
+  drawArrowDoodle(cardW/2 - 60, -cardH/2 + 90, cardW/2 - 250, -cardH/2 + 220, '#3a352a');
+  ctx.restore();
+
+  // small annotation
+  ctx.save();
+  ctx.globalAlpha = a * .8;
+  handText('— a 50-second doodle —', W / 2, H - 100, { size: 36, color: '#3a352a', opacity: 1 });
+  ctx.restore();
+
+  // splat decoration
+  ctx.save();
+  ctx.globalAlpha = a * .7;
+  inkSplat(W/2 + 540, H/2 - 120, 32, '#b0413e', 11);
+  ctx.restore();
+}
+
+function drawBeat1(t) {
+  // 3-9s: the usual answers flicker through
+  if (!inBeat(t, 3, 9)) return;
+  const items = [
+    { word: 'money?',   color: '#2e6a55' },
+    { word: 'fame?',    color: '#b0413e' },
+    { word: 'kids?',    color: '#3a4b8a' },
+    { word: 'power?',   color: '#a05a9a' },
+    { word: 'success?', color: '#d6a955' },
+  ];
+  // each item shown for ~1.2s, starting at 3.2s, 4.2s, 5.2s, 6.2s, 7.2s
+  const starts = [3.2, 4.2, 5.2, 6.2, 7.2];
+  for (let i = 0; i < items.length; i++) {
+    const s = starts[i];
+    const e = s + 1.4;
+    if (t < s * FPS || t > e * FPS) continue;
+    const k = beatT(t, s, e);
+    const show = easeOut(k);
+    const fade = 1 - smoothstep(.7, 1, k);
+    const alpha = show * fade;
+    // each on its own card
+    const cardW = 540, cardH = 200;
+    const ang = (i - 2) * .1;
+    const cx = W / 2, cy = H / 2 - 40;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+    ctx.globalAlpha = alpha;
+    tornCard(-cardW/2, -cardH/2, cardW, cardH, {
+      fill: i % 2 ? '#f7eed5' : '#f3df9c',
+      border: '#7a6a4a', seed: 100 + i, shadow: true
+    });
+    handText(items[i].word, 0, 0, { size: 130, color: items[i].color, rotate: ang * .3 });
+    ctx.restore();
+  }
+  // big X mark on top in the last half
+  const kx = beatT(t, 7.5, 9);
+  if (kx > 0) {
+    ctx.save();
+    ctx.globalAlpha = easeOut(kx) * .85;
+    drawCrossedOut(W/2 - 350, H/2 - 140, 700, 280, 22);
+    handText('not quite.', W/2, H - 200, { size: 80, color: '#b0413e' });
+    ctx.restore();
+  }
+}
+
+function drawBeat2(t) {
+  // 9-16s: existential weight - clock, hourglass, empty chair, photo frame
+  if (!inBeat(t, 9, 16)) return;
+  const k = beatT(t, 9, 16);
+
+  // big clock ticking center-left
+  const clockA = smoothstep(0, .15, k);
+  ctx.save();
+  ctx.globalAlpha = clockA;
+  drawClock(W * .3, H * .45, 180, t * 1000);
+  // label
+  handText('time', W * .3, H * .45 + 240, { size: 60, color: '#3a352a' });
+  ctx.restore();
+
+  // hourglass center-right
+  const hgA = smoothstep(.1, .25, k);
+  ctx.save();
+  ctx.globalAlpha = hgA;
+  drawHourglass(W * .68, H * .4, 180, 360);
+  handText('running out', W * .68, H * .4 + 220, { size: 60, color: '#3a352a' });
+  ctx.restore();
+
+  // empty chair bottom
+  const chA = smoothstep(.25, .4, k);
+  ctx.save();
+  ctx.globalAlpha = chA;
+  drawEmptyChair(W * .5, H * .78, 220, 240);
+  handText('alone?', W * .5, H * .9, { size: 60, color: '#b0413e' });
+  ctx.restore();
+
+  // photo frame falling apart, top
+  const phA = smoothstep(.3, .5, k);
+  ctx.save();
+  ctx.globalAlpha = phA;
+  ctx.translate(W * .85, H * .15);
+  ctx.rotate(-.15);
+  tornCard(-100, -70, 200, 140, { fill: '#f7eed5', border: '#7a6a4a', seed: 5, shadow: true });
+  // heart inside
+  ctx.fillStyle = '#b0413e';
+  ctx.beginPath();
+  const hx = -30, hy = -20;
+  ctx.moveTo(hx, hy + 12);
+  ctx.bezierCurveTo(hx, hy, hx - 22, hy - 18, hx - 22, hy + 6);
+  ctx.bezierCurveTo(hx - 22, hy + 24, hx, hy + 32, hx, hy + 44);
+  ctx.bezierCurveTo(hx, hy + 32, hx + 22, hy + 24, hx + 22, hy + 6);
+  ctx.bezierCurveTo(hx + 22, hy - 18, hx, hy, hx, hy + 12);
+  ctx.closePath();
+  ctx.fill();
+  // crack across the heart
+  ctx.strokeStyle = '#1b1a17';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-22, -40);
+  ctx.lineTo(0, -10);
+  ctx.lineTo(-10, 20);
+  ctx.lineTo(20, 50);
+  ctx.stroke();
+  ctx.restore();
+
+  // gentle string of thought
+  drawStringLights(W * .5, 30, 14, 120, t * 1000);
+}
+
+function drawBeat3(t) {
+  // 16-23s: pivot - "maybe it's not a destination"
+  if (!inBeat(t, 16, 23)) return;
+  const k = beatT(t, 16, 23);
+
+  // big handwritten line that gets drawn in
+  ctx.save();
+  ctx.globalAlpha = smoothstep(0, .2, k);
+  handText('maybe it isn’t', W/2, H * .35, { size: 110, color: '#1b1a17' });
+  handText('a destination.', W/2, H * .5, { size: 110, color: '#b0413e', rotate: -.02 });
+  ctx.restore();
+
+  // arrow doodle under it
+  if (k > .25) {
+    ctx.save();
+    ctx.globalAlpha = smoothstep(.25, .45, k);
+    drawArrowDoodle(W/2 - 300, H * .62, W/2 + 280, H * .7, '#3a352a');
+    ctx.restore();
+  }
+
+  // paper plane flying across (easing)
+  if (k > .3) {
+    const pk = smoothstep(.3, .9, k);
+    const px = lerp(-100, W + 100, pk);
+    const py = H * .78 - Math.sin(pk * Math.PI) * 80;
+    ctx.save();
+    ctx.globalAlpha = pk;
+    drawPaperPlane(px, py, 1.4, -.3);
+    ctx.restore();
+  }
+}
+
+function drawBeat4(t) {
+  // 23-32s: small moments - coffee, hand, sunset, smile
+  if (!inBeat(t, 23, 32)) return;
+  const k = beatT(t, 23, 32);
+
+  // header
+  ctx.save();
+  ctx.globalAlpha = smoothstep(0, .15, k) * (1 - smoothstep(.85, 1, k));
+  handText('maybe it’s this.', W/2, H * .12, { size: 100, color: '#1b1a17' });
+  ctx.restore();
+
+  // 4 vignettes appearing one by one
+  const items = [
+    { time: .10, draw: (a) => {
+        // coffee
+        ctx.save();
+        ctx.globalAlpha = a;
+        drawCoffee(W * .25, H * .45, 90);
+        handText('a quiet cup.', W * .25, H * .62, { size: 50, color: '#3a352a' });
+        ctx.restore();
+      } },
+    { time: .22, draw: (a) => {
+        // hand reaching
+        ctx.save();
+        ctx.globalAlpha = a;
+        drawHand(W * .5, H * .45, 1.1);
+        handText('someone’s hand.', W * .5, H * .66, { size: 50, color: '#3a352a' });
+        ctx.restore();
+      } },
+    { time: .36, draw: (a) => {
+        // sunset
+        ctx.save();
+        ctx.globalAlpha = a;
+        // sun
+        drawSun(W * .75, H * .42, 70, t * 1000);
+        // mountain horizon
+        drawMountain(W * .75, H * .5, 700, 200);
+        handText('a good sky.', W * .75, H * .65, { size: 50, color: '#3a352a' });
+        ctx.restore();
+      } },
+    { time: .50, draw: (a) => {
+        // child silhouette + flower
+        ctx.save();
+        ctx.globalAlpha = a;
+        drawChildSilhouette(W * .35, H * .82, 1.3);
+        drawFlower(W * .52, H * .84, 26, '#b0413e');
+        drawFlower(W * .58, H * .86, 22, '#d6a955');
+        drawFlower(W * .45, H * .86, 24, '#a05a9a');
+        handText('a small laugh.', W * .5, H * .98, { size: 50, color: '#3a352a' });
+        ctx.restore();
+      } },
+  ];
+  for (const it of items) {
+    const local = clamp((k - it.time) / .2, 0, 1);
+    it.draw(easeOut(local));
+  }
+}
+
+function drawBeat5(t) {
+  // 32-40s: act of building / caring / noticing
+  if (!inBeat(t, 32, 40)) return;
+  const k = beatT(t, 32, 40);
+
+  // envelope in center
+  ctx.save();
+  ctx.globalAlpha = smoothstep(0, .15, k) * (1 - smoothstep(.85, 1, k));
+  drawEnvelope(W / 2 - 220, H * .42, 360, 220);
+  handText('send a letter.', W / 2 - 220, H * .62, { size: 56, color: '#3a352a' });
+  ctx.restore();
+
+  // small paper plane drawn
+  if (k > .15) {
+    const pk = smoothstep(.15, .6, k);
+    ctx.save();
+    ctx.globalAlpha = pk;
+    drawPaperPlane(W * .78, H * .38, 1.2, .2);
+    handText('make a thing.', W * .78, H * .55, { size: 50, color: '#3a352a' });
+    ctx.restore();
+  }
+
+  // tree growing — strokes for trunk then leaves
+  if (k > .25) {
+    const pk = smoothstep(.25, .8, k);
+    ctx.save();
+    ctx.globalAlpha = smoothstep(0, .15, pk);
+    const tx = W * .25, ty = H * .78;
+    ctx.strokeStyle = '#3a2a1c';
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty + 40);
+    ctx.quadraticCurveTo(tx + 10, ty - 30, tx + 5, ty - 100);
+    ctx.stroke();
+    // branches
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(tx + 5, ty - 50);
+    ctx.lineTo(tx - 50, ty - 90);
+    ctx.moveTo(tx + 5, ty - 70);
+    ctx.lineTo(tx + 60, ty - 110);
+    ctx.moveTo(tx + 5, ty - 30);
+    ctx.lineTo(tx + 70, ty - 50);
+    ctx.stroke();
+    // leaves
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * TAU + .7;
+      const r = 80 + (pk * 30);
+      ctx.fillStyle = ['#2e6a55', '#3d5e44', '#4d7250'][i % 3];
+      ctx.beginPath();
+      ctx.arc(tx + Math.cos(a) * r, ty - 100 + Math.sin(a) * r * .6, 14, 0, TAU);
+      ctx.fill();
+    }
+    handText('grow something.', W * .25, H * .95, { size: 50, color: '#3a352a' });
+    ctx.restore();
+  }
+
+  // stamp of approval
+  if (k > .7) {
+    ctx.save();
+    ctx.globalAlpha = smoothstep(.7, .9, k);
+    ctx.rotate(.15);
+    stampCircle(W * .82, H * .72, 110, 'LIVED • NOT • SOLVED  ', { color: 'rgba(46,106,85,.85)' });
+    ctx.restore();
+  }
+}
+
+function drawBeat6(t) {
+  // 40-46s: quiet landscape
+  if (!inBeat(t, 40, 46)) return;
+  const k = beatT(t, 40, 46);
+
+  // fade collage out
+  ctx.save();
+  ctx.globalAlpha = smoothstep(0, .3, k);
+  // big mountain scene
+  drawMountain(W * .5, H * .55, 1700, 500);
+  // river
+  ctx.fillStyle = '#7fa9b8';
+  ctx.beginPath();
+  ctx.moveTo(0, H * .75);
+  ctx.quadraticCurveTo(W * .25, H * .7, W * .5, H * .75);
+  ctx.quadraticCurveTo(W * .75, H * .8, W, H * .75);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+  // ripples
+  ctx.strokeStyle = 'rgba(255,255,255,.4)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.moveTo(80 + i * 240, H * .8 + Math.sin(t * .02 + i) * 4);
+    ctx.quadraticCurveTo(180 + i * 240, H * .78 + Math.sin(t * .02 + i) * 4, 280 + i * 240, H * .8 + Math.sin(t * .02 + i) * 4);
+    ctx.stroke();
+  }
+  // candle
+  drawCandle(W * .82, H * .82, 180);
+  ctx.restore();
+
+  // caption
+  ctx.save();
+  ctx.globalAlpha = smoothstep(.4, .8, k);
+  handText('so breathe.', W * .3, H * .3, { size: 90, color: '#1b1a17' });
+  ctx.restore();
+}
+
+function drawFinal(t) {
+  // 46-50s: dissolve into final answer
+  if (!inBeat(t, 46, 50)) return;
+  const k = beatT(t, 46, 50);
+
+  // big torn card centered
+  const cardW = 1400, cardH = 600;
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.globalAlpha = smoothstep(0, .25, k);
+  ctx.rotate(.03);
+  tornCard(-cardW/2, -cardH/2, cardW, cardH, { fill: '#f3df9c', border: '#7a6a4a', seed: 31, tilt: 0, shadow: true });
+  washiTape(-cardW/2 + 80, -cardH/2 - 12, 220, { color: 'rgba(176,65,62,.55)' });
+  washiTape(cardW/2 - 280, -cardH/2 - 12, 240, { color: 'rgba(46,106,85,.55)', tilt: .06 });
+
+  handText('you don’t find the answer.', 0, -140, { size: 90, color: '#1b1a17' });
+  handText('you make it.', 0, 20, { size: 150, color: '#b0413e' });
+  handText('— then you live it.', 0, 150, { size: 80, color: '#3a352a' });
+  ctx.restore();
+
+  // small smiley stamp
+  if (k > .6) {
+    ctx.save();
+    ctx.globalAlpha = smoothstep(.6, .85, k);
+    stampCircle(W - 220, H - 220, 110, 'PURPOSE • IS • A • VERB  ', { color: 'rgba(214, 169, 85, .85)' });
+    ctx.restore();
+  }
+}
+
+function drawWatermark(t) {
+  // persistent small "by" mark in corner
+  ctx.save();
+  ctx.globalAlpha = .5;
+  handText('— a doodle —', 80, H - 60, { size: 32, color: '#7a6a4a', align: 'left' });
+  ctx.restore();
+}
+
+/* ----------------------------------------------------------------------------
+ * MAIN RENDER — per frame, we composite background + each active beat.
+ * The animation also runs in real-time when viewed in a browser, so you
+ * can preview it.
+ * ------------------------------------------------------------------------- */
+
+let startTime = 0;
+let isRendering = false;
+
+function renderFrame(frameIdx, now) {
+  // base background
+  drawBackground(now);
+
+  // The layers — order matters: back to front
+  drawBeat6(now);          // landscape (back layer)
+  drawWatermark(now);
+  drawBeat2(now);          // existential weight
+  drawBeat4(now);          // small moments
+  drawBeat5(now);          // act of building
+  drawBeat3(now);          // pivot
+  drawBeat1(now);          // usual answers (front)
+  drawTitleCard(now);
+  drawFinal(now);
+
+  // subtle global film grain
+  ctx.save();
+  ctx.globalAlpha = .08;
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.drawImage(noiseTexture, (now * 1.7) % 256, (now * 1.3) % 256, W, H);
+  ctx.restore();
+
+  // soft vignette
+  const vg = ctx.createRadialGradient(W/2, H/2, W * .3, W/2, H/2, W * .8);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,.35)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function animateLoop() {
+  // real-time playback for preview
+  const now = performance.now();
+  if (!startTime) startTime = now;
+  const elapsed = (now - startTime) / 1000; // seconds
+  // we drive timeline in seconds * 1000 (ms) for some helpers; convert
+  renderFrame(0, elapsed);
+  if (elapsed < DURATION) requestAnimationFrame(animateLoop);
+}
+
+// expose helpers for headless rendering
+window.__renderFrame = renderFrame;
+window.__duration = DURATION;
+window.__fps = FPS;
+window.__total = TOTAL;
+
+/* boot */
+window.addEventListener('load', () => {
+  const boot = document.getElementById('boot');
+  if (boot) boot.style.display = 'none';
+  startTime = performance.now();
+  requestAnimationFrame(animateLoop);
+});
+
+</script>
+</body>
+</html>

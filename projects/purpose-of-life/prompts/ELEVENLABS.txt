@@ -1,0 +1,83 @@
+# ElevenLabs — Voiceover Prompt for
+# "What is the Purpose of Life?" (50-second hand-drawn collage)
+
+This file gives you three things:
+
+1. **Voiceover script** — drop straight into ElevenLabs Speech Synthesis.
+2. **Time markers** — what the viewer sees while each line is spoken.
+3. **Voice & delivery settings** — recommended ElevenLabs voice + sliders.
+
+The animation is **50 seconds**. The script is **~138 words**, paced for a calm,
+thoughtful delivery that lands at roughly 50 seconds with the sliders below.
+If yours runs longer or shorter, adjust `stability` and `similarity_boost` first;
+tweak `style` last. ElevenLabs gives you the timing per word — read it against
+the markers and re-render the matching section if a line drifts.
+
+---
+
+## 1. The Script (paste into ElevenLabs)
+
+> People have been asking this for a very long time.
+>
+> Money, maybe. Fame. A family. Power. Success.
+> …and none of them feel quite right.
+>
+> The clock keeps ticking. The hourglass runs out.
+> You look around and wonder — was any of it enough?
+>
+> Maybe it isn't a destination.
+> Maybe it's something quieter than that.
+>
+> Maybe it's a quiet cup of coffee.
+> Someone's hand in yours.
+> A sky that someone painted just for tonight.
+> The laugh of a child who doesn't know they matter — yet does.
+>
+> You don't find the answer.
+> You make it.
+>
+> …and then you live it.
+
+---
+
+## 2. Time Markers (sync the audio to the visuals)
+
+| Time | Line spoken | What you see |
+|------|-------------|---------------|
+| 00:00–00:03 | (silence) | Title card: "what is the purpose of life?" — handwritten on a torn yellow card with washi tape and a doodle arrow |
+| 00:03–00:04 | "People have been asking this for a very long time." | A faint string of lights across the top |
+| 00:04–00:09 | "Money, maybe. Fame. A family. Power. Success. …and none of them feel quite right." | Five colored torn cards flash one after another: *money? fame? kids? power? success?* — then a red X crosses them out with "not quite." |
+| 00:09–00:16 | "The clock keeps ticking. The hourglass runs out. You look around and wonder — was any of it enough?" | Big ticking clock, hourglass, empty chair, photo of a heart with a crack. |
+| 00:16–00:23 | "Maybe it isn't a destination. Maybe it's something quieter than that." | "maybe it isn't a destination." — handwritten, with a doodle arrow under it. A paper plane flies across the bottom. |
+| 00:23–00:32 | "Maybe it's a quiet cup of coffee. Someone's hand in yours. A sky that someone painted just for tonight. The laugh of a child who doesn't know they matter — yet does." | Four vignettes, drawn in: a steaming coffee, an open hand, a sun setting behind mountains, a small child silhouette next to flowers. |
+| 00:32–00:40 | "You don't find the answer. You make it." | An envelope with a heart stamp, a folded paper plane, a tree growing branch by branch, and a green stamp circle: "LIVED • NOT • SOLVED". |
+| 00:40–00:46 | (silence) | A quiet watercolor landscape: mountains, a river with ripples, a single candle burning on a stand. |
+| 00:46–00:50 | "…and then you live it." | Final torn card: "you don't find the answer. you make it. — then you live it." A gold "PURPOSE • IS • A • VERB" stamp appears bottom-right. |
+
+---
+
+## 3. Voice & Delivery Settings
+
+**Recommended voice (ElevenLabs library):**
+- `Daniel` (calm, slightly British, male) — best for philosophical narration
+- `Adam` (deep, warm, American) — alternative if you want a podcast feel
+- `Matilda` (warm, soft, female) — alternative if you want a gentler tone
+- `Charlie` (conversational male) — works if the channel leans informal
+
+**Model:** Eleven Multilingual v2 (or the latest available).
+
+**Sliders (start here, adjust to taste):**
+| Setting | Value | Why |
+|---------|-------|-----|
+| Stability | **0.45** | Enough variation to feel human, not so much that it breaks the contemplative mood |
+| Similarity Boost | **0.70** | Holds the voice together; not stiff, not noisy |
+| Style Exaggeration | **0.20** | A touch of personality — pause before "you make it" |
+| Speaker Boost | **on** | Slight clarity lift |
+
+**Pacing notes:**
+- Add a comma after "very long time" (already in the script) — ElevenLabs reads it as a breath.
+- The ellipsis at "…and then you live it" should land with about a one-second pause before it. If your version rushes, insert a comma: "…and then, you live it."
+- The 40:00–46:00 silence is intentional — let the music carry the landscape. If you'd rather fill it, the line "So breathe." appears on screen; you can record it once and drop it in at low volume.
+
+**Output format for re-mux:**
+- Export the voice as a single **WAV, 48 kHz, 16-bit, mono** (or stereo if you EQ the music underneath). That gives ffmpeg the cleanest input for final assembly.
