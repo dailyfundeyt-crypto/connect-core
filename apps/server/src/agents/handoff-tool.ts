@@ -13,7 +13,7 @@
  */
 
 import { z } from "zod";
-import { HANDED_OVER } from "../../../shared/handoff-markers";
+import { HANDED_OVER } from "@connect/shared/handoff-markers";
 import type { GrantedTool } from "../plugins/tools";
 import type { RunAssertion } from "./callback-token";
 import type { HandoffDesk } from "./handoff";

@@ -21,4 +21,4 @@ export {
   mediaTypeOf,
   namesNoFormat,
   shouldClaimPaste,
-} from "../../../../shared/attachments";
+} from "@connect/shared/attachments";

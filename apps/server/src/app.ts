@@ -2,7 +2,7 @@ import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
-import { MAX_IMAGE_BYTES } from "../../shared/attachments";
+import { MAX_IMAGE_BYTES } from "@connect/shared/attachments";
 import {
   authoriseAgentCall,
   parseAgentToolCallInput,

@@ -5,8 +5,8 @@ import {
 } from "@copilotkit/runtime/v2";
 import { serve } from "bun";
 import { eq } from "drizzle-orm";
-import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
-import { workOwner } from "../../shared/work-owner";
+import { COMPUTER_GUIDANCE } from "@connect/shared/bot-prompt";
+import { workOwner } from "@connect/shared/work-owner";
 import { mintRunAssertion, readRunAssertion } from "./agents/callback-token";
 import { createAgentFetch } from "./agents/endpoint";
 import { askTheirOwnPerson, escalationTool } from "./agents/escalation";

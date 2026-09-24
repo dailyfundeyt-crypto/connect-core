@@ -2,7 +2,7 @@ import {
   attachmentUrl,
   classifyAttachment,
   MAX_EXTRACTED_CHARACTERS,
-} from "../../../shared/attachments";
+} from "@connect/shared/attachments";
 
 /**
  * What `load` hands back for an attachment id: the bytes and the metadata

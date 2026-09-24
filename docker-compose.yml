@@ -46,7 +46,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: server/Dockerfile
+      dockerfile: apps/server/Dockerfile
     # Named, and pullable, for the same reason as agent-computer below: a release publishes this
     # image, and a machine that can name it does not need a toolchain to build it. `pull_policy`
     # is what decides between the two, because a service carrying a `build` section builds by
@@ -73,7 +73,7 @@ services:
   agent-computer:
     build:
       context: .
-      dockerfile: agent-computer/Dockerfile
+      dockerfile: packages/agents/agent-computer/Dockerfile
     # Tagged explicitly because the supervisor starts one computer per Bot from this image by name,
     # and a Compose-derived name would change with the project.
     image: ${COMPUTER_IMAGE:-connect-agent-computer:latest}
@@ -146,7 +146,7 @@ services:
         condition: service_completed_successfully
     command: ["-config", "/opt/spire/conf/server.conf"]
     volumes:
-      - ./spire/server.conf:/opt/spire/conf/server.conf:ro
+      - ./development/spire-config/server.conf:/opt/spire/conf/server.conf:ro
       # Mounted at the directory the image already owns so SPIRE can create its datastore as uid 1000.
       - spire-server-data:/opt/spire/data
       - spire-server-socket:/tmp/spire-server/private
@@ -168,7 +168,7 @@ services:
       spire-init:
         condition: service_completed_successfully
     volumes:
-      - ./spire/agent.conf:/opt/spire/conf/agent.conf:ro
+      - ./development/spire-config/agent.conf:/opt/spire/conf/agent.conf:ro
       - spire-agent-socket:/tmp/spire-agent/public
       - spire-agent-data:/opt/spire/data
       # Read-only, and only so the docker workload attestor can see which container is asking.
@@ -182,7 +182,7 @@ services:
   supervisor:
     build:
       context: .
-      dockerfile: supervisor/Dockerfile
+      dockerfile: apps/supervisor/Dockerfile
     # Published by a release; see migrate above for what pull_policy decides.
     image: ${SUPERVISOR_IMAGE:-connect-supervisor:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
@@ -259,7 +259,7 @@ services:
   agent-bot:
     build:
       context: .
-      dockerfile: agent-bot/Dockerfile
+      dockerfile: packages/agents/agent-bot/Dockerfile
     # Published by a release; see migrate above for what pull_policy decides.
     image: ${BOT_IMAGE:-connect-agent-bot:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
@@ -342,7 +342,7 @@ services:
   agent-langgraph:
     build:
       context: .
-      dockerfile: agent-langgraph/Dockerfile
+      dockerfile: packages/agents/agent-langgraph/Dockerfile
     # Published by a release; see migrate above for what pull_policy decides.
     image: ${LANGGRAPH_IMAGE:-connect-agent-langgraph:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}

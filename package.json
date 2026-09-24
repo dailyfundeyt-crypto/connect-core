@@ -4,28 +4,36 @@
   "license": "MIT",
   "private": true,
   "packageManager": "bun@1.3.14",
-  "workspaces": [
-    "app",
-    "server",
-    "worker"
-  ],
+    "workspaces": [
+      "apps/app",
+      "apps/server",
+      "apps/worker",
+      "apps/landing",
+      "apps/supervisor",
+      "packages/shared",
+      "packages/agents/*"
+    ],
   "scripts": {
     "build": "bun run generate:app-config && bun run --filter '*' build",
-    "dev": "bun run generate:app-config && bun run --filter app --filter server --parallel dev",
-    "generate:app-config": "bun --env-file=.env scripts/generate-app-config.ts",
+    "dev": "bun run generate:app-config && bun run --filter apps/app --filter apps/server --parallel dev",
+    "dev:web": "bun run --filter apps/app dev",
+    "dev:server": "bun run --filter apps/server dev",
+    "dev:landing": "bun run --filter apps/landing dev",
+    "dev:desktop": "bun run --filter apps/desktop dev",
+    "generate:app-config": "bun --env-file=.env development/scripts/generate-app-config.ts",
     "format": "bunx biome format --write .",
     "format:check": "bunx biome format .",
     "lint": "bunx biome lint --error-on-warnings .",
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",
-    "test:ci": "bun scripts/test-ci.ts",
+    "test:ci": "bun development/scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",
-    "test:smoke": "CONNECT_SMOKE=1 bun test tests/smoke",
-    "test:live-screen": "CONNECT_LIVE_SCREEN=1 bun test agent-computer/tests/live-screen.test.ts agent-computer/tests/browser-close-announcement.test.ts",
-    "test:live-composio": "bun -e \"if (!process.env.COMPOSIO_API_KEY?.trim()) { console.error('COMPOSIO_API_KEY is empty or unset, so every case in this suite would skip and this command would still exit 0. Run it as COMPOSIO_API_KEY=... bun run test:live-composio.'); process.exit(1) }\" && CONNECT_LIVE_COMPOSIO=1 bun test server/tests/composio-live.test.ts",
-    "diagram": "bun scripts/architecture-diagram.ts",
-    "composio:smoke": "bun scripts/composio-smoke.ts",
-    "mock:knowledge": "bun scripts/mock-knowledge-mcp.ts"
+    "test:smoke": "CONNECT_SMOKE=1 bun test apps/server/tests/smoke",
+    "test:live-screen": "CONNECT_LIVE_SCREEN=1 bun test packages/agents/agent-computer/tests/live-screen.test.ts packages/agents/agent-computer/tests/browser-close-announcement.test.ts",
+    "test:live-composio": "bun -e \"if (!process.env.COMPOSIO_API_KEY?.trim()) { console.error('COMPOSIO_API_KEY is empty or unset, so every case in this suite would skip and this command would still exit 0. Run it as COMPOSIO_API_KEY=... bun run test:live-composio.'); process.exit(1) }\" && CONNECT_LIVE_COMPOSIO=1 bun test apps/server/tests/composio-live.test.ts",
+    "diagram": "bun development/scripts/architecture-diagram.ts",
+    "composio:smoke": "bun development/scripts/composio-smoke.ts",
+    "mock:knowledge": "bun development/scripts/mock-knowledge-mcp.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
@@ -36,5 +44,16 @@
     "typescript": "^5.9.3",
     "yaml": "^2.9.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@connect/app": "workspace:*",
+    "@connect/server": "workspace:*",
+    "@connect/worker": "workspace:*",
+    "@connect/shared": "workspace:*",
+    "@connect/agent-bot": "workspace:*",
+    "@connect/agent-computer": "workspace:*",
+    "@connect/agent-langgraph": "workspace:*",
+    "@connect/agent-mastra": "workspace:*",
+    "@connect/supervisor": "workspace:*"
+  },
+  "resolutions": {}
 }

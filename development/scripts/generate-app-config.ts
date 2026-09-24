@@ -3,20 +3,20 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import {
   createApplicationConfiguration,
   loadTenantPackage,
-} from "../server/src/tenant-package";
+} from "../../apps/server/src/tenant-package";
 
-const projectRoot = resolve(import.meta.dir, "..");
+const projectRoot = resolve(import.meta.dir, "../..");
 const configuredTenantPackageDirectory = process.env.TENANT_PACKAGE_DIR;
 const tenantPackageDirectory = configuredTenantPackageDirectory
   ? isAbsolute(configuredTenantPackageDirectory)
     ? configuredTenantPackageDirectory
-    : resolve(projectRoot, "server", configuredTenantPackageDirectory)
-  : resolve(projectRoot, "examples/fintech");
+    : resolve(projectRoot, configuredTenantPackageDirectory)
+  : resolve(projectRoot, "apps/examples/fintech");
 const tenantPackage = await loadTenantPackage(tenantPackageDirectory);
 const applicationConfiguration = createApplicationConfiguration(tenantPackage);
 const outputPath = resolve(
   projectRoot,
-  "app/src/lib/generated/application-config.ts",
+  "apps/app/src/lib/generated/application-config.ts",
 );
 
 await mkdir(dirname(outputPath), { recursive: true });

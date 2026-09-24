@@ -1,0 +1,22 @@
+{
+  "name": "@connect/shared",
+  "license": "MIT",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./attachments.ts",
+    "./bot-prompt": "./bot-prompt.ts",
+    "./work-owner": "./work-owner.ts",
+    "./handoff-markers": "./handoff-markers.ts",
+    "./attachments": "./attachments.ts",
+    "./hermes-profile": "./hermes-profile.ts",
+    "./routine-firing": "./routine-firing.ts",
+    "./user-content": "./user-content.ts",
+    "./agent-authorisation": "./agent-authorisation.ts",
+    "./listen-port": "./listen-port.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

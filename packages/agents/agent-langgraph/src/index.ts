@@ -11,8 +11,8 @@ import {
 } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { serve } from "bun";
-import { hasManagedAgentToken } from "../../shared/agent-authorisation";
-import { listenPort } from "../../shared/listen-port";
+import { hasManagedAgentToken } from "@connect/shared/agent-authorisation";
+import { listenPort } from "@connect/shared/listen-port";
 import { toLangChainMessages } from "./history";
 import { readReasoningEffort } from "./model-options";
 import { apiKeyOrPlaceholder, KEY_VARIABLE, keyIsRequired } from "./model-key";

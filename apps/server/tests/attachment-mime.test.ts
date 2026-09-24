@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyAttachment, namesNoFormat } from "../../shared/attachments";
+import { classifyAttachment, namesNoFormat } from "@connect/shared/attachments";
 import { sniffMimeType } from "../src/channels/attachment-mime";
 
 /**

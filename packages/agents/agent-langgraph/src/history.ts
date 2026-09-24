@@ -13,8 +13,8 @@ import {
   SystemMessage,
   ToolMessage,
 } from "@langchain/core/messages";
-import { COMPUTER_GUIDANCE, NO_ANSWER_CAME } from "../../shared/bot-prompt";
-import { userContent } from "../../shared/user-content";
+import { COMPUTER_GUIDANCE, NO_ANSWER_CAME } from "@connect/shared/bot-prompt";
+import { userContent } from "@connect/shared/user-content";
 
 /*
  * Re-exported so this module's own tests and callers keep reading it from here, while the wording

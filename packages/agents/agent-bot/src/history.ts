@@ -7,8 +7,8 @@
  */
 import type { RunAgentInput } from "@ag-ui/core";
 import type OpenAI from "openai";
-import { COMPUTER_GUIDANCE, NO_ANSWER_CAME } from "../../shared/bot-prompt";
-import { userContent } from "../../shared/user-content";
+import { COMPUTER_GUIDANCE, NO_ANSWER_CAME } from "@connect/shared/bot-prompt";
+import { userContent } from "@connect/shared/user-content";
 
 export { NO_ANSWER_CAME };
 

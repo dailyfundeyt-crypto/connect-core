@@ -3,7 +3,7 @@ import {
   ACCEPTED_TEXT_MIME,
   mediaTypeOf,
   namesNoFormat,
-} from "../../../shared/attachments";
+} from "@connect/shared/attachments";
 
 /**
  * The text claims this function will hand back under their own name.

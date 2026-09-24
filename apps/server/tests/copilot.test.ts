@@ -6,7 +6,7 @@ import { HttpAgent } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
 import { BuiltInAgent } from "@copilotkit/runtime/v2";
 import { EMPTY } from "rxjs";
-import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
+import { PROVENANCE_GUIDANCE } from "@connect/shared/bot-prompt";
 import { MAX_INLINED_BYTES_PER_RUN } from "../src/channels/attachment-parts";
 import { loadConfig } from "../src/config";
 import type { LoadAttachment } from "../src/copilot";

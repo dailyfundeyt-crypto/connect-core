@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { frameFiring } from "../../shared/routine-firing";
+import { frameFiring } from "@connect/shared/routine-firing";
 import { isPersonSentMessage } from "../src/components/channels/chat-transcript";
 
 /**

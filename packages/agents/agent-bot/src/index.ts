@@ -2,8 +2,8 @@ import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { serve } from "bun";
 import OpenAI from "openai";
-import { hasManagedAgentToken } from "../../shared/agent-authorisation";
-import { listenPort } from "../../shared/listen-port";
+import { hasManagedAgentToken } from "@connect/shared/agent-authorisation";
+import { listenPort } from "@connect/shared/listen-port";
 import { toProviderMessages } from "./history";
 import {
   apiKeyOrPlaceholder,

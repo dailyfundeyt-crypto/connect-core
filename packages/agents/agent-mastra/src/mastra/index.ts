@@ -15,7 +15,7 @@
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { registerApiRoute } from "@mastra/core/server";
-import { listenPort } from "../../../shared/listen-port";
+import { listenPort } from "@connect/shared/listen-port";
 
 async function configuredModel() {
   const provider = process.env.BOT_PROVIDER?.trim() || "openai";

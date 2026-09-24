@@ -2,7 +2,7 @@
 export type AppConfig = { brand: { tenantId: string; productName: string } };
 export const appConfig: AppConfig = {
   "brand": {
-    "tenantId": "connect",
+    "tenantId": "dev",
     "productName": "Connect"
   }
 };

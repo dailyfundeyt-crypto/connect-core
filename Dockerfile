@@ -1,7 +1,7 @@
-# OpenBot, whole, in one container.
+# Connect, whole, in one container.
 #
 # WHAT THIS IS FOR. Everything a laptop runs, minus the database, in one image on one port. Deploy it
-# anywhere that runs a container and you get what `scripts/start.sh` gives you locally: the app, the
+# anywhere that runs a container and you get what `development/scripts/start.sh` gives you locally: the app, the
 # API, and a browser the Bots can drive.
 #
 # WHAT IS NOT HERE, AND WHY.
@@ -15,7 +15,7 @@
 #   as they do on a laptop with no supervisor configured. Per-Bot isolation is A6.
 #
 # Chromium comes from Playwright's own installer, but the final image is not Playwright's all-browser
-# image. Keep this version matched to `agent-computer/package.json`: bump both or neither.
+# image. Keep this version matched to `packages/agents/agent-computer/package.json`: bump both or neither.
 
 FROM node:24.18.1-bookworm-slim AS node-toolchain
 FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS bun-toolchain
@@ -50,41 +50,42 @@ FROM base AS deps
 WORKDIR /src
 
 # Manifests first, so editing a source file does not reinstall the world.
-COPY package.json bun.lock ./
-COPY tsconfig.base.json bunfig.toml ./
-COPY app/package.json app/package.json
-COPY server/package.json server/package.json
-COPY worker/package.json worker/package.json
+COPY package.json bunfig.toml ./
+COPY tsconfig.base.json ./
+COPY apps/app/package.json apps/app/package.json
+COPY apps/server/package.json apps/server/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/agents packages/agents
 RUN bun install --frozen-lockfile
 
 # The lockfile travels with the manifest, because `--frozen-lockfile` with no lockfile in the context
 # is not an error: bun resolves afresh, succeeds, and the flag has decorated nothing. With both files
 # here, the tree in the image is the tree this repository resolved and committed. Bun is already
 # pinned twenty-odd lines above for the same reason; this is the install below it.
-COPY agent-computer/package.json agent-computer/package.json
-COPY agent-computer/bun.lock agent-computer/bun.lock
-RUN cd agent-computer && bun install --frozen-lockfile
+COPY packages/agents/agent-computer/package.json packages/agents/agent-computer/package.json
+COPY packages/agents/agent-computer/bun.lock packages/agents/agent-computer/bun.lock
+RUN cd packages/agents/agent-computer && bun install --frozen-lockfile
 
 # A second tree with the build-time dependencies left out, for the runtime stage to take. Vite,
 # biome and the test tooling are a gigabyte that nothing in a running container imports.
 RUN mkdir -p /prod && cp package.json bun.lock /prod/ \
-  && cd /prod && mkdir -p app server worker \
-  && cp /src/app/package.json app/package.json \
-  && cp /src/server/package.json server/package.json \
-  && cp /src/worker/package.json worker/package.json \
+  && cd /prod && mkdir -p apps/app apps/server apps/worker \
+  && cp /src/apps/app/package.json apps/app/package.json \
+  && cp /src/apps/server/package.json apps/server/package.json \
+  && cp /src/apps/worker/package.json apps/worker/package.json \
   && bun install --frozen-lockfile --production
 
 
 FROM deps AS app-build
 
-COPY app app
-COPY scripts scripts
-COPY shared shared
+COPY apps/app apps/app
+COPY development/scripts development/scripts
+COPY packages/shared packages/shared
 # The server's source as well: the app's prebuild step reads the tenant package through
-# `server/src/tenant-package`, so the app cannot be built without it.
-COPY server server
-COPY examples examples
-RUN bun run --cwd app build
+# `apps/server/src/tenant-package`, so the app cannot be built without it.
+COPY apps/server apps/server
+RUN bun run --filter apps/app build
 
 
 FROM base AS runtime
@@ -116,41 +117,40 @@ WORKDIR /app
 # beside each manifest holding the rest. The server's half used to be taken from /src, which is the
 # unpruned install, so the prune above bought nothing where the server actually resolves — and
 # `@copilotkit/aimock`, a development dependency, shipped as a symlink into a store the prune had
-# emptied, along with the two `.bin` shims pointing at it. Every dependency `server/package.json`
+# emptied, along with the two `.bin` shims pointing at it. Every dependency `apps/server/package.json`
 # declares resolves from the /prod half; the ones it does not declare are absent now rather than
 # present and broken.
 COPY --from=deps /prod/node_modules node_modules
-COPY --from=deps /prod/server/node_modules server/node_modules
+COPY --from=deps /prod/apps/server/node_modules apps/server/node_modules
 COPY --from=deps /src/package.json package.json
 COPY --from=deps /src/bun.lock bun.lock
 # The browser's tree is a separate install root with its own lockfile rather than a workspace of the
 # one above, so there is no /prod half of it to take and it ships as resolved, `typescript` included.
 # Pruning it would mean a second `--production` install in the stage above.
-COPY --from=deps /src/agent-computer/node_modules agent-computer/node_modules
+COPY --from=deps /src/packages/agents/agent-computer/node_modules packages/agents/agent-computer/node_modules
 
-COPY server server
-COPY shared shared
-COPY examples examples
-COPY agent-computer/src agent-computer/src
-COPY agent-computer/package.json agent-computer/package.json
+COPY apps/server apps/server
+COPY packages/shared packages/shared
+COPY packages/agents/agent-computer/src packages/agents/agent-computer/src
+COPY packages/agents/agent-computer/package.json packages/agents/agent-computer/package.json
 
 # `bun run composio:smoke`, because the manifest copied above carries that entry and the question it
 # answers belongs here rather than on a laptop: it asks what THIS deployment's Composio key can see,
-# and that key is the one in this container's environment. It reads `server/src/plugins/composio*`,
+# and that key is the one in this container's environment. It reads `apps/server/src/plugins/composio*`,
 # which is already in the image, so the file itself was the only thing missing and the entry was an
 # instruction that could not be followed where it shipped.
 #
-# ONE FILE, NOT `scripts/`. The others there are the laptop's. `diagram` and `mock:knowledge` reach
+# ONE FILE, NOT `development/scripts/`. The others there are the laptop's. `diagram` and `mock:knowledge` reach
 # for `roughjs` and `@copilotkit/aimock`, which the prune above removes; `test:ci` runs a suite that
 # is not in the image; `generate:app-config` writes a file the build has already baked into
-# `app/dist`. Copying the directory ships four more entries with nothing to do here, to fix one that
+# `apps/app/dist`. Copying the directory ships four more entries with nothing to do here, to fix one that
 # has something to do.
-COPY scripts/composio-smoke.ts scripts/composio-smoke.ts
+COPY development/scripts/composio-smoke.ts development/scripts/composio-smoke.ts
 
 # The built app, served by the API on the same origin. There is no CORS in this server, so this is
 # not a convenience: two origins would simply fail.
-COPY --from=app-build /src/app/dist app/dist
-ENV APP_DIST_DIR=/app/app/dist
+COPY --from=app-build /src/apps/app/dist apps/app/dist
+ENV APP_DIST_DIR=/app/apps/app/dist
 
 COPY docker/s6 /etc/s6-overlay
 
@@ -238,7 +238,7 @@ RUN mkdir -p /workspace /profiles \
 # Where the embedded database answers, when there is one. Overridden by whatever you set, so an
 # external database needs no special case: set DATABASE_URL and EMBEDDED_POSTGRES stays off.
 ENV EMBEDDED_POSTGRES=off
-ENV DATABASE_URL=postgres://openbot@127.0.0.1:5432/openbot
+ENV DATABASE_URL=postgres://connect@127.0.0.1:5432/connect
 
 ENV NODE_ENV=production
 ENV PORT=3001

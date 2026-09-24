@@ -14,8 +14,8 @@ import {
   COMPUTER_GUIDANCE,
   HERMES_GUIDANCE,
   PROVENANCE_GUIDANCE,
-} from "../../shared/bot-prompt";
-import { filterHermesTools } from "../../shared/hermes-profile";
+} from "@connect/shared/bot-prompt";
+import { filterHermesTools } from "@connect/shared/hermes-profile";
 import { sanitizeSeededHistory } from "./agents/history-sanitize";
 import {
   PLAN_RUN_COMPLETED,

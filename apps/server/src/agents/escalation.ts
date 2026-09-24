@@ -19,7 +19,7 @@
  */
 
 import { z } from "zod";
-import { PUT_TO } from "../../../shared/handoff-markers";
+import { PUT_TO } from "@connect/shared/handoff-markers";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { GrantedTool } from "../plugins/tools";
 import type { RunAssertion } from "./callback-token";

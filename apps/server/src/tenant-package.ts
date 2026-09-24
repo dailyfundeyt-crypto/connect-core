@@ -312,7 +312,8 @@ function stringArray(value: unknown, name: string): string[] {
 
 function yaml(value: string, filename: string): Record<string, unknown> {
   try {
-    return asRecord(parse(value), filename);
+    const parsed = parse(value);
+    return asRecord(parsed, filename);
   } catch (error) {
     throw new Error(
       `${filename} is invalid: ${error instanceof Error ? error.message : "unknown error"}`,

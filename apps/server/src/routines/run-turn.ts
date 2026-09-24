@@ -55,7 +55,7 @@ import type {
   RunAgentInput,
 } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
-import { frameFiring } from "../../../shared/routine-firing";
+import { frameFiring } from "@connect/shared/routine-firing";
 import { sanitizeSeededHistory } from "../agents/history-sanitize";
 import type { AuditInitiator } from "../audit";
 import { historyOrEmpty } from "../copilot";

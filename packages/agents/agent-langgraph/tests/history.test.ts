@@ -7,7 +7,7 @@ import {
   ToolMessage,
 } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
+import { COMPUTER_GUIDANCE } from "@connect/shared/bot-prompt";
 import { NO_ANSWER_CAME, toLangChainMessages } from "../src/history";
 
 /**
