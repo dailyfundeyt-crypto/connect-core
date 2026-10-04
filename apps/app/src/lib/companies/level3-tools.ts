@@ -306,47 +306,27 @@ const SEED_GROUP_LABELS = new Set([
   "ai",
 ]);
 
-function runClearDefaultsMigration(
-  state: Level3BrowserState,
-): Level3BrowserState {
-  if (typeof window === "undefined") return state;
-
-  // Check migration flag first (fast path — no JSON parsing on every call)
-  const rawAll = window.localStorage.getItem(KEY);
-  if (!rawAll) return state;
-
-  try {
-    const all = JSON.parse(rawAll) as Record<string, Level3BrowserState>;
-    const entry = all[state.companyId];
-    if (!entry) return state;
-    if (entry[MIGRATION_KEY]) return state;
-  } catch {
-    return state;
-  }
-
-  const cleaned = (entry: Level3BrowserState): Level3BrowserState => ({
-    ...entry,
-    tabGroups: (entry.tabGroups ?? []).filter((g) => {
-      if (SEED_GROUP_IDS.has(g.id)) return false;
-      const label = (g.label ?? "").toLowerCase().trim();
-      if (SEED_GROUP_LABELS.has(label)) return false;
-      return true;
-    }),
-    [MIGRATION_KEY]: true,
+/**
+ * One-time cleanup of the seeded defaults, so the list is empty on first load after the change.
+ *
+ * Older state holds the seeded groups (Technische, Fundamentals, Sentimentalle, Sektorielle, Build,
+ * AI) and, for some companies, groups that were only ever a copy of one app. Both are removed --
+ * an entry that references a deleted group keeps the apps themselves, so nothing is lost, only the
+ * pre-made grouping.
+ *
+ * Runs inside readAll() rather than as a second pass over localStorage: the repair for quoted keys
+ * writes the map back, and a second pass afterwards would read its own output and race it.
+ * The flag is stored per company so one company being cleared does not clear the rest.
+ */
+function clearSeededGroups(companyId: string, entry: Level3BrowserState): Level3BrowserState {
+  if (entry[MIGRATION_KEY]) return entry;
+  const kept = (entry.tabGroups ?? []).filter((g) => {
+    if (SEED_GROUP_IDS.has(g.id)) return false;
+    const label = (g.label ?? "").toLowerCase().trim();
+    if (SEED_GROUP_LABELS.has(label)) return false;
+    return true;
   });
-
-  try {
-    const all = JSON.parse(rawAll) as Record<string, Level3BrowserState>;
-    const entry = all[state.companyId];
-    if (entry && !entry[MIGRATION_KEY]) {
-      all[state.companyId] = cleaned(entry);
-      window.localStorage.setItem(KEY, JSON.stringify(all));
-    }
-  } catch {
-    // Non-fatal: skip migration silently.
-  }
-
-  return state;
+  return { ...entry, tabGroups: kept, [MIGRATION_KEY]: true };
 }
 
 function readAll(): Record<string, Level3BrowserState> {
@@ -355,10 +335,33 @@ function readAll(): Record<string, Level3BrowserState> {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return healQuotedCompanyKeys(parsed);
+    const healed = healQuotedCompanyKeys(parsed);
+    return clearSeededGroupsInAll(healed);
   } catch {
     return {};
   }
+}
+
+/** Apply the seeded-group cleanup to every company at once, writing back only if something changed. */
+function clearSeededGroupsInAll(
+  map: Record<string, Level3BrowserState>,
+): Record<string, Level3BrowserState> {
+  let changed = false;
+  const out: Record<string, Level3BrowserState> = {};
+  for (const [companyId, entry] of Object.entries(map)) {
+    const next = clearSeededGroups(companyId, entry);
+    if (next !== entry) changed = true;
+    out[companyId] = next;
+  }
+  if (changed) {
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(out));
+      window.dispatchEvent(new Event(EVENT));
+    } catch {
+      /* quota -- the in-memory map is still correct for this session */
+    }
+  }
+  return out;
 }
 
 /**
@@ -540,8 +543,9 @@ function withSplitExample(state: Level3BrowserState): Level3BrowserState {
 }
 
 export function getLevel3Browser(companyId: string): Level3BrowserState {
-  const state = withSplitExample(readLevel3Browser(companyId));
-  return runClearDefaultsMigration(state);
+  // withSplitExample is a no-op (SEED_DISABLED); readLevel3Browser already applies the
+  // seeded-group cleanup via readAll().
+  return withSplitExample(readLevel3Browser(companyId));
 }
 
 function readLevel3Browser(companyId: string): Level3BrowserState {
@@ -620,15 +624,31 @@ export function subscribeLevel3Browser(cb: () => void): () => void {
   };
 }
 
+/**
+ * Every app the sidebar shows.
+ *
+ * This used to return the built-in catalogue (LAB_APP_ICONS) plus the person's own apps, so the
+ * 21 seeded entries -- MarketTrace, TradingView, BTCUSDT, Claude, Cursor and so on -- were always
+ * on screen, could not be deleted, and reappeared on every company. The catalogue is still around
+ * for resolveLabApp() so an already-saved app keeps a working URL, but it is no longer part of what
+ * the person sees: the list starts empty and holds only what they added.
+ */
 export function allLabApps(state: Level3BrowserState): LabApp[] {
-  return [...LAB_APP_ICONS, ...state.customApps];
+  return [...state.customApps];
 }
 
+/**
+ * Look an app up by id across the person's own apps and the built-in catalogue.
+ * Used for URL/icon resolution of apps saved before the list became empty-by-default, so those
+ * keep working without reappearing in the sidebar.
+ */
 export function resolveLabApp(
   state: Level3BrowserState,
   appId: string = state.activeTool,
 ): LabApp | undefined {
-  return allLabApps(state).find((a) => a.id === appId);
+  const own = state.customApps.find((a) => a.id === appId);
+  if (own) return own;
+  return LAB_APP_ICONS.find((a) => a.id === appId);
 }
 
 export function getConnection(
