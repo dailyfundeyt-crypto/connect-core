@@ -95,8 +95,14 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-white/30">{children}</p>;
 }
 
-function CardRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-2">{children}</div>;
+function CardRow({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("grid grid-cols-2 gap-2", className)}>{children}</div>;
 }
 
 /** Export to check if mobile viewport */

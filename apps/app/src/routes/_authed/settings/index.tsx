@@ -17,6 +17,19 @@ import { ErweitertPanel } from "@/components/settings/erweitert-panel";
 import { ProfileEditDialog } from "@/components/settings/profile-edit-dialog";
 import { SettingsOverview } from "@/components/settings/settings-overview";
 import { SettingsSidebar } from "@/components/settings/settings-sidebar";
+import { ApiKeysSettingsPanel } from "@/components/settings/api-keys-settings";
+import { CompanySettingsPanel } from "@/components/settings/company-settings";
+import { CodexUsagePanel } from "@/components/settings/codex-usage-panel";
+import { DeploymentModePanel } from "@/components/settings/deployment-mode-panel";
+import { DonatePanel } from "@/components/settings/donate-panel";
+import { DriveBackupPanel } from "@/components/settings/drive-backup-panel";
+import { McpConnectorMappingPanel } from "@/components/settings/mcp-connector-mapping";
+import { ModelProviderSettingsPanel } from "@/components/settings/model-provider-settings";
+import { ShortcutsPanel } from "@/components/settings/shortcuts-panel";
+import { StandingInstructions } from "@/components/settings/standing-instructions";
+import { SupabaseSyncCard } from "@/components/settings/supabase-sync-card";
+import { UbuntuMachinesPanel } from "@/components/settings/ubuntu-machines-settings";
+import { VoiceSettingsPanel } from "@/components/settings/voice-settings";
 import {
   getLabPrefs,
   subscribeLabPrefs,
@@ -47,6 +60,49 @@ function useAutoSave() {
   }, []);
 
   return { savedAt, triggerSave };
+}
+
+// ─── Panel router ─────────────────────────────────────────────────────────────
+//
+// The sidebar (components/settings/settings-sidebar.tsx) links to 19 hashes. Each one now
+// resolves to the panel component that was written for it. Before this map existed the panels
+// were written but never rendered: every sidebar item pointed at a section id that no longer
+// existed, so all 19 entries scrolled nowhere.
+//
+// `SettingsItemBackground` is deliberately absent — it is an SVG backdrop for the admin
+// components pages, not a settings panel.
+
+const PANELS: Record<string, React.ComponentType | null> = {
+  // Konto & Sicherheit
+  profile: CompanySettingsPanel,
+  security: null, // rendered inline below (session list)
+  // Verbindungen
+  "api-keys": ApiKeysSettingsPanel,
+  "model-provider": ModelProviderSettingsPanel,
+  "connector-mapping": McpConnectorMappingPanel,
+  "ubuntu-machines": UbuntuMachinesPanel,
+  voice: VoiceSettingsPanel,
+  // System & Hilfe
+  "sync-backup": DriveBackupPanel,
+  erweitert: ErweitertPanel,
+  shortcuts: ShortcutsPanel,
+  "standing-instructions": StandingInstructions,
+  donate: DonatePanel,
+  "deployment-mode": DeploymentModePanel,
+  "codex-usage": CodexUsagePanel,
+  info: null, // rendered inline below
+  privacy: null, // rendered inline below (Datenschutz)
+  terms: null, // rendered inline below (Nutzungsbedingungen)
+};
+
+function PanelOutlet({ hash }: { hash: string }) {
+  const Panel = PANELS[hash];
+  if (!Panel) return null;
+  return (
+    <div className="mb-8">
+      <Panel />
+    </div>
+  );
 }
 
 // ─── Collapsible section ──────────────────────────────────────────────────────
@@ -211,7 +267,7 @@ function RouteComponent() {
     return "Strg+Shift+Y";
   });
 
-  // Read hash from URL for sidebar highlighting and scroll-to-section
+  // Read hash from URL for sidebar highlighting and panel selection
   const [hash, setHash] = useState(() =>
     typeof window !== "undefined" ? window.location.hash.replace("#", "") : "",
   );
@@ -225,14 +281,12 @@ function RouteComponent() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  // Scroll to hash section when hash changes
+  // Scroll to top when the hash changes. The hash now selects a panel (PanelOutlet) instead of
+  // anchoring to an in-page section, so the previous scrollIntoView lookup found nothing — every
+  // entry landed at the same scroll offset. Starting at the top is what makes each panel read as
+  // its own page.
   useEffect(() => {
-    if (hash) {
-      const el = document.getElementById(hash);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }
+    document.getElementById("settings-scroll")?.scrollTo({ top: 0 });
   }, [hash]);
 
   useEffect(
@@ -268,7 +322,7 @@ function RouteComponent() {
       <SettingsSidebar activeHash={hash} />
 
       {/* Content pane */}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[#000]">
+      <div id="settings-scroll" className="min-h-0 flex-1 overflow-y-auto bg-[#000]">
         {/* When no hash: show the overview */}
         {!hash && <SettingsOverview />}
 
@@ -279,6 +333,8 @@ function RouteComponent() {
             !hash ? "pt-0" : "pt-8",
           )}
         >
+          {/* Hash-addressed panel (the sidebar's 19 entries resolve here) */}
+          <PanelOutlet hash={hash} />
           {/* Back */}
           <div className="mb-6 flex items-center">
             <Button

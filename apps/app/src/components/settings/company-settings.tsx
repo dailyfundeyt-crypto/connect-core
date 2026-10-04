@@ -27,6 +27,7 @@ import {
  * Edit company name, description, and profile image from Settings.
  */
 export function CompanySettingsPanel() {
+  const navigate = useNavigate();
   const [companies, setCompanies] = useState(() => listCompanies());
   const [editingId, setEditingId] = useState<string | null>(null);
 
