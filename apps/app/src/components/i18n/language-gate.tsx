@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PublicLegalFooter } from "@/components/legal/public-legal-footer";
 import { Button } from "@/components/ui/button";
 import {
   getLocale,
@@ -29,7 +30,7 @@ export function LanguageGate({ children }: { children: React.ReactNode }) {
   if (locale) return children;
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-[#0a0a0a] px-6 py-10 text-white">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-[#0a0a0a] px-6 py-10 text-white">
       <div className="w-full max-w-2xl space-y-6 rounded-3xl border border-white/15 bg-white/[0.06] p-8 backdrop-blur-xl">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
@@ -56,6 +57,7 @@ export function LanguageGate({ children }: { children: React.ReactNode }) {
           ))}
         </div>
       </div>
+      <PublicLegalFooter dark />
     </div>
   );
 }

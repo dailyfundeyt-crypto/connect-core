@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { ProviderLogo } from "@/components/auth/provider-logo";
+import { PublicLegalFooter } from "@/components/legal/public-legal-footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -211,6 +212,7 @@ function SignScreen() {
           ) : null}
         </motion.div>
       </motion.div>
+      <PublicLegalFooter />
     </div>
   );
 }

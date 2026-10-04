@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Datenschutzerklärung – Connect</title>
+    <meta name="description" content="Datenschutzerklärung der Anwendung Connect (Kunc GmbH): Google-Anmeldung, Google-Drive-Sicherung (drive.file), Hosting, Speicherung, Verschlüsselung, Löschung und deine Rechte nach der DSGVO." />
+    <link rel="icon" href="/brand/connect-logo.png" type="image/png" />
+    <style>
+      :root { color-scheme: light dark; --bg:#ffffff; --fg:#0f172a; --muted:#475569; --line:#e2e8f0; --accent:#2563eb; --warn-bg:#fef3c7; --warn-fg:#92400e; }
+      @media (prefers-color-scheme: dark) { :root { --bg:#0b1120; --fg:#e2e8f0; --muted:#94a3b8; --line:#1e293b; --accent:#60a5fa; --warn-bg:#422006; --warn-fg:#fcd34d; } }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+      header, main, footer { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+      header { display:flex; align-items:center; gap:12px; padding-top:28px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+      header img { width:36px; height:36px; object-fit:contain; }
+      header a.brand { display:flex; align-items:center; gap:12px; color:inherit; text-decoration:none; font-weight:600; font-size:20px; }
+      main { padding-top:12px; padding-bottom:40px; }
+      h1 { font-size:30px; line-height:1.25; margin:24px 0 4px; letter-spacing:-0.01em; }
+      h2 { font-size:20px; margin:32px 0 8px; }
+      h3 { font-size:17px; margin:20px 0 6px; }
+      p, li { color:var(--fg); }
+      .muted { color:var(--muted); }
+      a { color:var(--accent); }
+      code { font-size:0.92em; background:var(--line); padding:1px 5px; border-radius:4px; }
+      .placeholder { background:var(--warn-bg); color:var(--warn-fg); padding:2px 6px; border-radius:4px; font-weight:600; }
+      table { border-collapse:collapse; width:100%; font-size:15px; }
+      th, td { text-align:left; vertical-align:top; border-bottom:1px solid var(--line); padding:8px 6px; }
+      footer { border-top:1px solid var(--line); padding-top:16px; padding-bottom:32px; font-size:14px; color:var(--muted); }
+      footer a { margin-right:14px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/"><img src="/brand/connect-logo.png" alt="Connect Logo" width="36" height="36" /> Connect</a>
+    </header>
+    <main>
+      <h1>Datenschutzerklärung</h1>
+      <p class="muted">für die Anwendung „Connect“ · Stand: 4. Oktober 2026</p>
+
+      <p>Diese Datenschutzerklärung erklärt, welche personenbezogenen Daten bei der Nutzung von Connect (Web-App unter <code>connect-kunc-preview.vercel.app</code>, Desktop-App „Connect“ und zugehörige Apps) verarbeitet werden, wofür, auf welcher Rechtsgrundlage und welche Rechte du hast. Sie richtet sich nach der Datenschutz-Grundverordnung (DSGVO).</p>
+
+      <h2>1. Verantwortlicher</h2>
+      <p>Kunc GmbH, vertreten durch Stefan Kunc<br />
+        <span class="placeholder">[POSTANSCHRIFT FEHLT – bitte eintragen: Straße und Hausnummer, PLZ Ort, Land]</span><br />
+        E-Mail: <a href="mailto:stefankunc994@gmail.com">stefankunc994@gmail.com</a></p>
+      <p>Für alle Fragen zum Datenschutz und zur Ausübung deiner Rechte erreichst du uns unter dieser E-Mail-Adresse.</p>
+
+      <h2>2. Was Connect ist</h2>
+      <p>Connect ist ein Arbeitsbereich für KI-Agenten: Du legst Firmen, Projekte und Agenten an, chattest mit ihnen, verwaltest Wissen und Einstellungen und kannst deine Daten verschlüsselt in deinem eigenen Google Drive sichern.</p>
+
+      <h2>3. Welche Daten wir verarbeiten</h2>
+      <h3>3.1 Anmeldung mit Google (Google Sign-In)</h3>
+      <p>Wenn du dich mit Google anmeldest, fragt Connect nur die Berechtigungen <code>openid</code>, <code>email</code> und <code>profile</code> an. Dabei erhalten wir von Google:</p>
+      <ul>
+        <li>deine Google-Konto-ID (eindeutige Kennung),</li>
+        <li>deine E-Mail-Adresse und ob sie bestätigt ist,</li>
+        <li>deinen Namen und dein Profilbild (sofern in deinem Google-Konto hinterlegt).</li>
+      </ul>
+      <p>Wir nutzen diese Daten ausschließlich, um dein Nutzerkonto anzulegen, dich bei jeder Anmeldung wiederzuerkennen, deinen Namen und dein Bild in der App anzuzeigen und dich bei Bedarf zu kontaktieren (z. B. bei Sicherheitsfragen oder Anfragen von dir). Ein Passwort wird von Connect nicht gespeichert. Nach der Anmeldung setzt Connect ein Sitzungs-Cookie, das technisch notwendig ist, damit du angemeldet bleibst.</p>
+
+      <h3>3.2 Google-Drive-Sicherung (optional)</h3>
+      <p>Nur wenn du die Sicherung in den Einstellungen selbst aktivierst, fragt Connect zusätzlich die Berechtigung <code>https://www.googleapis.com/auth/drive.file</code> an. Mit dieser Berechtigung kann Connect <strong>nur auf Dateien und Ordner zugreifen, die Connect selbst angelegt hat</strong>. Connect kann deine übrigen Dateien in Google Drive weder sehen noch lesen, ändern oder löschen.</p>
+      <ul>
+        <li>Connect legt in deinem Drive den Ordner „Connect Backup“ an und speichert dort Sicherungsdateien deiner Connect-Daten.</li>
+        <li>Jede Sicherung wird vor dem Hochladen mit AES-256-GCM verschlüsselt. Ohne den Schlüssel deiner Connect-Installation sind die Dateien nicht lesbar, auch nicht für Google.</li>
+        <li>Connect liest diese Dateien nur, um eine von dir gestartete Wiederherstellung durchzuführen und um alte Sicherungen nach der eingestellten Aufbewahrung (z. B. neueste 24 Sicherungen plus eine pro Tag für 30 Tage) zu entfernen.</li>
+        <li>Das von Google ausgestellte Zugriffstoken wird verschlüsselt auf dem Server gespeichert und nur für diese Sicherung verwendet. Du kannst die Verbindung jederzeit in Connect trennen oder unter <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a> widerrufen.</li>
+      </ul>
+
+      <h3>3.3 Inhalte, die du in Connect anlegst</h3>
+      <p>Damit Connect funktioniert, speichern wir die Inhalte, die du selbst anlegst: Firmen, Projekte, Agenten und deren Einstellungen, Kanäle und Chat-Nachrichten, hochgeladene Bilder (z. B. Logos, Profilbilder), Notizen und App-Einstellungen. Von dir hinterlegte API-Schlüssel für andere Dienste werden verschlüsselt gespeichert (AES-256-GCM) und nur verwendet, um in deinem Auftrag mit diesen Diensten zu sprechen.</p>
+
+      <h3>3.4 Technische Daten</h3>
+      <p>Beim Aufruf der Web-App verarbeitet unser Hosting-Anbieter technisch notwendige Daten wie IP-Adresse, Zeitpunkt, aufgerufene Adresse, Browser-Typ und Fehlermeldungen in Server-Protokollen. Diese dienen nur dem sicheren Betrieb und der Fehlersuche. Wir setzen keine Werbe- oder Tracking-Cookies und keine Analyse-Dienste zu Werbezwecken ein.</p>
+
+      <h2>4. Zwecke und Rechtsgrundlagen</h2>
+      <table>
+        <tr><th>Zweck</th><th>Rechtsgrundlage</th></tr>
+        <tr><td>Bereitstellung von Connect, Anmeldung, Speichern deiner Inhalte</td><td>Art. 6 Abs. 1 lit. b DSGVO (Vertrag/Nutzungsverhältnis)</td></tr>
+        <tr><td>Google-Drive-Sicherung</td><td>Art. 6 Abs. 1 lit. a DSGVO (deine Einwilligung, die du durch Aktivieren erteilst und jederzeit widerrufen kannst) sowie lit. b</td></tr>
+        <tr><td>Sicherer Betrieb, Missbrauchsabwehr, Fehlersuche (Server-Protokolle)</td><td>Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einem sicheren Dienst)</td></tr>
+        <tr><td>Erfüllung gesetzlicher Pflichten</td><td>Art. 6 Abs. 1 lit. c DSGVO</td></tr>
+      </table>
+
+      <h2>5. Empfänger und Auftragsverarbeiter</h2>
+      <p>Wir verkaufen keine personenbezogenen Daten und geben sie nicht zu Werbezwecken weiter. Daten gehen nur an Dienstleister, die wir für den Betrieb brauchen, auf Grundlage von Verträgen zur Auftragsverarbeitung (Art. 28 DSGVO):</p>
+      <ul>
+        <li><strong>Vercel Inc.</strong> (USA): Hosting der Web-App; Server-Funktionen laufen in der Region Frankfurt (fra1).</li>
+        <li><strong>Supabase Inc.</strong> (USA): Datenbank für Konten und Inhalte; Datenbank-Standort Frankfurt (eu-central-1).</li>
+        <li><strong>Google</strong> (Google Ireland Ltd. / Google LLC): Anmeldung mit Google und, falls aktiviert, Speicherung der verschlüsselten Sicherungen in deinem Google Drive.</li>
+        <li><strong>KI- und Zusatzdienste, die du selbst auswählst</strong>: Wenn du einen Agenten mit einem KI-Modell oder Dienst verbindest (z. B. OpenAI, Anthropic, Manus, Ollama Cloud, CopilotKit, ElevenLabs oder einen MCP-Server), werden die Inhalte, die du dem Agenten gibst, zur Beantwortung an diesen Anbieter übermittelt. Es gelten zusätzlich dessen Datenschutzbestimmungen.</li>
+      </ul>
+      <p>Bei Anbietern mit Sitz in den USA erfolgt die Übermittlung auf Grundlage des EU-US Data Privacy Framework (Angemessenheitsbeschluss, Art. 45 DSGVO), soweit der Anbieter zertifiziert ist, und im Übrigen auf Grundlage der EU-Standardvertragsklauseln (Art. 46 DSGVO).</p>
+
+      <h2>6. Nutzung von Daten aus Google-APIs (Limited Use)</h2>
+      <p>Die Nutzung und Übertragung von Informationen, die Connect von Google-APIs erhält, an andere Apps hält sich an die <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>, einschließlich der Anforderungen zur eingeschränkten Nutzung (Limited Use). Insbesondere gilt:</p>
+      <ul>
+        <li>Connect nutzt Google-Nutzerdaten nur, um die für dich sichtbaren Funktionen bereitzustellen: Anmeldung und verschlüsselte Sicherung bzw. Wiederherstellung im Ordner „Connect Backup“.</li>
+        <li>Google-Nutzerdaten werden nicht verkauft, nicht für Werbung (auch nicht personalisierte Werbung) verwendet und nicht an Dritte weitergegeben, außer soweit dies für diese Funktionen nötig ist, gesetzlich vorgeschrieben ist oder du ausdrücklich zustimmst.</li>
+        <li>Google-Nutzerdaten werden nicht verwendet, um allgemeine KI- oder Machine-Learning-Modelle zu entwickeln, zu verbessern oder zu trainieren.</li>
+        <li>Menschen lesen Google-Nutzerdaten nicht, außer mit deiner ausdrücklichen Zustimmung, zur Sicherheit (z. B. Missbrauchsuntersuchung), zur Einhaltung von Gesetzen oder wenn die Daten zuvor anonymisiert wurden.</li>
+      </ul>
+
+      <h2>7. Sicherheit und Verschlüsselung</h2>
+      <p>Die Übertragung erfolgt ausschließlich verschlüsselt über HTTPS/TLS. API-Schlüssel, Zugriffstoken und Sicherungsdateien werden zusätzlich mit AES-256-GCM verschlüsselt gespeichert. Der Zugriff auf Server und Datenbank ist auf den Betreiber beschränkt.</p>
+
+      <h2>8. Speicherdauer und Löschung</h2>
+      <ul>
+        <li>Kontodaten und Inhalte speichern wir, solange dein Konto besteht. Löschst du einzelne Inhalte in Connect, werden sie aus der Datenbank entfernt.</li>
+        <li>Auf Anfrage an <a href="mailto:stefankunc994@gmail.com">stefankunc994@gmail.com</a> löschen wir dein Konto und alle zugehörigen Daten, in der Regel innerhalb von 30 Tagen, soweit keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</li>
+        <li>Die Sicherungsdateien liegen in deinem eigenen Google Drive. Du kannst den Ordner „Connect Backup“ jederzeit selbst löschen; trennst du die Drive-Verbindung, löschen wir das gespeicherte Zugriffstoken.</li>
+        <li>Server-Protokolle werden vom Hosting-Anbieter nur kurzfristig aufbewahrt und danach automatisch gelöscht.</li>
+      </ul>
+
+      <h2>9. Deine Rechte</h2>
+      <p>Du hast nach der DSGVO das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch gegen Verarbeitungen auf Grundlage berechtigter Interessen (Art. 21). Eine erteilte Einwilligung, etwa für die Drive-Sicherung, kannst du jederzeit mit Wirkung für die Zukunft widerrufen (Art. 7 Abs. 3). Schreib uns dazu einfach an <a href="mailto:stefankunc994@gmail.com">stefankunc994@gmail.com</a>.</p>
+      <p>Du hast außerdem das Recht, dich bei einer Datenschutz-Aufsichtsbehörde zu beschweren, insbesondere in dem Mitgliedstaat deines Aufenthaltsorts, deines Arbeitsplatzes oder des Orts des mutmaßlichen Verstoßes.</p>
+
+      <h2>10. Pflicht zur Bereitstellung, keine automatisierten Entscheidungen</h2>
+      <p>Die Anmeldedaten sind nötig, um Connect zu nutzen. Die Drive-Sicherung ist freiwillig. Eine automatisierte Entscheidungsfindung im Sinne von Art. 22 DSGVO findet nicht statt.</p>
+
+      <h2>11. Änderungen</h2>
+      <p>Wir passen diese Erklärung an, wenn sich Connect oder die rechtlichen Anforderungen ändern. Es gilt die jeweils hier veröffentlichte Fassung.</p>
+    </main>
+    <footer>
+      <a href="/">Startseite</a><a href="/datenschutz">Datenschutzerklärung</a><a href="/nutzungsbedingungen">Nutzungsbedingungen</a>
+      <div>© 2026 Kunc GmbH · Connect</div>
+    </footer>
+  </body>
+</html>
