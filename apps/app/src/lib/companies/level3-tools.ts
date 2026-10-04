@@ -221,6 +221,12 @@ export type Level3BrowserState = {
   lastSearch?: string;
   /** Example Split-Link was added once (deleting it keeps it deleted). */
   splitExampleSeeded?: boolean;
+  /**
+   * Set once the seed tab groups have been stripped. Stored under the same
+   * localStorage key as the state, per company, so the strip runs exactly once
+   * and a group the user later creates by hand is never removed.
+   */
+  "connect.level3.migrated.v2-cleared-defaults"?: boolean;
   updatedAt: string;
 };
 
@@ -326,13 +332,13 @@ function runClearDefaultsMigration(
       if (SEED_GROUP_LABELS.has(label)) return false;
       return true;
     }),
-    [MIGRATION_KEY]: true as unknown as undefined,
+    [MIGRATION_KEY]: true,
   });
 
   try {
     const all = JSON.parse(rawAll) as Record<string, Level3BrowserState>;
     const entry = all[state.companyId];
-    if (entry && !entry[MIGRATION_KEY as keyof Level3BrowserState]) {
+    if (entry && !entry[MIGRATION_KEY]) {
       all[state.companyId] = cleaned(entry);
       window.localStorage.setItem(KEY, JSON.stringify(all));
     }
