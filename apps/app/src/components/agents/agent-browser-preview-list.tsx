@@ -34,6 +34,7 @@ import {
   computerDisplayLabel,
   getAgentComputerPrefs,
   RUNTIME_LABELS,
+  type AgentComputerPrefs,
 } from "@/lib/agents/agent-computer";
 import {
   type AgentBrowserTabs,

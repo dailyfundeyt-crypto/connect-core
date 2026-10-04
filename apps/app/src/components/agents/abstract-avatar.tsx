@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { resolveBotAvatarUrl } from "@/lib/agents/connect-avatars";
+import { cn } from "@/lib/utils";
 
 const BOT_FALLBACK = "/bots/default.png";
 
@@ -8,12 +9,15 @@ export function AbstractAvatar({
   seed,
   size = 40,
   agentId,
+  className,
 }: {
   name: string;
   seed: string;
   size?: number;
   /** When set, prefers Connect profile images / uploads over the default robot. */
   agentId?: string;
+  /** Extra classes; size stays driven by the `size` prop. */
+  className?: string;
 }) {
   const lookupId = agentId ?? seed;
   const [src, setSrc] = useState<string>(() =>
@@ -35,7 +39,7 @@ export function AbstractAvatar({
     <span
       role="img"
       aria-label={name}
-      className="inline-flex shrink-0 overflow-hidden rounded-full bg-muted"
+      className={cn("inline-flex shrink-0 overflow-hidden rounded-full bg-muted", className)}
       style={{ height: size, width: size }}
     >
       <span aria-hidden="true" className="contents">

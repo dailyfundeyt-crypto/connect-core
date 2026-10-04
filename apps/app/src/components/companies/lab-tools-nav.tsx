@@ -63,6 +63,7 @@ import {
   localWebSearchUrl,
   resolveLabApp,
   updateCustomLabApp,
+  allLabApps,
 } from "@/lib/companies/level3-tools";
 import { openInHeliumTab, openSplitInHelium } from "@/lib/ui/open-window";
 import {
@@ -416,6 +417,27 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
             setConnectId(null);
           }}
           toolId={connectId}
+        />
+      ) : null}
+      {adding || editingId ? (
+        <AddAppInline
+          companyId={companyId}
+          editApp={
+            editingId
+              ? allLabApps(state).find((a) => a.id === editingId)
+              : undefined
+          }
+          groupId={groups[0]?.id}
+          groups={groups.map((g) => ({ id: g.id, label: g.label }))}
+          onCancel={() => {
+            setAdding(false);
+            setEditingId(null);
+          }}
+          onDone={(next) => {
+            setState(next);
+            setAdding(false);
+            setEditingId(null);
+          }}
         />
       ) : null}
     </div>

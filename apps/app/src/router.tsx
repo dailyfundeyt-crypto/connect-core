@@ -1,15 +1,13 @@
 import { createRouter } from "@tanstack/react-router";
+import type { ErrorComponentProps } from "@tanstack/react-router";
 import type { RouterContext } from "./router-context";
 import { routeTree } from "./routeTree.gen";
 
-function DefaultRouteError({
-  error,
-  reset,
-}: {
-  error: Error;
-  reset: () => void;
-}) {
+// TanStack types the error as `unknown` here, not `Error`. Narrowing it keeps the
+// .message/.stack access below honest instead of asserting a type the router never promised.
+function DefaultRouteError({ error, reset }: ErrorComponentProps) {
   console.error("[Connect route error]", error);
+  const err = error instanceof Error ? error : new Error(String(error));
   return (
     <div
       data-testid="route-error"
@@ -27,9 +25,9 @@ function DefaultRouteError({
     >
       <strong>Something went wrong</strong>
       {"\n"}
-      {error?.message || String(error)}
+      {err.message}
       {"\n\n"}
-      {error?.stack}
+      {err.stack}
       {"\n\n"}
       <button
         onClick={() => reset()}

@@ -77,9 +77,11 @@ async function probe<T>(path: string): Promise<{ status: number; body: T }> {
     } catch {
       body = await res.text().catch(() => null);
     }
+    // The probe is read-only diagnostics: a non-JSON body is surfaced as text, never parsed
+    // into T. The cast marks that T is the caller's expectation, not a verified shape.
     return { status: res.status, body: body as T };
   } catch (e) {
-    return { status: 0, body: { error: String(e) } };
+    return { status: 0, body: { error: String(e) } as T };
   }
 }
 

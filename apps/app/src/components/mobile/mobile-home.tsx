@@ -2,7 +2,7 @@ import {
   IconBuildingStore,
   IconChevronDown,
   IconCompass,
-  IconLayers,
+  IconStack2,
   IconLogout,
   IconMessagePlus,
   IconPlus,
@@ -538,8 +538,9 @@ export function MobileHome() {
 
   /** Open a tab in desktop Chrome via Helium extension */
   const openTab = useCallback((url: string, title: string) => {
-    // Use the same message protocol as open-window.ts
-    if (typeof window !== "undefined" && window.dispatchEvent) {
+    // Use the same message protocol as open-window.ts. The old guard tested
+    // `window.dispatchEvent`, which is always defined, so it never actually guarded anything.
+    if (typeof window !== "undefined") {
       const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       window.postMessage(
         { source: "connect-app", type: "connect-shell-open-window", url, id, forceNew: false },
@@ -571,10 +572,16 @@ export function MobileHome() {
 
   const loading = agentsQuery.isPending;
 
-  // Bottom navigation items
+  // Bottom navigation items. /browser and /focus were never routes -- tapping them bounced back
+  // to "/". The browser lives inside the company workspace, so Browser goes there; Focus has no
+  // own page and is folded into the workspace as well rather than kept as a dead tab.
+  const activeCompanyId = readActiveCompanyId();
+  const workspacePath = activeCompanyId
+    ? (`/company/${activeCompanyId}` as const)
+    : ("/" as const);
   const navItems = [
-    { id: "browser", label: "Browser", icon: IconCompass, path: "/browser" },
-    { id: "focus", label: "Focus", icon: IconLayers, path: "/focus" },
+    { id: "browser", label: "Browser", icon: IconCompass, path: workspacePath },
+    { id: "focus", label: "Fokus", icon: IconStack2, path: workspacePath },
     { id: "companies", label: "Unternehmen", icon: IconBuildingStore, path: "/settings" },
     { id: "settings", label: "Einstellungen", icon: IconSettings, path: "/settings" },
   ];

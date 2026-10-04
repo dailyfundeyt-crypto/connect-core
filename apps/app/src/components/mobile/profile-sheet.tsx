@@ -173,15 +173,22 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
 
       <div className="border-t border-white/10 pt-1">
         <SectionLabel>Profil</SectionLabel>
+        {/* /browser and /focus were never routes -- they redirected to "/". The browser lives
+            inside the company workspace, so both entries go there. */}
         <SheetItem
           icon={<IconCompass className="size-5" />}
           label="Browser"
-          onClick={() => { onClose(); void navigate({ to: "/browser" }); }}
+          onClick={() => {
+            onClose();
+            if (activeCompanyId) {
+              void navigate({ to: "/company/$companyId", params: { companyId: activeCompanyId } });
+            }
+          }}
         />
         <SheetItem
           icon={<IconCompass className="size-5" />}
-          label="Focus"
-          onClick={() => { onClose(); void navigate({ to: "/focus" }); }}
+          label="Browser-Gruppen"
+          onClick={() => { onClose(); void navigate({ to: "/settings", hash: "browser-groups" }); }}
         />
       </div>
 
