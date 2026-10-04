@@ -8,7 +8,7 @@ import {
   IconSun,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   CompanyLevelChips,
@@ -79,11 +79,23 @@ export function LevelChromeSidebar(
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const { toggleSidebar, state: sidebarState } = useSidebar();
   const [level, setLevel] = useState<CompanyLevel>(() => getActiveLevel());
-  const [companyId, setCompanyId] = useState<string | null>(() =>
+  /*
+   * The route decides which company is open, not localStorage.
+   *
+   * This used to read `connect.activeCompanyId` directly, so opening
+   * /company/connect while that key said "hyper" showed Hyper's apps (and saved new
+   * ones into Hyper) under a URL that read "connect" -- edits appeared to vanish.
+   * The route param is the thing the user actually navigated to, so it wins, and
+   * localStorage is written to match so the rest of the app agrees.
+   */
+  const routeCompanyId = useParams({ strict: false }) as { companyId?: string };
+  const routeId = routeCompanyId?.companyId ?? null;
+  const [storedCompanyId, setStoredCompanyId] = useState<string | null>(() =>
     typeof window === "undefined"
       ? null
       : window.localStorage.getItem("connect.activeCompanyId"),
   );
+  const companyId = routeId ?? storedCompanyId;
   const [chromeBusy, setChromeBusy] = useState(false);
   const [chromeMsg, setChromeMsg] = useState<string | null>(null);
   const [chromeOk, setChromeOk] = useState(false);
@@ -95,7 +107,7 @@ export function LevelChromeSidebar(
   useEffect(() => subscribeLevel(() => setLevel(getActiveLevel())), []);
   useEffect(() => {
     const sync = () =>
-      setCompanyId(window.localStorage.getItem("connect.activeCompanyId"));
+      setStoredCompanyId(window.localStorage.getItem("connect.activeCompanyId"));
     window.addEventListener("connect-active-company", sync);
     window.addEventListener("storage", sync);
     return () => {
@@ -103,6 +115,15 @@ export function LevelChromeSidebar(
       window.removeEventListener("storage", sync);
     };
   }, []);
+
+  // Keep localStorage in step with the route so the switcher, the mobile shell and
+  // anything else reading the key agree with what is on screen.
+  useEffect(() => {
+    if (!routeId) return;
+    if (window.localStorage.getItem("connect.activeCompanyId") === routeId) return;
+    window.localStorage.setItem("connect.activeCompanyId", routeId);
+    window.dispatchEvent(new Event("connect-active-company"));
+  }, [routeId]);
 
   const displayName =
     profile.name.trim() && profile.name !== "Connect User"

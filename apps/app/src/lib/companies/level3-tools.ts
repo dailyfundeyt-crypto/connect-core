@@ -354,10 +354,80 @@ function readAll(): Record<string, Level3BrowserState> {
   try {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, Level3BrowserState>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return healQuotedCompanyKeys(parsed);
   } catch {
     return {};
   }
+}
+
+/**
+ * Older workspace syncs could store a company under a JSON-quoted key, so the same company ended
+ * up twice in the map: `connect` and `"connect"`. Writes always addressed the unquoted one, which
+ * is why freshly created apps appeared to vanish -- the list read the quoted entry.
+ *
+ * Unquoting the key and folding it into its plain twin repairs the map on read. Where both copies
+ * exist the plain one wins, because that is the key every writer uses; a quoted copy only fills in
+ * a company that has no plain entry at all. The repaired map is written back once so the next read
+ * is cheap and the duplicate stops travelling to the server on the next push.
+ */
+function healQuotedCompanyKeys(
+  parsed: Record<string, unknown>,
+): Record<string, Level3BrowserState> {
+  const out: Record<string, Level3BrowserState> = {};
+  let repaired = false;
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!value || typeof value !== "object") continue;
+    out[key] = value as Level3BrowserState;
+  }
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!value || typeof value !== "object") continue;
+    let plain = key;
+    try {
+      const unquoted = JSON.parse(key) as unknown;
+      if (typeof unquoted === "string") plain = unquoted;
+    } catch {
+      continue; // not a quoted key, nothing to heal
+    }
+    if (plain === key) continue;
+    repaired = true;
+    const existing = out[plain];
+    if (!existing) {
+      out[plain] = value as Level3BrowserState;
+    } else {
+      // Both copies exist: keep the plain one, but take anything the quoted copy alone had, so
+      // nothing the user created under the quoted key is dropped.
+      out[plain] = {
+        ...(value as Level3BrowserState),
+        ...existing,
+        customApps: mergeById(
+          (value as Level3BrowserState).customApps,
+          existing.customApps,
+        ),
+        tabGroups: mergeById(
+          (value as Level3BrowserState).tabGroups,
+          existing.tabGroups,
+        ),
+      };
+    }
+    delete out[key];
+  }
+  if (repaired) {
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(out));
+    } catch {
+      /* quota -- the in-memory map is still correct for this session */
+    }
+  }
+  return out;
+}
+
+/** Union by `id`, later entries win. Keeps both copies' contents when a key exists twice. */
+function mergeById<T extends { id: string }>(older: T[] | undefined, newer: T[] | undefined): T[] {
+  const byId = new Map<string, T>();
+  for (const item of older ?? []) byId.set(item.id, item);
+  for (const item of newer ?? []) byId.set(item.id, item);
+  return [...byId.values()];
 }
 
 function writeAll(map: Record<string, Level3BrowserState>) {

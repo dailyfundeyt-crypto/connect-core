@@ -387,6 +387,34 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
             })}
           </ul>
         )}
+
+        {/* Apps that belong to no group. The icon rail rendered these, but the expanded list
+            only walked `groups`, so with no groups yet every app a person added was invisible --
+            it saved correctly and simply had nowhere to appear. */}
+        {ungrouped.length > 0 ? (
+          <div className="mt-1.5">
+            {groups.length > 0 ? (
+              <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
+                Ohne Gruppe
+              </SidebarGroupLabel>
+            ) : null}
+            <ul className="flex flex-col gap-0.5 px-0.5">
+              {ungrouped.map((app) => (
+                <AppRow
+                  app={app}
+                  companyId={companyId}
+                  dragOverId={dragOverId}
+                  key={app.id}
+                  onChange={setState}
+                  onConnect={setConnectId}
+                  onEdit={setEditingId}
+                  setDragOverId={setDragOverId}
+                  state={state}
+                />
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-0.5">
