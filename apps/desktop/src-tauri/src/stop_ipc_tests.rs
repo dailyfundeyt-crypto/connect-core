@@ -1,4 +1,4 @@
-// Included by main.rs so these regressions exercise its registered command and lifecycle state.
+﻿// Included by main.rs so these regressions exercise its registered command and lifecycle state.
 mod stop_ipc {
     use super::*;
     use std::sync::{atomic::Ordering::SeqCst, mpsc};
@@ -23,7 +23,7 @@ mod stop_ipc {
             let root = temp_root("stop-ipc");
             std::fs::create_dir_all(root.join(".logs")).unwrap();
             std::fs::write(root.join("docker-compose.yml"), "services: {}\n").unwrap();
-            std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", root.join("commands.log"));
+            std::env::set_var("Connect_TEST_ENGINE_RECORD", root.join("commands.log"));
             let app = tauri::test::mock_builder()
                 .manage(Shell::default())
                 .invoke_handler(tauri::generate_handler![stop_stack])
@@ -315,7 +315,7 @@ mod stop_ipc {
             .expect("menu Stop failure should be retained for setup");
         assert_eq!(
             problem.said,
-            "OpenBot could not finish stopping. Try Stop OpenBot again."
+            "Connect could not finish stopping. Try Stop Connect again."
         );
         assert!(
             problem
@@ -341,7 +341,7 @@ mod stop_ipc {
         }
         let fixture = Fixture::new();
         std::fs::write(
-            fixture.root.join(".openbot-prepared.json"),
+            fixture.root.join(".Connect-prepared.json"),
             "completed preparation",
         )
         .unwrap();

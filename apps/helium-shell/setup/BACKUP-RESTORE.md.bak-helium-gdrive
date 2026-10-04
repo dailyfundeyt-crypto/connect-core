@@ -1,0 +1,60 @@
+# Connect: Backup, Wiederherstellen, Supabase-Import
+
+## Tägliches Backup (Google Drive)
+* Script: `apps\helium-shell\setup\Backup-Connect.ps1`, geplanter Task **„Connect Backup (Google Drive)“**:
+  täglich 03:00 + bei Anmeldung (+5 min), verpasste Läufe werden nachgeholt, höchstens ein Backup pro 20 h.
+* Ziel: `H:\Meine Ablage\Connect-Backups\connect-backup-<Zeit>.zip.aes`, die neuesten **14** bleiben.
+  Log: `%TEMP%\connect-backup.log`.
+* Inhalt (ZIP, dann AES-256 + HMAC verschlüsselt):
+  * `copy.sql`: DB der Kopie laut `.env` DATABASE_URL (heute Docker 5433, nach dem Umstellen Supabase)
+  * `supabase.sql`: Supabase connect-core (public + drizzle)
+  * `app.sql`: installierte Connect App (5544), wenn sie läuft, sonst `app-snapshot.dump` (neuestes App-Backup)
+  * `manifest.json`: Zeilenzahlen pro Tabelle
+* Passwort: liegt DPAPI-geschützt in `%LOCALAPPDATA%\Connect\backup-password.dpapi`, nur dieses Windows-Konto
+  auf diesem PC kann es lesen.
+  **Einmal `Backup-Connect.ps1 -ShowPassword` ausführen und das Passwort in den Passwort-Manager legen.**
+  Ohne das Passwort sind die Backups auf einem anderen PC nicht lesbar.
+* Nicht enthalten: Secrets aus `.env`, `.env.supabase`, `%LOCALAPPDATA%\ConnectApp\data\connect.env`.
+  Den Wert `KEY_ENCRYPTION_KEY` gehört ebenfalls in den Passwort-Manager, denn ohne ihn lassen sich die im
+  Tresor verschlüsselten Schlüssel nicht entschlüsseln. Ebenfalls nicht enthalten: Browser-localStorage.
+* Sofort-Backup: `powershell -ExecutionPolicy Bypass -File Backup-Connect.ps1`
+* Task entfernen: `Backup-Connect.ps1 -Unregister`
+
+## Wiederherstellen
+```
+cd apps\helium-shell\setup
+powershell -ExecutionPolicy Bypass -File Restore-Connect.ps1                        # nur entschlüsseln/auspacken
+powershell -ExecutionPolicy Bypass -File Restore-Connect.ps1 -Restore -Source copy -Into copy
+powershell -ExecutionPolicy Bypass -File Restore-Connect.ps1 -Restore -Source copy -Into copy -Replace
+```
+* Ohne `-Replace` landet alles in einer **neuen** DB `connect_restore_<Zeit>`, die Zeilenzahlen werden mit
+  `manifest.json` verglichen. Die aktive DB bleibt unberührt.
+* Mit `-Replace` (Server vorher stoppen, Rückfrage „JA“) wird die aktive DB in `connect_before_restore_<Zeit>`
+  umbenannt, nicht gelöscht.
+* Andere Optionen:
+  * Anderes Backup: `-BackupFile "<pfad>"`
+  * Anderer PC: `-AskPassword`
+  * Connect App als Ziel: `-Source app -Into app`, die App muss dabei laufen.
+* Nach dem Restore den Ordner `backups\restore-<Zeit>` löschen, denn er enthält Klartext.
+* Supabase wiederherstellen: zuerst nach lokal zurückspielen (`-Into copy -Replace`), dann
+  `Import-LocalToSupabase.ps1` ausführen. Das funktioniert nur, wenn das Ziel keine Benutzer hat (frisches
+  Projekt oder geleerte Tabellen).
+
+## Lokal → Supabase (einmalig, nur nach OK)
+```
+powershell -ExecutionPolicy Bypass -File Import-LocalToSupabase.ps1           # Probelauf mit Rollback
+powershell -ExecutionPolicy Bypass -File Import-LocalToSupabase.ps1 -Commit   # echter Import
+```
+* Der Import muss **vor der ersten Anmeldung** auf dem gehosteten Connect laufen. Das Script bricht ab, wenn
+  Supabase schon Benutzer hat.
+* Vorher sichert das Script beide Seiten nach `backups\` und legt einen Data-only-Dump an.
+* Danach läuft alles in einer Transaktion. COMMIT gibt es nur, wenn jede Tabelle „Ziel vorher + Dump“ Zeilen
+  hat, und danach folgt eine zweite Zählung.
+
+## Danach auf Supabase umstellen
+* **Lokaler Server der Kopie:** in `.env` diese Werte aus `.env.supabase` übernehmen: `DATABASE_URL`,
+  `KEY_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, `AGENT_TOOL_TOKEN`. Dazu `DATABASE_POOL_MAX=6` setzen. Danach den
+  Server neu starten. Desktop und Web teilen sich dann dieselben Daten.
+* **Helium-Fenster („Connect (Helium)“):** `Set-ConnectUrl.cmd https://connect-kunc-preview.vercel.app`
+  (später die Produktions-URL) bzw. zurück mit `Set-ConnectUrl.cmd http://localhost:3010`.
+* **Connect App:** `RemoteUrl` in `connect-app.json` (vorgesehen, siehe apps/connect-app/README.md).

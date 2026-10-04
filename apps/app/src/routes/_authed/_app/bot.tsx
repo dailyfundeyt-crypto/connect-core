@@ -2,6 +2,7 @@ import { CopilotChat } from "@copilotkit/react-core/v2";
 import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { ChatHistoryMenu } from "@/components/chat/chat-history-menu";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import { defaultAgentId } from "@/lib/agents/default-agent";
@@ -136,7 +137,7 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
    * page can say so instead of letting the Bot answer as if nothing were missing. `startNew`
    * mints another fresh thread on demand for the New chat control below.
    */
-  const { threadId, history, startNew } = useBotThread(agentId);
+  const { threadId, history, startNew, switchTo } = useBotThread(agentId);
   /*
    * A turn that ends without an answer has to be said out loud here, because the packaged chat says
    * nothing. It reports a failed run to an `onError` prop and otherwise carries on as though the
@@ -164,10 +165,14 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
            * whatever conversation is currently on screen, and a click with that consequence
            * deserves a word, not just a glyph.
            */}
-          <Button onClick={startNew} size="sm" variant="ghost">
-            <IconPlus />
-            New chat
-          </Button>
+          <div className="flex items-center gap-1">
+            {/* Earlier conversations with this Bot, from the chat store. */}
+            <ChatHistoryMenu agentId={agentId} currentThreadId={threadId} onPick={switchTo} />
+            <Button onClick={startNew} size="sm" variant="ghost">
+              <IconPlus />
+              New chat
+            </Button>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           Ask it to open a page and watch it work.

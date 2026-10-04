@@ -177,24 +177,26 @@ export function CompanyProfileX({
 
   const saveEdit = () => {
     setError(null);
-    try {
-      const saved = updateCompany(company.id, {
-        name: draft.name,
-        handle: draft.handle,
-        description: draft.description,
-        category: draft.category || null,
-        location: draft.location || null,
-        website: draft.website || null,
-        logo: draft.logo || null,
-        banner: draft.banner || null,
-      });
-      setCompany(saved);
-      setEditing(false);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Speichern fehlgeschlagen.",
-      );
-    }
+    void (async () => {
+      try {
+        const saved = await updateCompany(company.id, {
+          name: draft.name,
+          handle: draft.handle,
+          description: draft.description,
+          category: draft.category || null,
+          location: draft.location || null,
+          website: draft.website || null,
+          logo: draft.logo || null,
+          banner: draft.banner || null,
+        });
+        setCompany(saved);
+        setEditing(false);
+      } catch (caught) {
+        setError(
+          caught instanceof Error ? caught.message : "Speichern fehlgeschlagen.",
+        );
+      }
+    })();
   };
 
   const onPickImage = (file: File | undefined, kind: "logo" | "banner") => {
@@ -206,19 +208,21 @@ export function CompanyProfileX({
           setError(null);
           return;
         }
-        try {
-          const saved = updateCompany(company.id, {
-            [kind]: dataUrl,
-          });
-          setCompany(saved);
-          setError(null);
-        } catch (caught) {
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Bild konnte nicht gespeichert werden.",
-          );
-        }
+        void (async () => {
+          try {
+            const saved = await updateCompany(company.id, {
+              [kind]: dataUrl,
+            });
+            setCompany(saved);
+            setError(null);
+          } catch (caught) {
+            setError(
+              caught instanceof Error
+                ? caught.message
+                : "Bild konnte nicht gespeichert werden.",
+            );
+          }
+        })();
       })
       .catch((caught) => {
         setError(

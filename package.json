@@ -4,15 +4,15 @@
   "license": "MIT",
   "private": true,
   "packageManager": "bun@1.3.14",
-    "workspaces": [
-      "apps/app",
-      "apps/server",
-      "apps/worker",
-      "apps/landing",
-      "apps/supervisor",
-      "packages/shared",
-      "packages/agents/*"
-    ],
+  "workspaces": [
+    "apps/app",
+    "apps/server",
+    "apps/worker",
+    "apps/landing",
+    "apps/supervisor",
+    "packages/shared",
+    "packages/agents/*"
+  ],
   "scripts": {
     "build": "bun run generate:app-config && bun run --filter '*' build",
     "dev": "bun run generate:app-config && bun run --filter apps/app --filter apps/server --parallel dev",
@@ -40,6 +40,7 @@
     "@copilotkit/aimock": "1.39.0",
     "@rollup/rollup-linux-x64-gnu": "^4.63.4",
     "@types/bun": "^1.3.3",
+    "embedded-postgres": "^18.4.0-beta.17",
     "roughjs": "^4.6.6",
     "typescript": "^5.9.3",
     "yaml": "^2.9.0"
@@ -55,5 +56,7 @@
     "@connect/agent-mastra": "workspace:*",
     "@connect/supervisor": "workspace:*"
   },
-  "resolutions": {}
+  "resolutions": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  }
 }

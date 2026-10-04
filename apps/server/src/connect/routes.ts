@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import { connectMedia, connectWorkspaceKv } from "../db/schema";
+import { decodeWorkspaceValue, mergeWorkspaceValue, sameWorkspaceValue, type MergeConflict } from "./workspace-merge";
 
 const MAX_MEDIA_BYTES = 32 * 1024 * 1024;
 const DEPLOYMENT_MODE_KEY = "connect.deployment-mode";
@@ -154,37 +155,89 @@ export function createConnectWorkspaceRoutes(
     const actor = context.get("actor");
     const body = (await context.req.json().catch(() => null)) as {
       workspace?: Record<string, unknown>;
+      bases?: Record<string, unknown>;
     } | null;
     if (!body?.workspace || typeof body.workspace !== "object") {
       return context.json({ error: "workspace object required" }, 400);
     }
+    // Merge, never overwrite: every key is three-way merged against the base the client last saw
+    // (no base -> additive union), so a stale tab or a second device cannot drop newer data.
+    const bases = body.bases && typeof body.bases === "object" ? body.bases : {};
     const now = new Date();
-    const payload = {
-      ...body.workspace,
-      "connect.account": {
-        userId: actor.id,
-        email: actor.email,
-        name: actor.name ?? null,
-        updatedAt: now.toISOString(),
-      },
-    };
-    for (const [key, value] of Object.entries(payload)) {
-      if (typeof key !== "string" || !key.trim()) continue;
-      if (GLOBAL_KEYS.has(key)) continue;
-      const storedKey = toUserKey(actor.id, key);
-      const json = asJsonb(value);
-      await database
-        .insert(connectWorkspaceKv)
-        .values({ key: storedKey, value: json, updatedAt: now })
-        .onConflictDoUpdate({
-          target: connectWorkspaceKv.key,
-          set: { value: json, updatedAt: now },
-        });
-    }
+    const account = { userId: actor.id, email: actor.email, name: actor.name ?? null };
+    const merged: Record<string, unknown> = {};
+    const conflicts: Array<{ key: string; at: string; conflicts: MergeConflict[] }> = [];
+    await database.transaction(async (tx) => {
+      const entries: Array<[string, unknown]> = Object.entries(body.workspace as Record<string, unknown>).filter(
+        ([key]) => typeof key === "string" && !!key.trim() && !GLOBAL_KEYS.has(key) && key !== "connect.account",
+      );
+      entries.push(["connect.account", account]);
+      for (const [key, incoming] of entries) {
+        const storedKey = toUserKey(actor.id, key);
+        const [row] = await tx
+          .select()
+          .from(connectWorkspaceKv)
+          .where(eq(connectWorkspaceKv.key, storedKey))
+          .for("update")
+          .limit(1);
+        let next: unknown = decodeWorkspaceValue(incoming);
+        if (key === "connect.account") {
+          const prev = row ? (decodeWorkspaceValue(row.value) as Record<string, unknown> | null) : null;
+          const same =
+            !!prev && prev.userId === account.userId && prev.email === account.email && (prev.name ?? null) === account.name;
+          next = same ? prev : { ...account, updatedAt: now.toISOString() };
+        } else if (row) {
+          const result = mergeWorkspaceValue(
+            Object.prototype.hasOwnProperty.call(bases, key) ? bases[key] : undefined,
+            row.value,
+            incoming,
+          );
+          next = result.value;
+          if (result.conflicts.length) conflicts.push({ key, at: now.toISOString(), conflicts: result.conflicts });
+        }
+        merged[key] = next;
+        if (row && sameWorkspaceValue(row.value, next)) continue;
+        await tx
+          .insert(connectWorkspaceKv)
+          .values({ key: storedKey, value: asJsonb(next), updatedAt: now })
+          .onConflictDoUpdate({ target: connectWorkspaceKv.key, set: { value: asJsonb(next), updatedAt: now } });
+      }
+      if (conflicts.length) {
+        const logKey = toUserKey(actor.id, "connect.sync-conflicts");
+        const [logRow] = await tx
+          .select()
+          .from(connectWorkspaceKv)
+          .where(eq(connectWorkspaceKv.key, logKey))
+          .for("update")
+          .limit(1);
+        const previous = logRow ? decodeWorkspaceValue(logRow.value) : [];
+        const log = [...(Array.isArray(previous) ? previous : []), ...conflicts].slice(-200);
+        await tx
+          .insert(connectWorkspaceKv)
+          .values({ key: logKey, value: asJsonb(log), updatedAt: now })
+          .onConflictDoUpdate({ target: connectWorkspaceKv.key, set: { value: asJsonb(log), updatedAt: now } });
+      }
+    });
     return context.json({
       ok: true,
       account: { userId: actor.id, email: actor.email, name: actor.name },
+      workspace: merged,
+      conflicts: conflicts.length,
     });
+  });
+
+  /** Status of the local App <-> Supabase sync task (sync-engine), for Einstellungen > Sicherung. */
+  app.get("/sync-status", async (context) => {
+    const file =
+      process.env.CONNECT_SYNC_STATUS_FILE ||
+      (process.env.LOCALAPPDATA ? `${process.env.LOCALAPPDATA}\\ConnectApp\\data\\sbsync\\status.json` : "");
+    if (!file) return context.json({ available: false });
+    try {
+      const text = await Bun.file(file).text();
+      return context.json({ available: true, ...(JSON.parse(text.replace(/^\uFEFF/, "")) as Record<string, unknown>) });
+    } catch {
+      return context.json({ available: false });
+    }
   });
 
   app.get("/media/:id", async (context) => {
@@ -226,7 +279,15 @@ export function createConnectWorkspaceRoutes(
       return context.json({ error: "Invalid base64" }, 400);
     }
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_MEDIA_BYTES) {
-      return context.json({ error: "Image too large or empty" }, 413);
+      return context.json(
+        {
+          error:
+            bytes.byteLength === 0
+              ? "Das Bild ist leer."
+              : `Das Bild ist zu groß (max. ${Math.round(MAX_MEDIA_BYTES / (1024 * 1024))} MB). Bitte ein kleineres Bild wählen.`,
+        },
+        413,
+      );
     }
     const id =
       (typeof body?.id === "string" && body.id.trim()) ||
@@ -271,25 +332,15 @@ export function createConnectWorkspaceRoutes(
     if (!raw || (!/^https?:\/\//i.test(raw) && raw !== "about:blank")) {
       return context.json({ ok: false, error: "URL fehlt oder ungültig." }, 400);
     }
-    const safeUser =
-      actor.id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "default";
     const agentRaw =
       typeof body?.agentId === "string" ? body.agentId.trim() : "";
-    const safeAgent = agentRaw
-      .replace(/[^a-zA-Z0-9_-]/g, "")
-      .slice(0, 64);
     const profileKind =
       body?.profileKind === "manus" ? "manus" : "default";
-    const base =
-      process.env.CONNECT_CHROME_PROFILE?.trim() ||
-      `${process.env.HOME || "/tmp"}/.connect-chrome-profile/${safeUser}`;
-    // Dedicated Manus profile: …/agents/{agentId}/manus — isolated from
-    // the general agent Chrome profile (one Manus login per email).
-    const profileDir = safeAgent
-      ? profileKind === "manus"
-        ? `${base}/agents/${safeAgent}/manus`
-        : `${base}/agents/${safeAgent}`
-      : base;
+    const { profileDir, safeAgent } = connectChromeProfileDir(
+      actor.id,
+      agentRaw,
+      profileKind,
+    );
 
     const launched = await launchConnectChrome(raw, profileDir);
     if (launched.ok) {
@@ -506,7 +557,153 @@ export function createConnectWorkspaceRoutes(
     return context.json(result, result.ok ? 200 : 503);
   });
 
+  /**
+   * Live preview of an agent's own Chrome/Helium profile over CDP (localhost only).
+   * The browser is started by /open-chrome with --remote-debugging-port (see cdpPortFor).
+   */
+  app.get("/agent-chrome/screenshot", async (context) => {
+    const actor = context.get("actor");
+    const agentId = context.req.query("agentId")?.trim() ?? "";
+    const kind = context.req.query("profileKind") === "manus" ? "manus" : "default";
+    const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
+    const shot = await cdpScreenshot(cdpPortFor(profileDir));
+    if (!shot.ok || !shot.bytes) {
+      return context.json({ ok: false, error: shot.error ?? "Keine Vorschau." }, 503);
+    }
+    return new Response(shot.bytes as unknown as BodyInit, {
+      headers: {
+        "content-type": "image/jpeg",
+        "cache-control": "no-store",
+        "x-connect-page-url": encodeURI(shot.url ?? ""),
+      },
+    });
+  });
+
+  /** Bring the agent's browser tab to the front (big view "Fenster zeigen"). */
+  app.post("/agent-chrome/focus", async (context) => {
+    const actor = context.get("actor");
+    const body = (await context.req.json().catch(() => null)) as {
+      agentId?: unknown;
+      profileKind?: unknown;
+    } | null;
+    const agentId = typeof body?.agentId === "string" ? body.agentId.trim() : "";
+    const kind = body?.profileKind === "manus" ? "manus" : "default";
+    const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
+    const res = await cdpCall(cdpPortFor(profileDir), "Page.bringToFront", {});
+    return context.json(res.ok ? { ok: true } : { ok: false, error: res.error }, res.ok ? 200 : 503);
+  });
+
   return app;
+}
+
+/**
+ * Profile directory for an agent's own browser. CONNECT_CHROME_PROFILE is the base (e.g. a
+ * dedicated Helium profile folder), never the user's own browser profile.
+ */
+function connectChromeProfileDir(
+  actorId: string,
+  agentRaw: string,
+  profileKind: "default" | "manus",
+): { profileDir: string; safeAgent: string } {
+  const safeUser = actorId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "default";
+  const safeAgent = agentRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+  const base =
+    process.env.CONNECT_CHROME_PROFILE?.trim() ||
+    `${process.env.HOME || process.env.USERPROFILE || "/tmp"}/.connect-chrome-profile/${safeUser}`;
+  // Dedicated Manus profile: …/agents/{agentId}/manus — isolated from
+  // the general agent Chrome profile (one Manus login per email).
+  const profileDir = safeAgent
+    ? profileKind === "manus"
+      ? `${base}/agents/${safeAgent}/manus`
+      : `${base}/agents/${safeAgent}`
+    : base;
+  return { profileDir, safeAgent };
+}
+
+/** Deterministic CDP port per profile: CONNECT_CHROME_CDP_PORT (default 9333) + 0..199. */
+function cdpPortFor(profileDir: string): number {
+  const basePort = Number(process.env.CONNECT_CHROME_CDP_PORT) || 9333;
+  let h = 2166136261;
+  for (const ch of profileDir.toLowerCase()) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return basePort + (h % 200);
+}
+
+type CdpResult = { ok: boolean; result?: Record<string, unknown>; url?: string; error?: string };
+type CdpShot = { ok: boolean; bytes?: Uint8Array; url?: string; error?: string };
+
+type CdpTarget = { type?: string; url?: string; webSocketDebuggerUrl?: string };
+
+async function cdpPageTarget(port: number): Promise<CdpTarget | null> {
+  const res = await fetch(`http://127.0.0.1:${port}/json/list`, {
+    signal: AbortSignal.timeout(2000),
+  });
+  if (!res.ok) return null;
+  const list = (await res.json()) as CdpTarget[];
+  return (
+    list.find((t) => t.type === "page" && t.webSocketDebuggerUrl && !t.url?.startsWith("devtools://")) ??
+    null
+  );
+}
+
+async function cdpCall(
+  port: number,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<CdpResult> {
+  let target: CdpTarget | null = null;
+  try {
+    target = await cdpPageTarget(port);
+  } catch {
+    return { ok: false, error: `Agent-Browser nicht erreichbar (CDP 127.0.0.1:${port}).` };
+  }
+  if (!target?.webSocketDebuggerUrl) {
+    return { ok: false, error: "Kein offener Tab im Agent-Browser." };
+  }
+  const wsUrl = target.webSocketDebuggerUrl;
+  return await new Promise((resolve) => {
+    const ws = new WebSocket(wsUrl);
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch { /* ignore */ }
+      resolve({ ok: false, error: "CDP-Timeout." });
+    }, 5000);
+    ws.onopen = () => ws.send(JSON.stringify({ id: 1, method, params }));
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(String(event.data)) as {
+          id?: number;
+          result?: Record<string, unknown>;
+          error?: { message?: string };
+        };
+        if (msg.id !== 1) return;
+        clearTimeout(timer);
+        ws.close();
+        resolve(
+          msg.error
+            ? { ok: false, error: msg.error.message ?? "CDP-Fehler" }
+            : { ok: true, result: msg.result ?? {}, url: target?.url },
+        );
+      } catch {
+        /* ignore non-JSON */
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: "CDP-Verbindung fehlgeschlagen." });
+    };
+  });
+}
+
+async function cdpScreenshot(
+  port: number,
+): Promise<CdpShot> {
+  const res = await cdpCall(port, "Page.captureScreenshot", { format: "jpeg", quality: 60 });
+  if (!res.ok || !res.result) return { ok: false, error: res.error ?? "CDP-Fehler" };
+  const data = typeof res.result.data === "string" ? res.result.data : "";
+  if (!data) return { ok: false, error: "Leerer Screenshot." };
+  return { ok: true, bytes: Uint8Array.from(Buffer.from(data, "base64")), url: res.url };
 }
 
 type ChromeLaunch = { ok: true; binary: string } | { ok: false; detail: string };
@@ -519,6 +716,9 @@ async function launchConnectChrome(
     `--user-data-dir=${profileDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // CDP for the live preview: loopback only, one port per profile (see cdpPortFor).
+    `--remote-debugging-port=${cdpPortFor(profileDir)}`,
+    "--remote-debugging-address=127.0.0.1",
     "--new-window",
     url,
   ];
@@ -529,6 +729,36 @@ async function launchConnectChrome(
   for (const binary of candidates) {
     if (!(await chromeBinaryExists(binary))) {
       errors.push(`${binary}: nicht gefunden`);
+      continue;
+    }
+    if (process.platform === "win32") {
+      // Bun kills its direct children when the server exits/restarts (bun --watch). Hand the
+      // launch to Start-Process so the agent's own browser window survives server restarts.
+      const quoteArg = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
+      const psQuote = (v: string) => `'${v.replace(/'/g, "''")}'`;
+      try {
+        const proc = Bun.spawn(
+          [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `Start-Process -FilePath ${psQuote(binary)} -ArgumentList ${psQuote(args.map(quoteArg).join(" "))}`,
+          ],
+          { stdout: "ignore", stderr: "pipe", stdin: "ignore", windowsHide: true } as Parameters<typeof Bun.spawn>[1],
+        );
+        const code = await proc.exited;
+        if (code === 0) return { ok: true, binary };
+        let stderr = "";
+        try {
+          stderr = (await new Response(proc.stderr as ReadableStream).text()).trim().slice(0, 240);
+        } catch {
+          /* ignore */
+        }
+        errors.push(`${binary}: Start-Process code ${code}${stderr ? ` — ${stderr}` : ""}`);
+      } catch (err) {
+        errors.push(`${binary}: ${err instanceof Error ? err.message : String(err)}`);
+      }
       continue;
     }
     try {

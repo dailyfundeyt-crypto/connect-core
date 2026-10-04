@@ -1,4 +1,4 @@
-//! Signing in to a Claude plan, so nobody has to hold an API key.
+﻿//! Signing in to a Claude plan, so nobody has to hold an API key.
 //!
 //! This is the default path on the model screen: anybody with a key and a base URL to hand is a
 //! developer, and everybody else has a plan they already pay for.
@@ -9,7 +9,7 @@
 //! vendor's command is the same call as reaching Mastra through Mastra's own bridge.
 //!
 //! AND NOTHING HAS TO BE INSTALLED FOR IT. The Claude Agent SDK ships a self-contained `claude`
-//! binary inside the Python package, so the harness image OpenBot already pulls has a working CLI
+//! binary inside the Python package, so the harness image Connect already pulls has a working CLI
 //! at `_bundled/claude` and the person's machine needs no Node, no npm and no CLI of their own.
 //!
 //! The flow runs in that container, which is why the code is pasted rather than redirected. The
@@ -27,9 +27,9 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 /// The Claude Agent SDK harness, used here as a tool rather than as a Bot: it is simply the image
 /// that carries Anthropic's own CLI, so nothing has to be installed on the person's machine.
 ///
-/// A NAME, NOT A REFERENCE. This was `openbot-harness-claude-sdk:test`, which is what a development
+/// A NAME, NOT A REFERENCE. This was `Connect-harness-claude-sdk:test`, which is what a development
 /// tree builds: it resolved locally on the machine it was written on and, on a machine that had
-/// never built anything, sent Podman to `docker.io/library/openbot-harness-claude-sdk`. Resolved
+/// never built anything, sent Podman to `docker.io/library/Connect-harness-claude-sdk`. Resolved
 /// through the release's manifest by `crate::deployment::reference`, like every other image.
 pub const SIGN_IN_IMAGE: &str = "agent-claude-sdk";
 
@@ -60,7 +60,7 @@ fn plain(output: &str) -> String {
             out.push(c);
             continue;
         }
-        // CSI: ESC [ … final byte in @-~
+        // CSI: ESC [ â€¦ final byte in @-~
         if chars.peek() == Some(&'[') {
             chars.next();
             for c in chars.by_ref() {
@@ -70,7 +70,7 @@ fn plain(output: &str) -> String {
             }
             continue;
         }
-        // OSC: ESC ] … terminated by BEL or ESC \
+        // OSC: ESC ] â€¦ terminated by BEL or ESC \
         if chars.peek() == Some(&']') {
             chars.next();
             while let Some(c) = chars.next() {
@@ -86,7 +86,7 @@ fn plain(output: &str) -> String {
         }
         /*
          * Everything else: ESC, then zero or more intermediate bytes (0x20-0x2F), then one final
-         * byte (0x30-0x7E). `ESC ( B` is the common one — a charset designation — and it is three
+         * byte (0x30-0x7E). `ESC ( B` is the common one â€” a charset designation â€” and it is three
          * bytes, not two. Dropping a fixed pair left its `B` in the text, which is the sort of
          * thing that turns a token scan into a near-miss.
          */
@@ -110,7 +110,7 @@ query string. Reading the visible copy yields a URL that looks right, opens, and
 `state` and `code_challenge` have had characters inserted into them.
 */
 pub fn authorize_url_in(output: &str) -> Option<String> {
-    // ESC ] 8 ; <params> ; <uri> ST — the uri is the second `;`-separated field.
+    // ESC ] 8 ; <params> ; <uri> ST â€” the uri is the second `;`-separated field.
     for start in find_all(output, "\u{1b}]8;") {
         let after = &output[start + 4..];
         let Some(semicolon) = after.find(';') else {
@@ -147,8 +147,8 @@ pub fn wants_the_code(output: &str) -> bool {
     /*
      * Compared with the spaces taken out of both sides, because the CLI does not use spaces.
      *
-     * It positions every word with a cursor-column escape instead — `Paste\u{1b}[7Gcode` and so on
-     * — so stripping the escapes leaves "Pastecodehereifprompted" and a match on the phrase as
+     * It positions every word with a cursor-column escape instead â€” `Paste\u{1b}[7Gcode` and so on
+     * â€” so stripping the escapes leaves "Pastecodehereifprompted" and a match on the phrase as
      * written never fires. This cost a live sign-in: the code was handed over, and the flow sat in
      * the wrong wait until it timed out, with the prompt plainly on screen the whole time.
      */
@@ -163,7 +163,7 @@ pub fn wants_the_code(output: &str) -> bool {
 Whether the endpoint refused the code.
 
 Its own answer because the alternative is waiting out the timeout and then saying something vague.
-The CLI prints `OAuth error: …` and offers to retry, so it stays alive and there is nothing further
+The CLI prints `OAuth error: â€¦` and offers to retry, so it stays alive and there is nothing further
 to wait for: the code is spent either way and the flow has to start again.
 */
 pub fn refused_the_code(output: &str) -> bool {
@@ -244,7 +244,7 @@ impl SigningIn {
     the person's machine and nothing is left behind: `--rm`, no ports, no mounts, no name.
 
     Under a pty because the CLI draws a terminal. Given plain pipes it writes nothing at all and
-    waits — measured, not assumed: the same command produced zero bytes on a pipe and 4 kB on a pty.
+    waits â€” measured, not assumed: the same command produced zero bytes on a pipe and 4 kB on a pty.
     */
     pub fn begin(engine: &crate::engine::Address, image: &str) -> Result<(Self, String), String> {
         let pty = native_pty_system()
@@ -363,7 +363,7 @@ impl SigningIn {
          * `\r` rather than `\n` because Enter on a terminal is a carriage return and a TUI reading a
          * pty in raw mode takes that. And on its own rather than appended, because the CLI turns on
          * bracketed paste and a code arrives as one burst: a 32-character code with the return in
-         * the same write submitted fine, and a 92-character one did not — it sat in the prompt,
+         * the same write submitted fine, and a 92-character one did not â€” it sat in the prompt,
          * masked, until the wait expired, and was then reported as refused when nothing had read it.
          * Two writes with a gap makes the return a keypress after the input has settled rather than
          * the tail of a paste.
@@ -451,12 +451,12 @@ impl SigningIn {
         /*
          * A way to see what the terminal actually said, for diagnosing this by hand.
          *
-         * Off unless `OPENBOT_SIGNIN_TRANSCRIPT` names a file, because the transcript can contain
+         * Off unless `Connect_SIGNIN_TRANSCRIPT` names a file, because the transcript can contain
          * the token: a sign-in that printed one in a shape the scan did not match is exactly the
          * case worth looking at, and exactly the case where the file holds a live credential. Never
          * on in a build somebody installs, and never in the message handed to the window.
          */
-        if let Ok(path) = std::env::var("OPENBOT_SIGNIN_TRANSCRIPT") {
+        if let Ok(path) = std::env::var("Connect_SIGNIN_TRANSCRIPT") {
             if let Ok(seen) = self.output.lock() {
                 let _ = std::fs::write(path, seen.as_str());
             }
@@ -519,7 +519,7 @@ the address the browser is sent to.
 
 AND THE HOST IS LEFT AT ITS DEFAULT, `localhost`, WHICH IS NOT COSMETIC. OpenAI compares the
 redirect URI as a string, and `http://localhost:1455/auth/callback` is what is registered. Passing
-`127.0.0.1` — the same address, a different string — makes the authorize request fail with
+`127.0.0.1` â€” the same address, a different string â€” makes the authorize request fail with
 `unknown_error` before any login page is drawn. Measured, twice, before the cause was obvious.
 
 AND WHAT IS PRINTED IS THE WHOLE STORE, NOT THE ACCESS TOKEN. The access token expires within the
@@ -574,16 +574,16 @@ login_chatgpt(open_browser=False, port=__LOOPBACK_PORT__, timeout=900)
 raw = json.loads(Path(__STORE_PATH__).read_text())
 if not (raw.get("access_token") or raw.get("token")):
     raise SystemExit("the sign-in finished but left no token behind")
-print("OPENBOT_CHATGPT_STORE=" + json.dumps(raw, separators=(",", ":")), flush=True)
+print("Connect_CHATGPT_STORE=" + json.dumps(raw, separators=(",", ":")), flush=True)
 "#;
 
 /**
 Fill in the addresses the login program needs.
 
 THE PLACEHOLDERS ARE UNDERSCORED FOR A REASON, and it is not style. They used to be bare words, and
-`OPENBOT_CHATGPT_STORE=` contains one of them: rendering rewrote the program's own marker into
-`print("OPENBOT_CHATGPT_"/root/..."=" + ...)`, which is a syntax error. The container then died
-before it printed anything and the window said "the sign-in never offered a link to open" — a
+`Connect_CHATGPT_STORE=` contains one of them: rendering rewrote the program's own marker into
+`print("Connect_CHATGPT_"/root/..."=" + ...)`, which is a syntax error. The container then died
+before it printed anything and the window said "the sign-in never offered a link to open" â€” a
 failure with no relation to its cause, from a program that no test could see was malformed because
 every test looked at the template rather than the rendering.
 */
@@ -638,7 +638,7 @@ impl SigningInToChatGpt {
 
         let mut child = command.spawn().map_err(|error| {
             crate::problem::Problem::with(
-                "OpenBot could not start the sign-in with OpenAI.",
+                "Connect could not start the sign-in with OpenAI.",
                 error.to_string(),
             )
         })?;
@@ -667,7 +667,7 @@ impl SigningInToChatGpt {
 
     THE CONTAINER'S OUTPUT IS THE WHOLE DIAGNOSIS HERE, and withholding it cost real time. A
     rendering bug made the login program a syntax error, so it died before printing anything and the
-    window said only "the sign-in never offered a link to open" — true, useless, and unrelatable to
+    window said only "the sign-in never offered a link to open" â€” true, useless, and unrelatable to
     its cause. What Python said is now kept beside the sentence, where whoever is debugging can open
     it and nobody else has to look.
 
@@ -677,13 +677,13 @@ impl SigningInToChatGpt {
     not a thing to be almost sure about.
     */
     fn gave_up(&mut self) -> crate::problem::Problem {
-        let said = String::from("OpenBot could not start the sign-in with OpenAI.");
+        let said = String::from("Connect could not start the sign-in with OpenAI.");
         let detail = self
             .output
             .lock()
             .map(|seen| {
                 seen.lines()
-                    .filter(|line| !line.contains("OPENBOT_CHATGPT_STORE="))
+                    .filter(|line| !line.contains("Connect_CHATGPT_STORE="))
                     .collect::<Vec<_>>()
                     .join("\n")
             })
@@ -752,7 +752,7 @@ fn drain<R: Read>(stream: &mut R, into: std::sync::Arc<std::sync::Mutex<String>>
 pub fn chatgpt_store_in(output: &str) -> Option<String> {
     plain(output)
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("OPENBOT_CHATGPT_STORE="))
+        .filter_map(|line| line.trim().strip_prefix("Connect_CHATGPT_STORE="))
         .map(str::trim)
         // A store is an object. Anything else is a half-read line, and writing it to the file the
         // harness reads would turn a sign-in that looked fine into a Bot that cannot start.
@@ -763,7 +763,7 @@ pub fn chatgpt_store_in(output: &str) -> Option<String> {
 /// The address a browser has to open for the ChatGPT sign-in.
 ///
 /// Printed by the vendor's login as its fallback when `open_browser` is off, which is how this gets
-/// it: OpenBot opens the browser itself so the window can also show the link.
+/// it: Connect opens the browser itself so the window can also show the link.
 pub fn openai_url_in(output: &str) -> Option<String> {
     plain(output)
         .split_whitespace()
@@ -956,7 +956,7 @@ fn main() {
         assert!(wants_the_code(real), "the real prompt shape was not seen");
         // And still when a terminal does use spaces.
         assert!(wants_the_code("Paste code here if prompted >"));
-        assert!(!wants_the_code("Opening browser to sign in…"));
+        assert!(!wants_the_code("Opening browser to sign inâ€¦"));
     }
 
     /// The refusal, in the shape the CLI writes it. Taken from a real run with a bad code.
@@ -1011,20 +1011,20 @@ fn main() {
     /// The store line is this deployment's contract with the program it hands the image.
     #[test]
     fn the_chatgpt_store_is_read_off_its_own_line() {
-        let output = "some chatter\nOPENBOT_CHATGPT_STORE={\"access_token\":\"a\",\"refresh_token\":\"r\"}\nmore\n";
+        let output = "some chatter\nConnect_CHATGPT_STORE={\"access_token\":\"a\",\"refresh_token\":\"r\"}\nmore\n";
         assert_eq!(
             chatgpt_store_in(output).as_deref(),
             Some("{\"access_token\":\"a\",\"refresh_token\":\"r\"}")
         );
-        assert_eq!(chatgpt_store_in("OPENBOT_CHATGPT_STORE=\n"), None);
+        assert_eq!(chatgpt_store_in("Connect_CHATGPT_STORE=\n"), None);
         assert_eq!(chatgpt_store_in("nothing here"), None);
     }
 
     /// A truncated store is worse than none: it would be written to the file the harness reads.
     #[test]
     fn a_half_read_store_line_is_refused() {
-        assert_eq!(chatgpt_store_in("OPENBOT_CHATGPT_STORE={\"access_to"), None);
-        assert_eq!(chatgpt_store_in("OPENBOT_CHATGPT_STORE={}"), None);
+        assert_eq!(chatgpt_store_in("Connect_CHATGPT_STORE={\"access_to"), None);
+        assert_eq!(chatgpt_store_in("Connect_CHATGPT_STORE={}"), None);
     }
 
     /**
@@ -1038,7 +1038,7 @@ fn main() {
     fn rendering_leaves_the_marker_and_the_addresses_intact() {
         let program = render_login(CHATGPT_LOGIN);
         assert!(
-            program.contains(r#"print("OPENBOT_CHATGPT_STORE=" + json.dumps(raw"#),
+            program.contains(r#"print("Connect_CHATGPT_STORE=" + json.dumps(raw"#),
             "rendering damaged the line the deployment reads:\n{program}"
         );
         assert!(
@@ -1050,7 +1050,7 @@ fn main() {
         assert!(program.contains(&format!("{CHATGPT_STORE:?}")));
         // What the reader looks for has to survive what the writer produces.
         assert_eq!(
-            chatgpt_store_in("OPENBOT_CHATGPT_STORE={\"a\":1}").as_deref(),
+            chatgpt_store_in("Connect_CHATGPT_STORE={\"a\":1}").as_deref(),
             Some("{\"a\":1}")
         );
     }
@@ -1063,7 +1063,7 @@ fn main() {
             "the login must print the store, not one field of it"
         );
         assert!(
-            !CHATGPT_LOGIN.contains("OPENBOT_CHATGPT_TOKEN"),
+            !CHATGPT_LOGIN.contains("Connect_CHATGPT_TOKEN"),
             "an access token alone expires within the hour and cannot be renewed"
         );
     }

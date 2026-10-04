@@ -1,15 +1,12 @@
 import {
   IconBrandChrome,
   IconBrandGithub,
-  IconChevronLeft,
-  IconChevronRight,
   IconLoader2,
   IconPencil,
   IconStarFilled,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useIframeBrowserNav } from "@/lib/companies/iframe-browser-nav";
 import {
   getConnection,
   getLevel3Browser,
@@ -38,7 +35,6 @@ export function Level3SiteStudio({
   computerId?: string;
 }) {
   const [state, setState] = useState(() => getLevel3Browser(companyId));
-  const [frameKey, setFrameKey] = useState(0);
 
   useEffect(() => {
     setState(getLevel3Browser(companyId));
@@ -50,7 +46,6 @@ export function Level3SiteStudio({
   const url = resolveTabUrl(state);
 
   useEffect(() => {
-    setFrameKey((n) => n + 1);
     if (url) {
       navigateDesktopBrowser(url);
     }
@@ -108,12 +103,7 @@ export function Level3SiteStudio({
             url={productUrl}
           />
         ) : (
-          <EmbedPane
-            companyId={companyId}
-            companyName={companyName}
-            frameKey={frameKey}
-            url={productUrl}
-          />
+          <HeliumTabsPane companyName={companyName} />
         )}
       </div>
     );
@@ -128,12 +118,7 @@ export function Level3SiteStudio({
           url={url}
         />
       ) : (
-        <EmbedPane
-          companyId={companyId}
-          companyName={companyName}
-          frameKey={frameKey}
-          url={url}
-        />
+        <HeliumTabsPane companyName={companyName} />
       )}
     </div>
   );
@@ -284,139 +269,16 @@ function ConnectChromePane({
   );
 }
 
-function EmbedPane({
-  companyId,
-  url: initialUrl,
-  companyName,
-  frameKey,
-}: {
-  companyId: string;
-  url: string;
-  companyName: string;
-  frameKey: number;
-}) {
-  const [currentUrl, setCurrentUrl] = useState(initialUrl);
-  const [inputUrl, setInputUrl] = useState(initialUrl);
-  const [key, setKey] = useState(frameKey);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const { goBack, goForward } = useIframeBrowserNav(iframeRef, Boolean(currentUrl));
-
-  useEffect(() => {
-    setCurrentUrl(initialUrl);
-    setInputUrl(initialUrl);
-    setKey((k) => k + 1);
-  }, [initialUrl]);
-
-  const iframeSrc = currentUrl || "about:blank";
-
-  const handleNavigate = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    let target = inputUrl.trim();
-    if (!target) return;
-    if (!target.startsWith("http://") && !target.startsWith("https://")) {
-      target = "https://" + target;
-    }
-    setCurrentUrl(target);
-    setInputUrl(target);
-    setKey((k) => k + 1);
-  };
-
-  const reload = () => {
-    setKey((k) => k + 1);
-  };
-
-  const openExternally = () => {
-    window.open(currentUrl, "_blank", "noopener,noreferrer");
-  };
-
+/**
+ * Helium / normal browser: Lab apps open as new Helium tabs straight from the sidebar
+ * (`openInHeliumTab`). There is no in-app preview or iframe — this pane stays calm and unchanged.
+ */
+function HeliumTabsPane({ companyName }: { companyName: string }) {
   return (
-    <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white">
-      {/* Modern In-App Browser Navigation Bar */}
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-neutral-200 bg-neutral-50/90 px-3 py-1.5 backdrop-blur">
-        <div className="flex items-center gap-1">
-          <Button
-            aria-label="Zurück"
-            className="size-7 rounded-md text-neutral-600 hover:text-neutral-900"
-            onClick={goBack}
-            size="icon"
-            title="Zurück"
-            type="button"
-            variant="ghost"
-          >
-            <IconChevronLeft className="size-4" />
-          </Button>
-          <Button
-            aria-label="Vorwärts"
-            className="size-7 rounded-md text-neutral-600 hover:text-neutral-900"
-            onClick={goForward}
-            size="icon"
-            title="Vorwärts"
-            type="button"
-            variant="ghost"
-          >
-            <IconChevronRight className="size-4" />
-          </Button>
-          <Button
-            aria-label="Neu laden"
-            className="size-7 rounded-md text-neutral-600 hover:text-neutral-900"
-            onClick={reload}
-            size="icon"
-            title="Seite neu laden"
-            type="button"
-            variant="ghost"
-          >
-            <span className="text-xs">↻</span>
-          </Button>
-        </div>
-
-        {/* Address Input */}
-        <form className="flex min-w-0 flex-1 items-center gap-1" onSubmit={handleNavigate}>
-          <input
-            className="h-7 w-full rounded-md border border-neutral-200 bg-white px-2.5 font-mono text-[12px] text-neutral-800 shadow-inner focus:border-sky-500 focus:outline-none"
-            onChange={(e) => setInputUrl(e.target.value)}
-            placeholder="URL eingeben..."
-            type="text"
-            value={inputUrl}
-          />
-        </form>
-
-        <div className="flex items-center gap-1">
-          <Button
-            className="h-7 gap-1 px-2.5 text-[11px] font-medium"
-            onClick={openExternally}
-            size="sm"
-            title="Öffnet die Seite für uneingeschränkte Logins (Google, GitHub, Lovable) im separaten Fenster"
-            type="button"
-            variant="outline"
-          >
-            <span>↗</span>
-            <span className="hidden sm:inline">Neues Fenster</span>
-          </Button>
-          <Button
-            className="h-7 gap-1 px-2 text-[11px]"
-            onClick={() => setLabEngine(companyId, "full")}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <IconBrandChrome className="size-3" />
-            <span className="hidden sm:inline">Chrome</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* Embedded In-App Browser View without restrictive sandbox */}
-      <div className="relative min-h-0 w-full flex-1 bg-white">
-        <iframe
-          allow="clipboard-read; clipboard-write; fullscreen; accelerometer; autoplay; camera; microphone; geolocation"
-          className="absolute inset-0 size-full border-0 bg-white"
-          key={`${key}:${currentUrl}`}
-          ref={iframeRef}
-          referrerPolicy="no-referrer-when-downgrade"
-          src={iframeSrc}
-          title={`${companyName} · Browser`}
-        />
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-[#f5f5f7] px-6 text-center">
+      <p className="max-w-md text-[12px] leading-relaxed text-neutral-400">
+        {companyName} · Apps links öffnen als neuer Helium-Tab.
+      </p>
     </div>
   );
 }

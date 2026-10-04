@@ -1,4 +1,4 @@
-fn main() {
+﻿fn main() {
     // Cargo resolves RUSTC for build scripts, but does not promise it at test runtime. Tests
     // compile native command fixtures using this toolchain, independent of fake-engine PATHs.
     let compiler = std::env::var_os("RUSTC").expect("Cargo supplies RUSTC to build scripts");
@@ -23,9 +23,9 @@ fn main() {
             .find(|candidate| candidate.is_file())
             .expect("Cargo's compiler must resolve on its build PATH")
     };
-    println!("cargo:rustc-env=OPENBOT_TEST_RUSTC={}", compiler.display());
+    println!("cargo:rustc-env=Connect_TEST_RUSTC={}", compiler.display());
     println!(
-        "cargo:rustc-env=OPENBOT_TEST_TOOL_PATH={}",
+        "cargo:rustc-env=Connect_TEST_TOOL_PATH={}",
         tool_path.to_string_lossy()
     );
     println!("cargo:rerun-if-env-changed=RUSTC");

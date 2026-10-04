@@ -1,0 +1,265 @@
+import { IconBrandGoogleDrive, IconCloudUpload, IconHistory, IconRefresh } from "@tabler/icons-react";
+import { useCallback, useEffect, useState } from "react";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import {
+  connectGoogleDrive,
+  type DriveBackupFile,
+  type DriveBackupStatus,
+  disconnectDriveBackup,
+  fetchDriveBackupStatus,
+  formatBytes,
+  formatWhen,
+  listDriveBackups,
+  RESTORE_CONFIRMATION,
+  restoreDriveBackup,
+  runDriveBackup,
+  saveDriveBackupSettings,
+} from "@/lib/drive-backup/api";
+
+/** Settings › Sicherung: Google Drive verbinden, Status, Jetzt sichern, Wiederherstellen. */
+export function DriveBackupPanel() {
+  const [status, setStatus] = useState<DriveBackupStatus | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [backups, setBackups] = useState<DriveBackupFile[] | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState("");
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await fetchDriveBackupStatus());
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("drive");
+    if (result === "connected") setMessage({ tone: "ok", text: "Google Drive ist verbunden. Die erste Sicherung läuft gerade." });
+    if (result === "failed") setMessage({ tone: "error", text: `Verbinden fehlgeschlagen: ${params.get("reason") ?? "unbekannt"}` });
+    if (result) {
+      params.delete("drive");
+      params.delete("reason");
+      const q = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${q ? `?${q}` : ""}${window.location.hash}`);
+    }
+    const timer = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  const act = async (name: string, fn: () => Promise<void>) => {
+    setBusy(name);
+    setMessage(null);
+    try {
+      await fn();
+    } catch (error) {
+      setMessage({ tone: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(null);
+      void refresh();
+    }
+  };
+
+  const openRestore = () =>
+    act("list", async () => {
+      setBackups(null);
+      setSelected(null);
+      setConfirm("");
+      setRestoreOpen(true);
+      const list = await listDriveBackups();
+      setBackups(list);
+      setSelected(list[0]?.id ?? null);
+    });
+
+  const s = status;
+  return (
+    <PageSection
+      description="Verschlüsselte Sicherung aller Connect-Daten (Unternehmen, Agents, Gruppen, Chats, Sidebar-Apps, Einstellungen, Tresor verschlüsselt, Brain) in deinem Google Drive, Ordner „Connect Backup“. Connect sieht dort nur die eigenen Dateien."
+      title="Google-Drive-Sicherung"
+    >
+      {loadError ? <p className="mt-3 text-destructive text-sm">{loadError}</p> : null}
+      {message ? (
+        <p className={`mt-3 text-sm ${message.tone === "error" ? "text-destructive" : "text-emerald-500"}`} role="status">
+          {message.text}
+        </p>
+      ) : null}
+      <PageRows>
+        <Item size="sm">
+          <ItemContent>
+            <ItemTitle>
+              <IconBrandGoogleDrive className="size-4" />
+              {s?.connected ? `Verbunden${s.email ? ` mit ${s.email}` : ""}` : "Google Drive verbinden"}
+            </ItemTitle>
+            <ItemDescription>
+              {!s
+                ? "Lade …"
+                : !s.configured
+                  ? "Nicht eingerichtet: GOOGLE_DRIVE_CLIENT_ID/SECRET fehlen in der Server-.env."
+                  : s.connected
+                    ? `Seit ${formatWhen(s.connectedAt)} · Zugriff nur auf den Ordner „${s.folderName}“ (drive.file)`
+                    : "Einmal bei Google zustimmen, danach sichert Connect automatisch."}
+            </ItemDescription>
+          </ItemContent>
+          <ItemActions>
+            {s?.connected ? (
+              <Button disabled={!!busy} onClick={() => act("disconnect", async () => void (await disconnectDriveBackup()))} size="sm" variant="ghost">
+                Trennen
+              </Button>
+            ) : (
+              <Button disabled={!s?.configured || !!busy} onClick={() => act("connect", () => connectGoogleDrive("settings"))} size="sm">
+                Mit Google verbinden ↗
+              </Button>
+            )}
+          </ItemActions>
+        </Item>
+        <Separator />
+        <Item size="sm">
+          <ItemContent>
+            <ItemTitle>Letzte Sicherung</ItemTitle>
+            <ItemDescription>
+              {s?.lastSuccessAt
+                ? `${formatWhen(s.lastSuccessAt)} · ${formatBytes(s.lastSize)} · ${s.lastRows ?? "?"} Einträge · ${s.lastTrigger ?? ""} · geprüft`
+                : "Noch keine Sicherung in Google Drive."}
+              {s?.running || busy === "run" ? " · Sicherung läuft …" : ""}
+            </ItemDescription>
+            {s?.lastError ? (
+              <ItemDescription className="text-destructive">
+                Fehler {formatWhen(s.lastErrorAt)}: {s.lastError}
+              </ItemDescription>
+            ) : null}
+          </ItemContent>
+          <ItemActions>
+            <Button
+              disabled={!s?.connected || !!busy || s.running}
+              onClick={() =>
+                act("run", async () => {
+                  const r = await runDriveBackup();
+                  setMessage({ tone: "ok", text: `Gesichert und geprüft: ${formatBytes(r.status.lastSize)}.` });
+                })
+              }
+              size="sm"
+              variant="outline"
+            >
+              <IconCloudUpload className="size-4" />
+              {busy === "run" ? "Sichere …" : "Jetzt sichern"}
+            </Button>
+          </ItemActions>
+        </Item>
+        <Separator />
+        <Item size="sm">
+          <ItemContent>
+            <ItemTitle>Automatisch sichern</ItemTitle>
+            <ItemDescription>
+              {s?.scheduler === "serverless"
+                ? "In der Web-Version (Vercel) nur über „Jetzt sichern“."
+                : `Bei Änderungen höchstens alle ${s?.settings.minIntervalMinutes ?? 15} Min., sonst alle ${s?.settings.maxAgeHours ?? 24} h. Aufbewahrt: die neuesten ${s?.settings.keep ?? 24} + je Tag eine für ${s?.settings.keepDays ?? 30} Tage.`}
+            </ItemDescription>
+          </ItemContent>
+          <ItemActions>
+            <Switch
+              aria-label="Automatisch sichern"
+              checked={s?.settings.enabled ?? true}
+              disabled={!s?.connected || !!busy}
+              onCheckedChange={(checked) => act("settings", async () => void (await saveDriveBackupSettings({ enabled: checked })))}
+            />
+          </ItemActions>
+        </Item>
+        <Separator />
+        <Item size="sm">
+          <ItemContent>
+            <ItemTitle>Wiederherstellen</ItemTitle>
+            <ItemDescription>
+              {s?.lastRestoreAt
+                ? `Zuletzt ${formatWhen(s.lastRestoreAt)}: ${s.lastRestoreInfo ?? ""}`
+                : "Ersetzt die Daten durch eine Sicherung. Vorher legt Connect eine lokale Sicherheitskopie an."}
+            </ItemDescription>
+          </ItemContent>
+          <ItemActions>
+            <Button disabled={!s?.connected || !!busy} onClick={openRestore} size="sm" variant="outline">
+              <IconHistory className="size-4" />
+              Wiederherstellen …
+            </Button>
+          </ItemActions>
+        </Item>
+      </PageRows>
+      {s ? (
+        <p className="mt-2 text-muted-foreground text-xs">
+          Verschlüsselt mit KEY_ENCRYPTION_KEY (Schlüssel-ID {s.keyFingerprint}). Diesen Schlüssel im Passwort-Manager aufbewahren, ohne ihn ist die Sicherung auf einem neuen PC nicht lesbar.
+          {s.localDir ? ` Lokale Kopie: ${s.localDir}` : ""}
+          <button className="ml-2 inline-flex items-center gap-1 underline-offset-2 hover:underline" onClick={() => void refresh()} type="button">
+            <IconRefresh className="size-3" />
+            aktualisieren
+          </button>
+        </p>
+      ) : null}
+
+      <Dialog onOpenChange={setRestoreOpen} open={restoreOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sicherung wiederherstellen</DialogTitle>
+            <DialogDescription>
+              Alle Connect-Daten werden durch die gewählte Sicherung ersetzt. Vorher wird eine lokale Sicherheitskopie des jetzigen Stands angelegt. Brain-Notizen werden nicht überschrieben, sondern neben den Brain-Ordner gelegt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+            {backups === null ? (
+              <p className="text-muted-foreground text-sm">Lade Sicherungen aus Google Drive …</p>
+            ) : backups.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Keine Sicherungen gefunden.</p>
+            ) : (
+              backups.map((b) => (
+                <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted" key={b.id}>
+                  <input checked={selected === b.id} name="backup" onChange={() => setSelected(b.id)} type="radio" />
+                  <span className="flex-1">{formatWhen(b.createdTime)}</span>
+                  <span className="text-muted-foreground">
+                    {formatBytes(Number(b.size))} · {b.appProperties?.rows ?? "?"} Einträge
+                    {b.appProperties?.chats ? ` · ${b.appProperties.chats} Chats (${b.appProperties.chatMessages ?? "?"} Nachrichten)` : ""}
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm">
+              Zur Bestätigung <b>{RESTORE_CONFIRMATION}</b> eingeben:
+            </span>
+            <Input onChange={(e) => setConfirm(e.target.value)} placeholder={RESTORE_CONFIRMATION} value={confirm} />
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setRestoreOpen(false)} variant="ghost">
+              Abbrechen
+            </Button>
+            <Button
+              disabled={!selected || confirm !== RESTORE_CONFIRMATION || !!busy}
+              onClick={() =>
+                act("restore", async () => {
+                  if (!selected) return;
+                  const r = await restoreDriveBackup(selected, confirm);
+                  setRestoreOpen(false);
+                  setMessage({
+                    tone: "ok",
+                    text: `Wiederhergestellt: ${r.restored.tables} Tabellen, ${r.restored.rows} Einträge. Sicherheitskopie: ${r.safetyCopy ?? "–"}. Bitte die Seite neu laden.`,
+                  });
+                })
+              }
+              variant="destructive"
+            >
+              {busy === "restore" ? "Stelle wieder her …" : "Wiederherstellen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </PageSection>
+  );
+}

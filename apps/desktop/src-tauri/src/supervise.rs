@@ -1,4 +1,4 @@
-//! Keeping the three host processes alive, and not outliving them.
+﻿//! Keeping the three host processes alive, and not outliving them.
 //!
 //! `worker/src/index.ts` states the problem it has: "this process has no restart policy watching
 //! it; it is somebody's laptop, left running". The shell is that policy. What a policy needs, and

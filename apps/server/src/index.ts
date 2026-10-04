@@ -85,9 +85,15 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { intelligenceChannelMappings } from "./db/schema";
+import { brainTools, callBrainTool } from "./brain/tools";
+import { agentHub, agentHubTools, initAgentHub } from "./agent-hub/service";
+import { setAgentModelResolver } from "./copilot";
 import { createHostAccessBroker } from "./host-access/broker";
 import { hostAccessTools } from "./host-access/tools";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
+import { createLocalIntelligence } from "./chat-store/local-intelligence";
+import { PostgresAgentRunner } from "./chat-store/runner";
+import { ChatStore, setChatStore } from "./chat-store/store";
 import { createOnboardingStore } from "./people/onboarding";
 import { createPeopleStore } from "./people/store";
 import { useRoutineTools } from "./plugins/builtin-routines";
@@ -178,7 +184,17 @@ const config = loadConfig();
 // Read with the rest of the configuration, where an empty variable is an absent one. See
 // `serverPort` in config.ts for what `process.env.PORT ?? …` did with `PORT=` instead.
 const port = config.port;
-const database = createDatabase(config.databaseUrl);
+/*
+ * Serverless (Vercel Functions, CONNECT_SERVERLESS=1, see vercel-entry.ts): no LISTEN connections, no
+ * background loops and no Bun.serve, because an instance only lives while it answers requests. The
+ * pool is sized by DATABASE_POOL_MAX so several instances fit the Supabase session pooler.
+ */
+const serverless = process.env.CONNECT_SERVERLESS === "1";
+const poolMax = Number(process.env.DATABASE_POOL_MAX) || undefined;
+const database = createDatabase(
+  config.databaseUrl,
+  poolMax ? { max: poolMax } : {},
+);
 await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -216,10 +232,9 @@ const channelEvents = createChannelEventHub();
 const componentStore = createComponentStore(database);
 // Its own connection is held for the life of the process; announced activity from any instance
 // arrives here and is fanned out to connected members.
-const channelActivityListener = await startChannelActivityListener(
-  config.databaseUrl,
-  channelEvents,
-);
+const channelActivityListener = serverless
+  ? { stop: async () => {} }
+  : await startChannelActivityListener(config.databaseUrl, channelEvents);
 const roleRepository = createRoleRepository(database);
 const loadAgentsForActor = createRuntimeAgentLoader(
   database,
@@ -287,10 +302,9 @@ const policySource = await policyStore.load();
  * enforcing what it read at boot, so a new deny rule stops roughly one action in N while the screen
  * and the audit row both report success. See policy-listener.ts.
  */
-const policyListener = await startPolicyListener(
-  config.databaseUrl,
-  policyStore,
-);
+const policyListener = serverless
+  ? { stop: async () => {} }
+  : await startPolicyListener(config.databaseUrl, policyStore);
 
 /*
  * Record which boundary this process started with.
@@ -302,10 +316,15 @@ const policyListener = await startPolicyListener(
  * unavailable, and the row is a note for a reader rather than something the server depends on.
  */
 const bootAuditStore = createAuditStore(database);
+// Agent Hub: per-agent model, MCP servers (stdio + HTTP/SSE) and own Helium browser for built-in Bots.
+initAgentHub({ database, encryptionKey: config.keyEncryptionKey, credentialStore, auditStore: bootAuditStore });
+setAgentModelResolver(async (agentId) => (await agentHub()?.resolveModel(agentId)) ?? null);
 // One store: the gateway writes through it, a route reads it, and the sweep below takes the old ones out.
 const pageFrameStore = createPageFrameStore(database);
 // Housekeeping on a schedule: audit rows when asked for, screenshots always, one timer. See audit-retention.ts.
-const retentionSweeps = startRetentionSweeps(
+const retentionSweeps = serverless
+  ? { stop: () => {} }
+  : startRetentionSweeps(
   config.databaseUrl,
   config.auditRetentionDays,
   pageFrameStore,
@@ -591,6 +610,10 @@ const loadToolsForActor =
       auditStore: bootAuditStore,
       initiator,
     }),
+    // Brain tools only for agents pinned in Brain/agents.json; every call is checked there again.
+    ...(await brainTools({ botId }).catch(() => [])),
+    // MCP servers attached to this Bot in Agent → Einstellungen → MCP (Agent Hub).
+    ...(await agentHubTools(botId)),
   ];
 
 /** One person's standing instructions, for both the /api/settings routes and every run they start. */
@@ -860,17 +883,42 @@ const buildAgentFor = async ({
  * connection, but its `threads` map is per instance, and a runner per turn would fragment the
  * already-running check that keeps two turns off one thread. See `routines/run-turn.ts`.
  */
-const routineIntelligence = observeIntelligenceAuthentication(
-  new CopilotKitIntelligence({
-    apiUrl: config.runtime.intelligence.apiUrl,
-    wsUrl: config.runtime.intelligence.gatewayWsUrl,
-    apiKey: config.runtime.intelligence.apiKey,
-  }),
-);
-const routineAgentRunner = new IntelligenceAgentRunner({
-  url: routineIntelligence.ɵgetRunnerWsUrl(),
-  authToken: routineIntelligence.ɵgetRunnerAuthToken(),
-});
+/*
+ * LOCAL MODE (no CopilotKit Intelligence key, see config.ts `runtimeCapabilities`): conversations
+ * live in this deployment's Postgres (`chat-store/`). One store and ONE runner for the process,
+ * shared by a person's chat, routines and hops, so the "already running" check and the in-memory
+ * replay agree everywhere.
+ */
+const localChatStore = config.runtime.mode === "local" ? new ChatStore(database) : null;
+setChatStore(localChatStore);
+if (localChatStore) {
+  await localChatStore.ensureTables();
+  console.info(JSON.stringify({ type: "chat-store", mode: "local" }));
+}
+const localChatRunner = localChatStore
+  ? new PostgresAgentRunner(localChatStore, (input) => {
+      void channelStore.signalBusy(input.threadId, input.busy).catch(() => {});
+    })
+  : null;
+
+const makeRoutineIntelligence = () =>
+  observeIntelligenceAuthentication(
+    new CopilotKitIntelligence({
+      apiUrl: config.runtime.intelligence.apiUrl,
+      wsUrl: config.runtime.intelligence.gatewayWsUrl,
+      apiKey: config.runtime.intelligence.apiKey,
+    }),
+  );
+// In local mode the same narrow calls are answered from Postgres (chat-store/local-intelligence.ts).
+const routineIntelligence = (
+  localChatStore ? createLocalIntelligence(localChatStore) : makeRoutineIntelligence()
+) as ReturnType<typeof makeRoutineIntelligence>;
+const routineAgentRunner = localChatRunner
+  ? (localChatRunner as unknown as IntelligenceAgentRunner)
+  : new IntelligenceAgentRunner({
+      url: routineIntelligence.ɵgetRunnerWsUrl(),
+      authToken: routineIntelligence.ɵgetRunnerAuthToken(),
+    });
 
 const routineRunner = createRoutineRunner({
   routineStore,
@@ -996,6 +1044,8 @@ const copilotRuntime = mountCopilotRuntime(
   // And that those files went out in a send, written by the person who sent them and only for rows
   // they uploaded. See markAttachmentsSentForActor.
   markAttachmentsSentForActor,
+  // Local mode only: the Postgres chat store and the one runner over it (see above).
+  localChatStore && localChatRunner ? { store: localChatStore, runner: localChatRunner } : null,
 );
 
 /**
@@ -1024,7 +1074,7 @@ const copilotRuntime = mountCopilotRuntime(
  */
 let workOfferedListener: WorkOfferedListener | undefined;
 
-if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
+if (!serverless && config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
   const runner = createHandoffRunner({
     queue: createWorkQueue(database),
     owner: workOwner("handoff"),
@@ -1092,9 +1142,8 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
       // The same address and the same token the runtime uses. Assembling either from configuration
       // produced a runner every join was refused for, because the thread's active run is a lock the
       // platform issues rather than something an API key can claim.
-      runner: new IntelligenceAgentRunner(
-        copilotRuntime.runnerConnection(),
-      ) as never,
+      runner: (copilotRuntime.localRunner ??
+        new IntelligenceAgentRunner(copilotRuntime.runnerConnection())) as never,
     }),
   });
 
@@ -1178,7 +1227,7 @@ const reaper = createHandoffRunner({
     },
   },
 });
-repeatAfterEach(
+if (!serverless) repeatAfterEach(
   async () => {
     try {
       const purged = await reaper.reap();
@@ -1209,7 +1258,7 @@ const channelSummaries = {
   }),
   owner: workOwner("summariser"),
 };
-repeatAfterEach(async () => {
+if (!serverless) repeatAfterEach(async () => {
   try {
     await offerChannelsAwaitingSummary(channelSummaries);
     const report = await summariseClaimedChannels(channelSummaries);
@@ -1288,6 +1337,7 @@ const app = createApp(
   hostAccessBroker,
   process.env.CONNECT_DESKTOP_HOST_TOKEN,
   async ({ name, args, botId, actorId, initiator }) => {
+    if (name.startsWith("brain_")) return callBrainTool(name, args, botId);
     if (!name.startsWith("host_")) return null;
     const tool = hostAccessTools({
       broker: hostAccessBroker,
@@ -1357,7 +1407,7 @@ const isProxiedStream = (data: SocketData): data is StreamData =>
 const asChannelSocket = (ws: { data: SocketData }) =>
   ws as unknown as ChannelSocket;
 
-serve<SocketData>({
+if (!serverless) serve<SocketData>({
   hostname: "127.0.0.1",
   port,
   async fetch(request, server) {
@@ -1418,6 +1468,17 @@ serve<SocketData>({
         return undefined as unknown as Response;
       }
       return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    }
+    /*
+     * Local chat store: a Bot's answer streams back over this very request (SSE) instead of the
+     * Intelligence socket, and a local model on a CPU can be silent for longer than Bun's 10-second
+     * idle limit while it loads or thinks. Closed at 10 s, the person saw "network error" and the
+     * answer was lost mid-run. The runtime's stream keeps the request open only while a run lasts.
+     */
+    if (localChatStore && url.pathname.startsWith("/api/copilotkit/")) {
+      try {
+        server.timeout(request, 0);
+      } catch {}
     }
     return app.fetch(request, { server });
   },
@@ -1481,4 +1542,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.info(`Connect server listening on http://127.0.0.1:${port}`);
+if (!serverless) console.info(`Connect server listening on http://127.0.0.1:${port}`);
+
+/** The Hono app, for vercel-entry.ts. The Bun server above is not started in serverless mode. */
+export { app };

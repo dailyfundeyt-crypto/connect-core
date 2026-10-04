@@ -185,7 +185,7 @@ function CreateAgentWizard({
         typeof window !== "undefined"
           ? window.localStorage.getItem(ACTIVE_COMPANY_KEY)
           : null;
-      if (companyId) addAgentToCompany(companyId, agent.id);
+      if (companyId) void addAgentToCompany(companyId, agent.id);
     } catch {
       /* company missing or read-only seed — bot still exists under Marketplace */
     }

@@ -13,6 +13,7 @@ import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions, needsOnboarding } from "@/lib/auth/queries";
 import { appConfig } from "@/lib/generated/application-config";
 import { completeOnboardingMutationOptions } from "@/lib/onboarding/mutations";
+import { connectGoogleDrive, fetchDriveBackupStatus } from "@/lib/drive-backup/api";
 import { queryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/onboarding")({
@@ -145,10 +146,59 @@ function RosterStep() {
   );
 }
 
+const DRIVE_STEP_KEY = "connect.onboarding.step";
+
+/** Optional: Google Drive verbinden, damit alle Daten automatisch gesichert werden. Überspringbar. */
+function DriveStep() {
+  const status = useQuery({ queryKey: ["drive-backup", "status"], queryFn: fetchDriveBackupStatus, retry: false });
+  const [error, setError] = React.useState<string | null>(null);
+  const result = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("drive");
+  const connected = status.data?.connected;
+  return (
+    <div className="w-full flex flex-col items-center justify-center">
+      <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">Google Drive verbinden</h1>
+      <p className="text-sm text-muted-foreground mt-2 text-center max-w-md">
+        Connect sichert deine Unternehmen, Agents, Chats, Einstellungen und das Brain verschlüsselt in deinem Google Drive
+        (Ordner „Connect Backup“), automatisch bei jeder Änderung. Connect sieht dort nur seine eigenen Dateien.
+      </p>
+      <div className="h-8" />
+      {connected ? (
+        <p className="text-emerald-500 text-sm font-medium">
+          ✓ Verbunden{status.data?.email ? ` mit ${status.data.email}` : ""}. Die erste Sicherung läuft.
+        </p>
+      ) : (
+        <Button
+          disabled={!status.data?.configured}
+          onClick={() => {
+            setError(null);
+            window.sessionStorage.setItem(DRIVE_STEP_KEY, String(STEPS.length - 1));
+            connectGoogleDrive("onboarding").catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+          }}
+          size="lg"
+          variant="outline"
+        >
+          Google Drive verbinden ↗
+        </Button>
+      )}
+      {result === "failed" ? (
+        <p className="mt-3 text-destructive text-sm">
+          Verbinden hat nicht geklappt: {new URLSearchParams(window.location.search).get("reason") ?? "unbekannt"}
+        </p>
+      ) : null}
+      {error ? <p className="mt-3 text-destructive text-sm">{error}</p> : null}
+      {status.data && !status.data.configured ? (
+        <p className="mt-3 text-muted-foreground text-xs">Auf diesem Server ist die Drive-Sicherung nicht eingerichtet.</p>
+      ) : null}
+      <p className="mt-6 text-muted-foreground text-xs">Optional. Du kannst das jederzeit unter Einstellungen › Sicherung nachholen.</p>
+    </div>
+  );
+}
+
 const STEPS: Array<() => React.ReactNode> = [
   () => <WelcomeStep />,
   () => <ComputerUseStep />,
   () => <RosterStep />,
+  () => <DriveStep />,
 ];
 
 /** A pane arrives from the side the journey is moving toward, and leaves out the other. */
@@ -163,7 +213,14 @@ function RouteComponent() {
   const complete = useMutation(completeOnboardingMutationOptions(queryClient));
 
   // Browser state on purpose: the step is not persisted while the wizard is being designed.
-  const [step, setStep] = React.useState(0);
+  // Back from Google's consent screen: resume on the Drive step instead of the start.
+  const [step, setStep] = React.useState(() => {
+    if (typeof window === "undefined") return 0;
+    const saved = Number(window.sessionStorage.getItem(DRIVE_STEP_KEY));
+    window.sessionStorage.removeItem(DRIVE_STEP_KEY);
+    const fromGoogle = new URLSearchParams(window.location.search).has("drive");
+    return fromGoogle || (Number.isInteger(saved) && saved > 0) ? STEPS.length - 1 : 0;
+  });
   const [direction, setDirection] = React.useState(1);
   // The way out: set once the completion is saved, it fades the whole page and then navigates.
   const [leaving, setLeaving] = React.useState(false);

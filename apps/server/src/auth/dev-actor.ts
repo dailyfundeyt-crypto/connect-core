@@ -22,9 +22,11 @@ import type { AppVariables, AuthenticatedActor } from "./guards";
  */
 
 export const DEV_ACTOR: AuthenticatedActor = {
-  id: "dev-local-user",
-  email: "stefankunc994@gmail.com",
-  name: "Stefan Kunc",
+  // Connect App fallback: CONNECT_SINGLE_USER_ID/_EMAIL/_NAME let single-user mode act as an existing
+  // (Google) user, so switching back from sign-in to single-user keeps the same data.
+  id: process.env.CONNECT_SINGLE_USER_ID?.trim() || "dev-local-user",
+  email: process.env.CONNECT_SINGLE_USER_EMAIL?.trim() || "stefankunc994@gmail.com",
+  name: process.env.CONNECT_SINGLE_USER_NAME?.trim() || "Stefan Kunc",
   role: "admin",
 };
 

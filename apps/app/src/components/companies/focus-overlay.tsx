@@ -6,6 +6,7 @@ import {
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { Button } from "@/components/ui/button";
@@ -20,13 +21,14 @@ import {
   agentListQueryOptions,
 } from "@/lib/agents/queries";
 import { useStartChannel } from "@/lib/channels/start";
-import { setActiveLevel } from "@/lib/companies/level";
+import { type CompanyLevel, setActiveLevel } from "@/lib/companies/level";
+import { notifyDesktopLevel } from "@/lib/desktop-bridge";
 import { getCompany } from "@/lib/companies/store";
 import { cn } from "@/lib/utils";
 
 /**
- * Focus — schnelle Tasks als Overlay über HQ.
- * Schwarzer Scrim (kein Blur/Farbcast) — passt zu Connect Schwarz/Weiß.
+ * Focus — schnelle Tasks als eigene Seite (ersetzt den Inhalt, kein Overlay
+ * mehr über HQ/Company-Profil). Schwarz, passt zu Connect Schwarz/Weiß.
  */
 export function FocusOverlay({
   companyId,
@@ -61,9 +63,32 @@ export function FocusOverlay({
 
   const active = agents[activeIndex];
 
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  /*
+   * Focus is its own page (helium-companylogo): leaving it returns to the page
+   * the user came from. The URL does not change when Focus opens from the rail,
+   * so a /company/…?level=3|4 page gets its mode back; a URL that itself says
+   * level=1 (Notch "Fokus-Modus") falls back to that company's Messages page.
+   */
   const close = useCallback(() => {
-    setActiveLevel(2);
-  }, []);
+    const raw = (location.search as { level?: unknown }).level;
+    const urlLevel = typeof raw === "string" ? Number(raw) : raw;
+    const onCompany = location.pathname.startsWith("/company/");
+    const back: CompanyLevel =
+      onCompany && (urlLevel === 3 || urlLevel === 4) ? urlLevel : 2;
+    setActiveLevel(back);
+    notifyDesktopLevel(back);
+    if (onCompany && urlLevel === 1) {
+      void navigate({
+        to: "/company/$companyId",
+        params: { companyId },
+        search: { level: 2 } as never,
+        replace: true,
+      });
+    }
+  }, [companyId, location.pathname, location.search, navigate]);
 
   const selectIndex = useCallback(
     (next: number, direction?: 1 | -1) => {
@@ -140,15 +165,14 @@ export function FocusOverlay({
   return (
     <div
       aria-label="Focus — schnelle Tasks"
-      className="pointer-events-none absolute inset-0 z-40 flex flex-col"
-      role="dialog"
+      className="pointer-events-none absolute inset-0 z-40 flex flex-col animate-in fade-in-0 duration-200"
+      data-focus-page=""
+      role="region"
     >
-      {/* Solid black scrim — no backdrop-blur (blur pulls HQ colors into a blue cast). */}
-      <button
-        aria-label="Focus schließen"
-        className="pointer-events-auto absolute inset-0 bg-black/80 transition-opacity"
-        onClick={close}
-        type="button"
+      {/* Own page: solid background, nothing of the previous page shows through. */}
+      <div
+        aria-hidden
+        className="pointer-events-auto absolute inset-0 bg-neutral-950"
       />
 
       <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 flex-col">
@@ -265,7 +289,7 @@ export function FocusOverlay({
                 ) : null}
               </div>
               <p className="mt-2 text-center text-[10px] text-white/40">
-                ← → Tasks · Esc schließt Focus · HQ bleibt darunter
+                ← → Tasks · Esc schließt Focus · zurück zur vorigen Seite
               </p>
             </div>
           </div>

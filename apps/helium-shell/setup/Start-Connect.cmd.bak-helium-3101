@@ -1,0 +1,3 @@
+@echo off
+rem Connect (Helium) - startet Docker/Postgres (Kopie), Server 3001, Web-UI 3010 und Helium (App-Fenster).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-Connect.ps1"

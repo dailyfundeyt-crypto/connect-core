@@ -15,6 +15,7 @@ import {
   setActiveLevel,
   subscribeLevel,
 } from "@/lib/companies/level";
+import { listCompanies } from "@/lib/companies/store";
 import { notifyDesktopLevel } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +63,8 @@ export function CompanyLevelChips({
 
   useEffect(() => subscribeLevel(() => setStoredLevel(getActiveLevel())), []);
 
-  const companyId = params.companyId ?? activeId;
+  // Fallback: first (seed) company, so the rail is never missing before a company was picked.
+  const companyId = params.companyId ?? activeId ?? listCompanies()[0]?.id ?? null;
   if (!companyId) return null;
 
   const levelFromRoute =

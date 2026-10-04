@@ -14,26 +14,12 @@ import {
   setLocalProfile,
   type LocalProfile,
 } from "@/lib/auth/local-profile";
-
-const MAX_AVATAR_BYTES = 900_000;
-
-async function fileToDataUrl(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Please choose an image file.");
-  }
-  if (file.size > MAX_AVATAR_BYTES) {
-    throw new Error("Image is too large (max about 900 KB).");
-  }
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") resolve(reader.result);
-      else reject(new Error("Could not read the image."));
-    };
-    reader.onerror = () => reject(new Error("Could not read the image."));
-    reader.readAsDataURL(file);
-  });
-}
+import {
+  formatKb,
+  friendlyAvatarSaveError,
+  prepareAvatarImage,
+  type PreparedAvatar,
+} from "@/lib/auth/avatar-image";
 
 /**
  * Edit display name + profile photo for the sidebar user button.
@@ -49,17 +35,20 @@ export function ProfileEditDialog({
   const [draft, setDraft] = useState<LocalProfile>(() => getLocalProfile());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Neu gewähltes, bereits angepasstes Foto (Vorschau bis "Speichern"). */
+  const [prepared, setPrepared] = useState<PreparedAvatar | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setDraft(getLocalProfile());
     setError(null);
+    setPrepared(null);
   }, [open]);
 
   const save = async () => {
     const name = draft.name.trim();
     if (!name) {
-      setError("Please enter a name.");
+      setError("Bitte einen Namen eingeben.");
       return;
     }
     setBusy(true);
@@ -71,11 +60,7 @@ export function ProfileEditDialog({
       });
       onOpenChange(false);
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not save profile to the database.",
-      );
+      setError(friendlyAvatarSaveError(caught));
     } finally {
       setBusy(false);
     }
@@ -83,19 +68,21 @@ export function ProfileEditDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" closeLabel="Schließen">
         <DialogHeader>
-          <DialogTitle>Your profile</DialogTitle>
+          <DialogTitle>Dein Profil</DialogTitle>
           <DialogDescription>
-            Name and photo shown in the sidebar. Photo is stored in Postgres
-            (Connect media), not only in this browser.
+            Name und Foto für die Seitenleiste. Das Foto wird in der
+            Connect-Datenbank gespeichert, nicht nur in diesem Browser.
           </DialogDescription>
         </DialogHeader>
 
         <div className="mt-4 flex flex-col items-center gap-4">
           <button
             className="group relative size-24 overflow-hidden rounded-full bg-muted ring-1 ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Foto wählen"
             onClick={() => fileRef.current?.click()}
+            title="Foto wählen (große Bilder werden automatisch verkleinert)"
             type="button"
           >
             {draft.avatarUrl ? (
@@ -111,11 +98,11 @@ export function ProfileEditDialog({
             )}
             <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/55 py-1 text-[10px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
               <IconCamera className="size-3" />
-              Photo
+              Foto
             </span>
           </button>
           <input
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             className="hidden"
             onChange={async (event) => {
               const file = event.target.files?.[0];
@@ -124,13 +111,14 @@ export function ProfileEditDialog({
               setBusy(true);
               setError(null);
               try {
-                const avatarUrl = await fileToDataUrl(file);
-                setDraft((prev) => ({ ...prev, avatarUrl }));
+                const result = await prepareAvatarImage(file);
+                setPrepared(result);
+                setDraft((prev) => ({ ...prev, avatarUrl: result.dataUrl }));
               } catch (thrown) {
                 setError(
                   thrown instanceof Error
                     ? thrown.message
-                    : "Could not use that image.",
+                    : "Dieses Bild kann nicht verwendet werden.",
                 );
               } finally {
                 setBusy(false);
@@ -140,9 +128,26 @@ export function ProfileEditDialog({
             type="file"
           />
 
+          {prepared ? (
+            <p
+              className="-mt-2 text-center text-xs text-muted-foreground"
+              data-testid="avatar-prepared-info"
+            >
+              Vorschau: zugeschnitten auf {prepared.width}×{prepared.height} px,{" "}
+              {formatKb(prepared.sourceBytes)} → {formatKb(prepared.bytes)}.
+              <br />
+              Wird mit „Speichern“ übernommen.
+            </p>
+          ) : (
+            <p className="-mt-2 text-center text-xs text-muted-foreground">
+              Auf das Bild klicken, um ein Foto zu wählen (bis 20 MB, wird
+              automatisch angepasst).
+            </p>
+          )}
+
           <label className="w-full space-y-1.5">
             <span className="text-xs font-medium text-muted-foreground">
-              Display name
+              Anzeigename
             </span>
             <input
               autoFocus
@@ -156,7 +161,7 @@ export function ProfileEditDialog({
                   void save();
                 }
               }}
-              placeholder="Your name"
+              placeholder="Dein Name"
               value={draft.name === "Connect User" ? "" : draft.name}
             />
           </label>
@@ -164,16 +169,17 @@ export function ProfileEditDialog({
           {draft.avatarUrl ? (
             <button
               className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() =>
+              onClick={() => {
+                setPrepared(null);
                 setDraft((prev) => {
                   const next = { ...prev };
                   delete next.avatarUrl;
                   return next;
-                })
-              }
+                });
+              }}
               type="button"
             >
-              Remove photo
+              Foto entfernen
             </button>
           ) : null}
 
@@ -190,10 +196,10 @@ export function ProfileEditDialog({
             size="sm"
             variant="outline"
           >
-            Cancel
+            Abbrechen
           </Button>
           <Button disabled={busy} onClick={() => void save()} size="sm">
-            {busy ? "Saving…" : "Save"}
+            {busy ? "Wird gespeichert…" : "Speichern"}
           </Button>
         </DialogFooter>
       </DialogContent>

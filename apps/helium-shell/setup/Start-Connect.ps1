@@ -1,0 +1,129 @@
+﻿<#
+  Connect (Helium) - Ein-Klick-Start fuer die KOPIE OpenBot-v2-Helium.
+  Startet nur Ressourcen der Kopie: Compose-Projekt "openbot-v2-helium" (Postgres auf 5433),
+  apps/server (3001) und apps/app (3010) aus dieser Kopie. Das Original (OpenBot-v2, Projekt "openbot",
+  supabase_*) wird nie angefasst. Idempotent: laeuft etwas schon, wird es nur geprueft.
+  Danach: Helium mit Connect als App-Fenster (--app, ohne Adressleiste) + Extension apps/helium-shell.
+
+  SEIT 04.10.2026: EINE Datenbank = Connect App (Backend localhost:3101, Postgres 5544, Daten in
+  %LOCALAPPDATA%\ConnectApp\data). Steht in tabs.config.js CONNECT_URL auf Port 3101 (Standard), startet dieses
+  Script nur noch das App-Backend (apps\connect-app\Connect.exe, falls 3101 nicht laeuft) und oeffnet Helium.
+  Die alte Dev-Umgebung (3001/3010 + Docker-Postgres 5433) ist eingefroren (Rueckfall):
+    Start-Connect.ps1 -Fallback     startet 3001/3010/5433 wie frueher und oeffnet localhost:3010
+#>
+param([switch]$Fallback)
+$ErrorActionPreference = "Stop"
+$Root      = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path          # ...\OpenBot-v2-Helium
+$Ext       = Join-Path $Root "apps\helium-shell"
+$Project   = "openbot-v2-helium"
+$Docker    = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+$DockerApp = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+$Bun       = Join-Path $env:USERPROFILE ".bun\bin"
+$Helium    = Join-Path $env:LOCALAPPDATA "imput\Helium\Application\chrome.exe"
+$LocalUrl  = "http://localhost:3010/"                                         # lokale Web-UI (Health-Check)
+# Connect-Adresse fuer Helium: EINZIGE Quelle ist apps\helium-shell\tabs.config.js (self.CONNECT_URL), umstellen mit setup\Set-ConnectUrl.cmd
+$AppUrl    = $LocalUrl
+$cu = [regex]::Match([IO.File]::ReadAllText((Join-Path $Ext "tabs.config.js")), 'self\.CONNECT_URL\s*=\s*"([^"]+)"')
+if ($cu.Success) { $AppUrl = $cu.Groups[1].Value.TrimEnd("/") + "/" }
+$Log       = Join-Path $env:TEMP "connect-helium-start.log"
+$ConnectExe = Join-Path $Root "apps\connect-app\Connect.exe"
+if ($Fallback) { $AppUrl = $LocalUrl }
+$AppMode   = (-not $Fallback) -and ($AppUrl -match '^https?://(localhost|127\.0\.0\.1):3101/')
+
+function Say($msg, $color = "Gray") { $line = "[{0:HH:mm:ss}] {1}" -f (Get-Date), $msg; Write-Host $line -ForegroundColor $color; Add-Content -Path $Log -Value $line }
+function Fail($msg) { Say "FEHLER: $msg" "Red"; Notify "Connect: Start fehlgeschlagen" $msg "Error"; Write-Host "Log: $Log"; Read-Host "Enter zum Schliessen"; exit 1 }
+function Notify($title, $text, $icon = "Info") {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $n = New-Object System.Windows.Forms.NotifyIcon
+    $n.Icon = [System.Drawing.SystemIcons]::Information
+    $n.BalloonTipIcon = $icon; $n.BalloonTipTitle = $title; $n.BalloonTipText = $text; $n.Visible = $true
+    $n.ShowBalloonTip(5000); Start-Sleep -Seconds 5; $n.Dispose()
+  } catch { }
+}
+# docker.exe schreibt bei gestopptem Daemon nach stderr; mit ErrorActionPreference=Stop wuerde PowerShell 5.1 das
+# als Abbruch werten (NativeCommandError). Daher Docker-Aufrufe immer mit 'Continue' kapseln.
+function DockerOk { $p = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; try { & $Docker info --format '{{.ServerVersion}}' *> $null; return ($LASTEXITCODE -eq 0) } catch { return $false } finally { $ErrorActionPreference = $p } }
+function PgHealth { $p = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; try { return (& $Docker inspect -f '{{.State.Health.Status}}' "$Project-postgres-1" 2>$null) } catch { return '' } finally { $ErrorActionPreference = $p } }
+function Listening($port) { [bool](Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) }
+function WaitFor($what, $timeoutSec, [scriptblock]$test) {
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.Elapsed.TotalSeconds -lt $timeoutSec) { try { if (& $test) { Say "$what ok ($([int]$sw.Elapsed.TotalSeconds)s)" "Green"; return $true } } catch { }; Start-Sleep -Seconds 2 }
+  return $false
+}
+function StartDev($app, $port) {
+  if (Listening $port) { Say "apps/$app laeuft bereits (Port $port)"; return }
+  $dir = Join-Path $Root "apps\$app"; $out = Join-Path $env:TEMP "connect-helium-$app.log"
+  $cmd = "`$env:Path='$Bun;'+`$env:Path; Set-Location '$dir'; bun run dev *> '$out'"
+  Start-Process powershell -WindowStyle Minimized -ArgumentList "-NoProfile", "-Command", $cmd | Out-Null
+  Say "apps/$app gestartet (minimiert, Log $out)"
+}
+
+Say "=== Connect (Helium) Start - Kopie: $Root ===" "Cyan"
+if (-not (Test-Path (Join-Path $Root ".env"))) { Fail ".env fehlt in $Root" }
+if (-not (Test-Path (Join-Path $Bun "bun.exe"))) { Fail "Bun nicht gefunden: $Bun" }
+
+if ($AppMode) {
+  # Eine Datenbank: Connect-App-Backend (3101 -> Postgres 5544). 3001/3010/5433 bleiben eingefroren.
+  Say "Modus: Connect App (eine Datenbank, $AppUrl)" "Cyan"
+  if (-not (DockerOk) -and (Test-Path $DockerApp)) { Start-Process $DockerApp | Out-Null; Say "Docker Desktop wird im Hintergrund gestartet (fuer Bot-Computer)" "Yellow" }
+} else {
+# 1) Docker Desktop
+if (-not (DockerOk)) {
+  Say "Docker Desktop wird gestartet ..." "Yellow"
+  if (Test-Path $DockerApp) { Start-Process $DockerApp | Out-Null } else { Fail "Docker Desktop nicht gefunden: $DockerApp" }
+  if (-not (WaitFor "Docker" 240 { DockerOk })) { Fail "Docker antwortet nicht nach 240s." }
+} else { Say "Docker laeuft" }
+
+# 2) Postgres der Kopie (nur Projekt openbot-v2-helium, Port aus .env POSTGRES_PORT=5433)
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+& $Docker compose -p $Project --project-directory $Root -f (Join-Path $Root "docker-compose.yml") up -d --no-deps postgres 2>&1 | ForEach-Object { Say "  compose: $_" }
+$ErrorActionPreference = $prev
+if (-not (WaitFor "Postgres (openbot-v2-helium, 5433)" 90 { (PgHealth) -eq "healthy" })) { Fail "Postgres $Project-postgres-1 nicht healthy." }
+}
+
+# 2b) Lokaler SEO-Agent: Ollama, laya-serve, SEO-Agent (127.0.0.1:11434/8000/4310), alles unsichtbar
+$SeoStart = Join-Path $Root "apps\seo-agent\scripts\Start-SeoServices.ps1"
+if (Test-Path $SeoStart) {
+  # eigener, unsichtbarer Prozess ohne geteilte Pipes, damit LAYA_*/HF_* nicht in die Dev-Server erben und nichts blockiert
+  try { $seo = Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$SeoStart`"" -WindowStyle Hidden -PassThru; if ($seo.WaitForExit(120000)) { Say "SEO-Dienste geprueft (Log: %LOCALAPPDATA%\ConnectSEO\logs\start.log)" } else { Say "HINWEIS: SEO-Dienste starten noch im Hintergrund" "Yellow" } } catch { Say "HINWEIS: SEO-Dienste nicht gestartet: $($_.Exception.Message)" "Yellow" }
+}
+
+if ($AppMode) {
+  # 3) Connect-App-Backend (Connect.exe startet Postgres 5544 + Server 3101; "KeepBackendRunning" in connect-app.json)
+  $health = { (Invoke-WebRequest ($AppUrl + "health") -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200 }
+  $ok = $false; try { $ok = & $health } catch { }
+  if ($ok) { Say "Connect-App-Backend laeuft bereits ($AppUrl)" }
+  else {
+    if (-not (Test-Path $ConnectExe)) { Fail "Connect.exe nicht gefunden: $ConnectExe" }
+    Start-Process $ConnectExe | Out-Null
+    Say "Connect App gestartet (Backend + eigenes App-Fenster, Log $env:TEMP\connect-app.log)"
+    if (-not (WaitFor "Connect-App-Backend $AppUrl" 180 $health)) { Fail "Connect-App-Backend antwortet nicht auf ${AppUrl}health (Log: $env:TEMP\connect-app.log, $env:TEMP\connect-app-server.log)." }
+  }
+} else {
+# 3) Dev-Server der Kopie (nur wenn Port frei)
+StartDev "server" 3001
+StartDev "app" 3010
+if (-not (WaitFor "Server /health" 120 { (Invoke-WebRequest "http://localhost:3001/health" -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200 })) { Fail "Server antwortet nicht auf http://localhost:3001/health (Log: $env:TEMP\connect-helium-server.log)." }
+if (-not (WaitFor "Web-UI 3010" 120 { $r = Invoke-WebRequest $LocalUrl -UseBasicParsing -TimeoutSec 10; $r.StatusCode -eq 200 -and $r.Content -match "<html" })) { Fail "Web-UI antwortet nicht auf $LocalUrl (Log: $env:TEMP\connect-helium-app.log)." }
+}
+
+# 4) Helium: Connect als App-Fenster (ohne Adressleiste) + Extension
+if (-not (Test-Path $Helium)) { Fail "Helium nicht gefunden: $Helium" }
+$main = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.ExecutablePath -eq $Helium -and $_.CommandLine -notmatch "--type=" -and $_.CommandLine -notmatch "--headless" -and $_.CommandLine -notmatch "--user-data-dir" } | Select-Object -First 1
+$heliumArgs = @("--load-extension=`"$Ext`"", "--custom-ntp=$AppUrl", "--app=$AppUrl")
+if ($main) {
+  # Laufendes Helium ignoriert --load-extension; --app oeffnet trotzdem ein App-Fenster.
+  $hasExt = $main.CommandLine -like "*helium-shell*"
+  $appOpen = Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Helium -and $_.MainWindowTitle -match "^Connect" }
+  if ($appOpen) { Say "Helium laeuft, Connect-Fenster ist offen ('$($appOpen[0].MainWindowTitle)')" }
+  else { Start-Process $Helium -ArgumentList "--app=$AppUrl" | Out-Null; Say "Helium laeuft bereits - Connect-App-Fenster geoeffnet" }
+  if (-not $hasExt) { Say "HINWEIS: Helium wurde ohne --load-extension gestartet. Fuer die Connect-Sidebar Helium schliessen und dieses Script erneut starten." "Yellow" }
+} else {
+  Start-Process $Helium -ArgumentList $heliumArgs | Out-Null
+  Say "Helium gestartet (App-Fenster $AppUrl, Extension $Ext)"
+}
+
+if ($AppMode) { Say "Connect laeuft (eine Datenbank: Connect App $AppUrl)" "Green"; Notify "Connect" "Connect laeuft auf $AppUrl"; exit 0 }
+Say "Connect laeuft (lokal localhost:3010, Helium: $AppUrl)" "Green"
+Notify "Connect" "Connect läuft auf localhost:3010"

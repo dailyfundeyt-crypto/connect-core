@@ -14,6 +14,7 @@ import {
   isValidHandle,
   normalizeHandle,
 } from "./handles";
+import { persistConnectDataUrl } from "./workspace-sync";
 
 export {
   formatCompanyHandle,
@@ -23,6 +24,77 @@ export {
 } from "./handles";
 
 const STORAGE_KEY = "connect.companies.custom";
+
+/** Tracks seed-company ids that the user has deleted so they stay gone across reloads. */
+const DELETED_SEED_KEY = "connect.companies.deleted";
+
+/**
+ * Tracks that the "default company" migration ran.
+ * When set, seed companies are fully deletable (no special treatment).
+ * Previously-deleted seeds that are still in DELETED_SEED_KEY are RESTORED so
+ * users who want to keep their four defaults can — they were deleted before
+ * the feature existed.
+ *
+ * Migration (one-time):
+ *  - Clear DELETED_SEED_KEY so previously-hidden seeds reappear.
+ *  - Set REMOVED_DEFAULT_KEY so the UI shows Delete for all companies.
+ */
+const MIGRATION_KEY = "connect.companies.removed-default";
+
+function readDeletedSeedIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(DELETED_SEED_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((s) => typeof s === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * One-time migration (idempotent):
+ * Clears the DELETED_SEED_KEY so previously hidden seed companies reappear.
+ * Previously-deleted seeds (Nordwind, Lumen, Helm, Pulse) become visible again
+ * so users who never wanted them but deleted them before the feature existed
+ * can see them again and delete or keep them.
+ *
+ * The MIGRATION_KEY flag ensures this runs only once per browser profile.
+ */
+function runRemoveDefaultMigration(): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.localStorage.getItem(MIGRATION_KEY) === "1") return;
+    window.localStorage.removeItem(DELETED_SEED_KEY);
+    window.localStorage.setItem(MIGRATION_KEY, "1");
+  } catch {
+    /* ignore — non-fatal */
+  }
+}
+
+/** Externalise image fields to the server so localStorage does not blow its quota. */
+async function externaliseCompanyImages<T extends { logo?: string; banner?: string }>(
+  value: T,
+): Promise<T> {
+  const next: T = { ...value };
+  if (typeof next.logo === "string" && next.logo.startsWith("data:")) {
+    try {
+      next.logo = await persistConnectDataUrl(next.logo);
+    } catch {
+      /* keep data url — surface to caller */
+    }
+  }
+  if (typeof next.banner === "string" && next.banner.startsWith("data:")) {
+    try {
+      next.banner = await persistConnectDataUrl(next.banner);
+    } catch {
+      /* keep data url — surface to caller */
+    }
+  }
+  return next;
+}
 
 function readCustom(): ConnectCompany[] {
   if (typeof window === "undefined") return [];
@@ -39,7 +111,16 @@ function readCustom(): ConnectCompany[] {
 
 function writeCustom(list: ConnectCompany[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  } catch (caught) {
+    const message =
+      caught instanceof Error ? caught.message : "Unknown storage error";
+    throw new Error(
+      `Konnte Unternehmen nicht speichern (Browser-Speicher voll: ${message}). ` +
+        `Bilder werden zuerst auf den Server geladen – versuche es erneut.`,
+    );
+  }
   window.dispatchEvent(new Event("connect-companies-changed"));
   void import("./workspace-sync").then((m) => m.scheduleConnectWorkspacePush());
 }
@@ -103,21 +184,32 @@ const ACCENTS = [
   "linear-gradient(145deg, #15803d 0%, #0f766e 50%, #1e293b 100%)",
 ];
 
-/** Seed + user companies. */
+/** Seed + user companies, minus any seeds the user has deleted. */
 export function listCompanies(): ConnectCompany[] {
+  runRemoveDefaultMigration(); // one-time: restore previously hidden seeds + remove default protection
   const custom = readCustom();
   const customIds = new Set(custom.map((c) => c.id));
+  const deletedSeeds = readDeletedSeedIds();
   return [
     ...custom,
-    ...CONNECT_COMPANIES.filter((c) => !customIds.has(c.id)),
+    ...CONNECT_COMPANIES.filter(
+      (c) => !customIds.has(c.id) && !deletedSeeds.has(c.id),
+    ),
   ];
 }
 
 export function getCompany(id: string): ConnectCompany | undefined {
-  return readCustom().find((c) => c.id === id) ?? getSeedCompany(id);
+  const deletedSeeds = readDeletedSeedIds();
+  if (!deletedSeeds.has(id)) {
+    const seed = getSeedCompany(id);
+    if (seed) return seed;
+  }
+  return readCustom().find((c) => c.id === id);
 }
 
 export function isCustomCompany(id: string): boolean {
+  // A company is "custom" (user-created) if it is stored in localStorage.
+  // Deleted seeds are NOT custom companies.
   return readCustom().some((c) => c.id === id);
 }
 
@@ -132,7 +224,9 @@ export type NewCompanyInput = {
   agentIds?: string[];
 };
 
-export function createCompany(input: NewCompanyInput): ConnectCompany {
+export async function createCompany(
+  input: NewCompanyInput,
+): Promise<ConnectCompany> {
   const name = input.name.trim();
   if (!name) throw new Error("Name is required.");
   const description = input.description.trim();
@@ -144,6 +238,14 @@ export function createCompany(input: NewCompanyInput): ConnectCompany {
     id = `${id}-${Date.now().toString(36)}`;
   }
 
+  // Externalise logo/banner to the server FIRST so the localStorage write
+  // never hits its quota. The data: URL stays in the input only if the upload
+  // fails — that is surfaced back to the caller via the thrown error below.
+  const persistedImages = await externaliseCompanyImages({
+    ...(input.logo ? { logo: input.logo } : {}),
+    ...(input.banner ? { banner: input.banner } : {}),
+  });
+
   const company: ConnectCompany = {
     id,
     name,
@@ -153,8 +255,8 @@ export function createCompany(input: NewCompanyInput): ConnectCompany {
       ? input.agentIds
       : ["cto", "analysis", "connect", "consensus", "flux", "hyper", "spark"],
     accent: ACCENTS[readCustom().length % ACCENTS.length],
-    ...(input.logo ? { logo: input.logo } : {}),
-    ...(input.banner ? { banner: input.banner } : {}),
+    ...(persistedImages.logo ? { logo: persistedImages.logo } : {}),
+    ...(persistedImages.banner ? { banner: persistedImages.banner } : {}),
   };
 
   writeCustom([company, ...readCustom()]);
@@ -166,7 +268,7 @@ export function updateCompanyLogo(id: string, logo: string) {
 }
 
 /** Edit name, description, handle, logo, banner, or meta — seed + custom. */
-export function updateCompany(
+export async function updateCompany(
   id: string,
   patch: {
     name?: string;
@@ -179,7 +281,7 @@ export function updateCompany(
     website?: string | null;
     agentIds?: string[];
   },
-): ConnectCompany {
+): Promise<ConnectCompany> {
   const existing = getCompany(id);
   if (!existing) throw new Error("Company not found.");
 
@@ -209,10 +311,30 @@ export function updateCompany(
       next.handle = n;
     }
   }
-  if (patch.logo === null) delete next.logo;
-  else if (typeof patch.logo === "string") next.logo = patch.logo;
-  if (patch.banner === null) delete next.banner;
-  else if (typeof patch.banner === "string") next.banner = patch.banner;
+  // Externalise new data: URLs to the server BEFORE the localStorage write so
+  // editing a banner can never throw a quota error mid-save.
+  if (typeof patch.logo === "string" && patch.logo.startsWith("data:")) {
+    try {
+      next.logo = await persistConnectDataUrl(patch.logo);
+    } catch {
+      next.logo = patch.logo;
+    }
+  } else if (patch.logo === null) {
+    delete next.logo;
+  } else if (typeof patch.logo === "string") {
+    next.logo = patch.logo;
+  }
+  if (typeof patch.banner === "string" && patch.banner.startsWith("data:")) {
+    try {
+      next.banner = await persistConnectDataUrl(patch.banner);
+    } catch {
+      next.banner = patch.banner;
+    }
+  } else if (patch.banner === null) {
+    delete next.banner;
+  } else if (typeof patch.banner === "string") {
+    next.banner = patch.banner;
+  }
   if (patch.category === null) delete next.category;
   else if (typeof patch.category === "string") {
     next.category = patch.category.trim() || undefined;
@@ -235,10 +357,10 @@ export function updateCompany(
 }
 
 /** Attach a bot to a company roster (e.g. after Plus → New bot in Connect). */
-export function addAgentToCompany(
+export async function addAgentToCompany(
   companyId: string,
   agentId: string,
-): ConnectCompany {
+): Promise<ConnectCompany> {
   const company = getCompany(companyId);
   if (!company) throw new Error("Company not found.");
   if (company.agentIds.includes(agentId)) return company;
@@ -248,6 +370,51 @@ export function addAgentToCompany(
 }
 
 export function deleteCompany(id: string) {
+  if (typeof window === "undefined") return;
+
+  const wasSeed = !isCustomCompany(id);
+  const deletedSeeds = readDeletedSeedIds();
+
+  // Detach any localStorage that points at the doomed company so the UI does
+  // not get stuck on a missing id. Do this BEFORE the write so listeners see
+  // the new active id in the same tick.
+  try {
+    if (window.localStorage.getItem("connect.activeCompanyId") === id) {
+      let fallback: string;
+      if (wasSeed) {
+        // Fall back to the first non-deleted seed company, or a custom one.
+        fallback =
+          CONNECT_COMPANIES.find(
+            (c) => c.id !== id && !deletedSeeds.has(c.id),
+          )?.id ??
+          readCustom().find((c) => c.id !== id)?.id ??
+          "";
+      } else {
+        fallback =
+          readCustom().find((c) => c.id !== id)?.id ??
+          CONNECT_COMPANIES.find(
+            (c) => c.id !== id && !deletedSeeds.has(c.id),
+          )?.id ??
+          "";
+      }
+      window.localStorage.setItem("connect.activeCompanyId", fallback);
+      window.dispatchEvent(new Event("connect-active-company"));
+    }
+  } catch {
+    /* ignore */
+  }
+
+  if (wasSeed) {
+    // Mark the seed id as deleted so it stays absent across page reloads.
+    deletedSeeds.add(id);
+    window.localStorage.setItem(
+      DELETED_SEED_KEY,
+      JSON.stringify([...deletedSeeds]),
+    );
+  }
+
+  // Remove the company from custom storage if it happens to be there
+  // (seed companies are never stored, but defensive).
   writeCustom(readCustom().filter((c) => c.id !== id));
 }
 
@@ -259,4 +426,33 @@ export function subscribeCompanies(onChange: () => void): () => void {
     window.removeEventListener("connect-companies-changed", handler);
     window.removeEventListener("storage", handler);
   };
+}
+
+/** Read active company id from localStorage. Exported so other modules (e.g. marketplace redeem) can use it. */
+export function readActiveCompanyId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem("connect.activeCompanyId");
+}
+
+/**
+ * Add a redeemed bot to the currently active company so it appears immediately
+ * in the sidebar "Agents" list without requiring a manual add.
+ *
+ * If no company is active, falls back to the first available company.
+ * Idempotent — skips if the agent is already in the roster.
+ */
+export async function addAgentToActiveCompany(agentId: string): Promise<void> {
+  let companyId = readActiveCompanyId();
+  if (!companyId) {
+    const companies = listCompanies();
+    companyId = companies[0]?.id ?? null;
+  }
+  if (!companyId) return;
+  try {
+    await addAgentToCompany(companyId, agentId);
+  } catch (err) {
+    // Non-fatal: the agent is redeemed but adding to the roster failed.
+    // The user can still access it via "Meine Bots" in the Marketplace.
+    console.warn("[redeem] could not add agent to company:", err);
+  }
 }

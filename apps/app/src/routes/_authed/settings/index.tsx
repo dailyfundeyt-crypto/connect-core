@@ -1,416 +1,612 @@
 import { createFileRoute } from "@tanstack/react-router";
-import React, { useEffect, useState } from "react";
+import { SidebarShell } from "@/components/layout/sidebar-shell";
+import { SettingsSidebar } from "@/components/settings/settings-sidebar";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  PageRows,
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
-import { StandingInstructions } from "@/components/settings/standing-instructions";
+  IconArrowLeft,
+  IconBolt,
+  IconCloudUpload,
+  IconDownload,
+  IconKeyboard,
+  IconLock,
+  IconMail,
+  IconPlus,
+  IconPlugConnected,
+  IconRefresh,
+  IconTrash,
+  IconChevronDown,
+  IconBell,
+} from "@tabler/icons-react";
+import { Link } from "@tanstack/react-router";
+
+import { SaveToast } from "@/components/settings/save-toast";
+import { DeleteConfirmDialog } from "@/components/settings/delete-confirm-dialog";
+import { ErweitertPanel } from "@/components/settings/erweitert-panel";
 import { ProfileEditDialog } from "@/components/settings/profile-edit-dialog";
-import { ShortcutsPanel } from "@/components/settings/shortcuts-panel";
-import { VoiceSettingsPanel } from "@/components/settings/voice-settings";
-import { CompanySettingsPanel } from "@/components/settings/company-settings";
-import { ApiKeysSettingsPanel } from "@/components/settings/api-keys-settings";
-import { CodexUsagePanel } from "@/components/settings/codex-usage-panel";
-import { DeploymentModePanel } from "@/components/settings/deployment-mode-panel";
-import { ModelProviderSettingsPanel } from "@/components/settings/model-provider-settings";
-import { DonatePanel } from "@/components/settings/donate-panel";
-import { UbuntuMachinesPanel } from "@/components/settings/ubuntu-machines-settings";
-import { LanguageSwitcher } from "@/components/i18n/language-gate";
-import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import {
-  clearSecurityPassword,
-  getSecurityEmail,
-  hasSecurityPassword,
-  lockSecurity,
-  setSecurityEmail,
-  setSecurityPassword,
-} from "@/lib/auth/local-security";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   getLocalProfile,
   subscribeLocalProfile,
 } from "@/lib/auth/local-profile";
 import {
-  formatFocusTimer,
-  getFocusTimer,
-  resetFocusTimer,
-  subscribeFocusTimer,
-  toggleFocusTimer,
-} from "@/lib/focus-timer";
+  getLabPrefs,
+  subscribeLabPrefs,
+} from "@/lib/ui/lab-prefs";
 import {
-  CHAR_BUDGET,
   getVoiceSettings,
   subscribeVoiceSettings,
 } from "@/lib/voice/elevenlabs";
-import {
-  getLabPrefs,
-  setLabKeepLoggedIn,
-  subscribeLabPrefs,
-} from "@/lib/ui/lab-prefs";
+import { useTheme } from "@/components/theme-provider";
+import { LanguageSwitcher } from "@/components/i18n/language-gate";
+import { cn } from "@/lib/utils";
+
+// ─── Auto-save hook ──────────────────────────────────────────────────────────
+
+function useAutoSave() {
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerSave = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setSavedAt(Date.now());
+    timerRef.current = setTimeout(() => setSavedAt(null), 1600);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  return { savedAt, triggerSave };
+}
+
+// ─── Collapsible section ──────────────────────────────────────────────────────
+
+function Section({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <section id={id}>
+      <button
+        className="flex w-full cursor-pointer items-center gap-2 py-2 text-left"
+        onClick={() => setOpen((o) => !o)}
+        type="button"
+      >
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#666]">
+          {label}
+        </span>
+        <IconChevronDown
+          className={cn(
+            "size-3 text-[#444] transition-transform duration-150",
+            !open && "-rotate-90",
+          )}
+        />
+      </button>
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-200 ease-out",
+          open ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0",
+        )}
+      >
+        <div className="flex flex-col">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Row primitives ──────────────────────────────────────────────────────────
+
+function Row({
+  label,
+  description,
+  children,
+  border = true,
+}: {
+  label: string;
+  description?: string;
+  children: React.ReactNode;
+  border?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-4 py-3",
+        border && "border-b border-white/[0.06]",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-white">{label}</p>
+        {description && (
+          <p className="mt-0.5 text-xs text-[#666]">{description}</p>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center">{children}</div>
+    </div>
+  );
+}
+
+function ActionRow({
+  label,
+  description,
+  onClick,
+  variant = "ghost",
+  danger = false,
+}: {
+  label: string;
+  description?: string;
+  onClick?: () => void;
+  variant?: "ghost" | "outline" | "destructive";
+  danger?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3 border-b border-white/[0.06]">
+      <div className="min-w-0 flex-1">
+        <p className={cn("text-sm font-medium", danger ? "text-red-400" : "text-white")}>
+          {label}
+        </p>
+        {description && (
+          <p className="mt-0.5 text-xs text-[#666]">{description}</p>
+        )}
+      </div>
+      <Button
+        onClick={onClick}
+        size="sm"
+        type="button"
+        variant={danger ? "destructive" : variant}
+        className={cn(
+          !danger && variant === "ghost" && "border border-white/10 text-[#888] hover:border-white/20 hover:text-white",
+          variant === "outline" && "border border-white/10 text-[#888] hover:border-white/20 hover:text-white",
+        )}
+      >
+        {label}
+      </Button>
+    </div>
+  );
+}
+
+function AddRow({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      className="flex w-full cursor-pointer items-center gap-2 py-3 text-sm text-[#555] transition-colors hover:text-white"
+      onClick={onClick}
+      type="button"
+    >
+      <IconPlus className="size-4" />
+      {label}
+    </button>
+  );
+}
+
+// ─── Segmented control ────────────────────────────────────────────────────────
+
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex rounded-lg border border-white/10 bg-[#111] p-0.5">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          className={cn(
+            "rounded-md px-3 py-1 text-xs transition-colors duration-150",
+            value === opt.value
+              ? "bg-[#1f1f1f] text-white"
+              : "text-[#666] hover:text-[#aaa]",
+          )}
+          onClick={() => onChange(opt.value)}
+          type="button"
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Dark pill input ──────────────────────────────────────────────────────────
+
+function DarkInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  label?: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {label && (
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#555]">
+          {label}
+        </span>
+      )}
+      <input
+        className="h-9 w-full rounded-full border-0 bg-[#161616] px-4 text-sm text-white placeholder:text-[#444]"
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        type={type}
+        value={value}
+      />
+    </div>
+  );
+}
+
+// ─── Telemetry / privacy helpers ──────────────────────────────────────────────
+
+function getTelemetryEnabled(): boolean {
+  try {
+    return localStorage.getItem("connect.telemetry") !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function setTelemetryEnabled(v: boolean) {
+  try {
+    localStorage.setItem("connect.telemetry", v ? "on" : "off");
+  } catch {
+    // ignore
+  }
+}
+
+// ─── Route ────────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  const { dark, setDark } = useTheme();
+  const { savedAt, triggerSave } = useAutoSave();
   const [profile, setProfile] = useState(() => getLocalProfile());
-  const [voice, setVoice] = useState(() => getVoiceSettings());
-  const [timer, setTimer] = useState(() => getFocusTimer());
   const [profileOpen, setProfileOpen] = useState(false);
-  const [labKeepLogin, setLabKeepLogin] = useState(
-    () => getLabPrefs().keepLoggedIn,
-  );
-  const [securityEmail, setSecurityEmailState] = useState(() =>
-    getSecurityEmail(),
-  );
-  const [newPassword, setNewPassword] = useState("");
-  const [securityMsg, setSecurityMsg] = useState<string | null>(null);
+  const [dark, setDark] = useTheme();
+  const { data: currentUser } = React.useQuery(currentUserQueryOptions());
+  const [telemetry, setTelemetry] = useState(() => getTelemetryEnabled());
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [labKeepLogin, setLabKeepLogin] = useState(() => getLabPrefs().keepLoggedIn);
+
+  // Helium connection status (mock — real impl would call /api/helium/status)
+  const [heliumStatus, setHeliumStatus] = useState<"ok" | "offline">("ok");
+
+  // Shell shortcut hint
+  const [shellShortcut] = useState(() => {
+    try {
+      const raw = localStorage.getItem("connect.shortcuts");
+      if (raw) {
+        const map = JSON.parse(raw) as Record<string, { key?: string }>;
+        return map["shell-toggle"]?.key || "Strg+Shift+Y";
+      }
+    } catch { /* ignore */ }
+    return "Strg+Shift+Y";
+  });
 
   useEffect(() => subscribeLocalProfile(() => setProfile(getLocalProfile())), []);
-  useEffect(() => subscribeVoiceSettings(() => setVoice(getVoiceSettings())), []);
-  useEffect(() => subscribeFocusTimer(() => setTimer(getFocusTimer())), []);
   useEffect(
-    () =>
-      subscribeLabPrefs(() => setLabKeepLogin(getLabPrefs().keepLoggedIn)),
+    () => subscribeLabPrefs(() => setLabKeepLogin(getLabPrefs().keepLoggedIn)),
     [],
   );
 
-  useEffect(() => {
-    const scrollToHash = () => {
-      const hash = window.location.hash.replace(/^#/, "");
-      if (!hash) return;
-      document.getElementById(hash)?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
+  const avatarSrc = profile.avatarUrl || currentUser?.image || undefined;
+
+  const handleDarkToggle = (checked: boolean) => {
+    setDark(checked);
+    triggerSave();
+  };
+
+  const handleTelemetryToggle = (checked: boolean) => {
+    setTelemetryEnabled(checked);
+    setTelemetry(checked);
+    triggerSave();
+  };
+
+  const handleDeleteData = () => {
+    try {
+      localStorage.clear();
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
       });
-    };
-    scrollToHash();
-    const id = window.setTimeout(scrollToHash, 80);
-    window.addEventListener("hashchange", scrollToHash);
-    return () => {
-      window.clearTimeout(id);
-      window.removeEventListener("hashchange", scrollToHash);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!timer.running) return;
-    const id = window.setInterval(() => setTimer(getFocusTimer()), 250);
-    return () => window.clearInterval(id);
-  }, [timer.running]);
-
-  const charsUsed = voice.keys.reduce((sum, k) => sum + k.charsUsed, 0);
-  const timerLabel = formatFocusTimer(timer.seconds);
+      window.location.reload();
+    } catch {
+      // fallback
+      window.location.reload();
+    }
+  };
 
   return (
-    <PageShell
-      description="Profil, KI, Speicher und Integrationen — klar gruppiert."
-      title="Einstellungen"
-    >
-      <div className="scroll-mt-8" id="profile">
-        <PageSection title="Profil">
-          <PageRows>
-            <Item size="sm">
-              <ItemContent>
-                <ItemTitle>Name & Foto</ItemTitle>
-                <ItemDescription>
-                  {profile.name !== "Connect User" && profile.name.trim()
-                    ? profile.name
-                    : "Noch nicht gesetzt"}
-                  {" · "}
-                  Sidebar-Button
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <div className="flex items-center gap-2">
-                  <div className="size-9 overflow-hidden rounded-full bg-muted">
-                    {profile.avatarUrl ? (
-                      <img
-                        alt=""
-                        className="size-full object-cover"
-                        src={profile.avatarUrl}
-                      />
-                    ) : null}
-                  </div>
-                  <Button
-                    onClick={() => setProfileOpen(true)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    Bearbeiten
-                  </Button>
+    <>
+      {/* Save indicator */}
+      <SaveToast savedAt={savedAt} />
+
+      {/* Delete confirmation */}
+      <DeleteConfirmDialog
+        confirmWord="LÖSCHEN"
+        description="Alle lokalen Connect-Daten werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+        onConfirm={handleDeleteData}
+        onOpenChange={setDeleteOpen}
+        open={deleteOpen}
+        title="Alle Daten löschen"
+      />
+
+      {/* Profile dialog */}
+      <ProfileEditDialog onOpenChange={setProfileOpen} open={profileOpen} />
+
+      {/* ── Minimalist settings page ── */}
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[#000]">
+        <div className="mx-auto flex w-full max-w-[560px] flex-col px-6 pb-16 pt-8">
+          {/* Back */}
+          <div className="mb-6 flex items-center">
+            <Button
+              render={(props) => (
+                <Link {...props} to="/">
+                  <IconArrowLeft className="mr-1 size-4" />
+                  Zurück
+                </Link>
+              )}
+              size="sm"
+              type="button"
+              variant="ghost"
+              className="text-[#666] hover:text-white"
+            />
+          </div>
+
+          {/* Title */}
+          <h1 className="mb-8 text-2xl font-bold text-white">Einstellungen</h1>
+
+          {/* ── 1. Konto ── */}
+          <Section id="konto" label="Konto">
+            {/* Profil */}
+            <Row label="Name & Foto" description={profile.name !== "Connect User" && profile.name.trim() ? profile.name : "Noch nicht gesetzt"}>
+              <div className="flex items-center gap-2">
+                <div className="size-8 overflow-hidden rounded-full bg-[#1f1f1f]">
+                  {avatarSrc ? (
+                    <img alt="" className="size-full object-cover" referrerPolicy="no-referrer" src={avatarSrc} />
+                  ) : null}
                 </div>
-              </ItemActions>
-            </Item>
-          </PageRows>
-        </PageSection>
-        <ProfileEditDialog onOpenChange={setProfileOpen} open={profileOpen} />
-      </div>
+                <Button onClick={() => setProfileOpen(true)} size="sm" type="button" variant="outline" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                  Bearbeiten
+                </Button>
+              </div>
+            </Row>
 
-      <div className="scroll-mt-8" id="ubuntu">
-        <UbuntuMachinesPanel />
-      </div>
+            {/* Anmelde-Sitzungen */}
+            <Row label="Anmelde-Sitzungen" description="Aktive Sitzungen anzeigen und beenden">
+              <Button render={(props) => <Link {...props} to="/settings" hash="security" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Anzeigen
+              </Button>
+            </Row>
 
-      <PageSection title="Darstellung">
-        <PageRows>
-          <Item size="sm">
-            <ItemContent>
-              <ItemTitle>Dark Mode</ItemTitle>
-              <ItemDescription>Hell / Dunkel</ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <Switch
-                aria-label="Dark theme"
-                checked={dark}
-                onCheckedChange={setDark}
-              />
-            </ItemActions>
-          </Item>
-          <Separator />
-          <Item size="sm">
-            <ItemContent>
-              <ItemTitle>Sprache</ItemTitle>
-              <ItemDescription>
-                Deutsch, English und weitere
-              </ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <LanguageSwitcher />
-            </ItemActions>
-          </Item>
-          <Separator />
-          <Item size="sm">
-            <ItemContent>
-              <ItemTitle>Lab angemeldet lassen</ItemTitle>
-              <ItemDescription>
-                Connect-Chrome-Profil behält Logins und Extensions
-              </ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <Switch
-                aria-label="Lab dauerhaft angemeldet"
-                checked={labKeepLogin}
-                onCheckedChange={(checked) => {
-                  setLabKeepLoggedIn(checked);
-                  setLabKeepLogin(checked);
-                }}
-              />
-            </ItemActions>
-          </Item>
-        </PageRows>
-      </PageSection>
+            {/* Abmelden */}
+            <Row label="Abmelden" description="Sitzung beenden und zur Anmeldung">
+              <Button render={(props) => <Link {...props} to="/sign" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Abmelden
+              </Button>
+            </Row>
+          </Section>
 
-      <div className="scroll-mt-8" id="storage">
-        <DeploymentModePanel />
-      </div>
+          {/* ── 2. Konnektoren ── */}
+          <div className="mt-8 border-t border-white/[0.06]" />
+          <Section id="konnektoren" label="Konnektoren">
+            {/* E-Mail-Konten */}
+            <Row label="E-Mail-Konten" description="IMAP/SMTP für E-Mail-basierte Kanäle">
+              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                <IconPlus className="mr-1 size-3.5" />
+                Hinzufügen
+              </Button>
+            </Row>
 
-      <div className="scroll-mt-8" id="model-provider">
-        <ModelProviderSettingsPanel />
-      </div>
+            {/* Cloud-Sync */}
+            <Row label="Cloud-Sync" description="Google Drive Backup">
+              <Button render={(props) => <Link {...props} to="/settings" hash="backup" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Öffnen
+              </Button>
+            </Row>
 
-      <div className="scroll-mt-8" id="api-keys">
-        <PageSection title="API-Keys">
-          <ApiKeysSettingsPanel />
-        </PageSection>
-      </div>
-
-      <CompanySettingsPanel />
-      <VoiceSettingsPanel />
-
-      <div className="scroll-mt-8" id="security">
-        <PageSection title="Sicherheit">
-          <PageRows>
-            <Item size="sm">
-              <ItemContent>
-                <ItemTitle>E-Mail</ItemTitle>
-                <ItemDescription>Login für diese lokale App</ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <input
-                  className="h-8 w-56 rounded-lg border border-border bg-background px-2 text-sm"
-                  onBlur={() => setSecurityEmail(securityEmail)}
-                  onChange={(e) => setSecurityEmailState(e.target.value)}
-                  type="email"
-                  value={securityEmail}
-                />
-              </ItemActions>
-            </Item>
-            <Item size="sm">
-              <ItemContent>
-                <ItemTitle>App-Passwort</ItemTitle>
-                <ItemDescription>
-                  {hasSecurityPassword()
-                    ? "Gesetzt — Session sperrt beim Tab-Schließen"
-                    : "Optional — schützt Handys und freigegebene Geräte"}
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions className="flex flex-col items-end gap-1 sm:flex-row sm:items-center">
-                <input
-                  className="h-8 w-40 rounded-lg border border-border bg-background px-2 text-sm"
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Neues Passwort"
-                  type="password"
-                  value={newPassword}
-                />
+            {/* Helium-Verbindung */}
+            <Row label="Helium-Verbindung" description={heliumStatus === "ok" ? "Verbunden" : "Offline"}>
+              <div className="flex items-center gap-2">
+                <span className={cn("size-2 rounded-full", heliumStatus === "ok" ? "bg-emerald-500" : "bg-red-500")} />
                 <Button
-                  onClick={() => {
-                    void (async () => {
-                      try {
-                        await setSecurityPassword(newPassword);
-                        setNewPassword("");
-                        setSecurityMsg("Passwort gespeichert.");
-                      } catch (caught) {
-                        setSecurityMsg(
-                          caught instanceof Error
-                            ? caught.message
-                            : "Fehler",
-                        );
-                      }
-                    })();
-                  }}
+                  onClick={() => triggerSave()}
                   size="sm"
                   type="button"
-                  variant="secondary"
+                  variant="ghost"
+                  className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
                 >
-                  Speichern
+                  <IconRefresh className="mr-1 size-3.5" />
+                  Retry
                 </Button>
-                {hasSecurityPassword() ? (
-                  <>
-                    <Button
-                      onClick={() => lockSecurity()}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Sperren
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        clearSecurityPassword();
-                        setSecurityMsg("Passwort entfernt.");
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      Entfernen
-                    </Button>
-                  </>
-                ) : null}
-              </ItemActions>
-            </Item>
-            {securityMsg ? (
-              <p className="text-xs text-muted-foreground">{securityMsg}</p>
-            ) : null}
-          </PageRows>
-        </PageSection>
+              </div>
+            </Row>
+          </Section>
+
+          {/* ── 3. Helium-Shell ── */}
+          <div className="mt-8 border-t border-white/[0.06]" />
+          <Section id="helium-shell" label="Helium-Shell">
+            {/* Shortcut */}
+            <Row label="Shortcut" description="Tastenkürzel zum Öffnen der Shell">
+              <div className="flex items-center gap-2">
+                <code className="rounded bg-[#1f1f1f] px-2 py-1 text-xs text-[#888]">{shellShortcut}</code>
+                <Button
+                  render={(props) => (
+                    <a href="chrome://extensions/shortcuts" rel="noopener noreferrer" target="_blank" {...props}>
+                      chrome://extensions/shortcuts
+                    </a>
+                  )}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                >
+                  Ändern
+                </Button>
+              </div>
+            </Row>
+
+            {/* Apple-Dot Verhalten */}
+            <Row label="Apple-Dot Verhalten" description="Sichtbarkeit und Pin-Verhalten pro Domain">
+              <Button render={(props) => <Link {...props} to="/settings" hash="apple-dot" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Konfigurieren
+              </Button>
+            </Row>
+
+            {/* Browser-Gruppen-Defaults */}
+            <Row label="Browser-Gruppen" description="Standard-Gruppen für neue Tabs">
+              <Button render={(props) => <Link {...props} to="/settings" hash="browser-groups" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Bearbeiten
+              </Button>
+            </Row>
+          </Section>
+
+          {/* ── 4. Connect-Agenten ── */}
+          <div className="mt-8 border-t border-white/[0.06]" />
+          <Section id="connect-agenten" label="Connect-Agenten">
+            {/* Standard-Agent */}
+            <Row label="Standard-Agent" description="Agent für neue Chats">
+              <Button render={(props) => <Link {...props} to="/agents" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Auswählen
+              </Button>
+            </Row>
+
+            {/* Agent-Liste */}
+            <Row label="Agent-Liste" description="Alle Agents verwalten">
+              <Button render={(props) => <Link {...props} to="/agents" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Öffnen
+              </Button>
+            </Row>
+
+            {/* API-Keys */}
+            <Row label="API-Keys" description="Globale Keys für alle Agents">
+              <Button render={(props) => <Link {...props} to="/settings" hash="api-keys" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Verwalten
+              </Button>
+            </Row>
+
+            {/* MCP-Server */}
+            <Row label="MCP-Server" description="Model Context Protocol Server">
+              <Button render={(props) => <Link {...props} to="/settings/mcp" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Öffnen
+              </Button>
+            </Row>
+          </Section>
+
+          {/* ── 5. Benachrichtigungen ── */}
+          <div className="mt-8 border-t border-white/[0.06]" />
+          <Section id="benachrichtigungen" label="Benachrichtigungen">
+            <Row label="Push-Benachrichtigungen" description="Desktop-Benachrichtigungen">
+              <Switch
+                aria-label="Push"
+                checked={true}
+                onCheckedChange={(checked) => { triggerSave(); }}
+              />
+            </Row>
+            <Row label="E-Mail-Benachrichtigungen" description="Updates und Alerts per E-Mail">
+              <Switch
+                aria-label="E-Mail"
+                checked={false}
+                onCheckedChange={(checked) => { triggerSave(); }}
+              />
+            </Row>
+            <Row label="Quiet Hours" description="Keine Benachrichtigungen von … bis">
+              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Konfigurieren
+              </Button>
+            </Row>
+          </Section>
+
+          {/* ── 6. Datenschutz ── */}
+          <div className="mt-8 border-t border-white/[0.06]" />
+          <Section id="datenschutz" label="Datenschutz">
+            <Row label="Lokale Daten" description="Datenbank und Cache auf diesem Gerät">
+              <Button render={(props) => <Link {...props} to="/settings" hash="storage" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                Anzeigen
+              </Button>
+            </Row>
+            <Row label="Telemetrie" description="Anonyme Nutzungsstatistiken">
+              <Switch
+                aria-label="Telemetrie"
+                checked={telemetry}
+                onCheckedChange={handleTelemetryToggle}
+              />
+            </Row>
+            <Row label="Daten exportieren" description="Alle Daten als JSON herunterladen">
+              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                <IconDownload className="mr-1 size-3.5" />
+                Export
+              </Button>
+            </Row>
+            <ActionRow
+              label="Daten löschen"
+              description="Alle lokalen Connect-Daten dauerhaft entfernen"
+              danger
+              onClick={() => setDeleteOpen(true)}
+            />
+          </Section>
+
+          {/* ── 7. Über ── */}
+          <div className="mt-8 border-t border-white/[0.06]" />
+          <Section id="uber" label="Über">
+            <Row label="Version" description={`Connect App · Build ${import.meta.env.VITE_APP_VERSION ?? "dev"}`}>
+              <span className="text-xs text-[#555]">v{import.meta.env.VITE_APP_VERSION ?? "dev"}</span>
+            </Row>
+            <Row label="Logs öffnen" description="Browser-Konsole und Server-Logs">
+              <Button
+                onClick={() => {
+                  try {
+                    (window as unknown as { __openLogs__?: () => void }).__openLogs__?.();
+                  } catch { /* ignore */ }
+                  triggerSave();
+                }}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
+                Öffnen
+              </Button>
+            </Row>
+            <Row label="Feedback" description="Problem melden oder Feature vorschlagen">
+              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                <IconMail className="mr-1 size-3.5" />
+                Feedback
+              </Button>
+            </Row>
+          </Section>
+
+          {/* ── Erweitert ── */}
+          <ErweitertPanel />
+
+          {/* Bottom spacer */}
+          <div className="h-8" />
+        </div>
       </div>
-
-      <StandingInstructions />
-
-      <div className="scroll-mt-8" id="shortcuts">
-        <PageSection
-          title="Shortcuts"
-          description="Alle Tastenkürzel lassen sich hier individuell anpassen. Klicke in ein Feld und drücke die gewünschte Kombination."
-        >
-          <ShortcutsPanel />
-        </PageSection>
-      </div>
-
-      <div className="scroll-mt-8" id="usage">
-        <CodexUsagePanel />
-        <PageSection title="Voice-Nutzung">
-          <PageRows>
-            <Item size="sm">
-              <ItemContent>
-                <ItemTitle>Zeichen (ElevenLabs)</ItemTitle>
-                <ItemDescription>
-                  Rotation alle {CHAR_BUDGET} Zeichen
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <span className="text-sm font-semibold tabular-nums">
-                  {charsUsed} / {voice.keys.length * CHAR_BUDGET || CHAR_BUDGET}
-                </span>
-              </ItemActions>
-            </Item>
-          </PageRows>
-        </PageSection>
-      </div>
-
-      <div className="scroll-mt-8" id="timer">
-        <PageSection title="Timer">
-          <PageRows>
-            <Item size="sm">
-              <ItemContent>
-                <ItemTitle>Focus-Timer</ItemTitle>
-                <ItemDescription>Kurzer Countdown für Fokus</ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-lg tabular-nums">
-                    {timerLabel}
-                  </span>
-                  <Button
-                    onClick={() => toggleFocusTimer()}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {timer.running ? "Pause" : "Start"}
-                  </Button>
-                  <Button
-                    onClick={() => resetFocusTimer()}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    Reset
-                  </Button>
-                </div>
-              </ItemActions>
-            </Item>
-          </PageRows>
-        </PageSection>
-      </div>
-
-      <div className="scroll-mt-8" id="donate">
-        <PageSection title="Spenden">
-          <DonatePanel />
-        </PageSection>
-      </div>
-
-      <PageSection className="opacity-80" title="Desktop">
-        <PageRows>
-          <Item id="lab-desktop" size="sm">
-            <ItemContent>
-              <ItemTitle>Connect Desktop</ItemTitle>
-              <ItemDescription>
-                Connect ist der Browser (Host-Chrome mit Profil).{" "}
-                <code className="rounded bg-muted px-1 text-[11px]">
-                  ./START-APP.sh
-                </code>{" "}
-                · Windows:{" "}
-                <code className="rounded bg-muted px-1 text-[11px]">
-                  packaging/build-windows-exe.sh
-                </code>
-                — kein Website-Fenster.
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-        </PageRows>
-      </PageSection>
-    </PageShell>
+    </>
   );
 }

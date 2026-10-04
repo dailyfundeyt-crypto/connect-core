@@ -7,12 +7,15 @@ import {
   IconFolder,
   IconFolderPlus,
   IconHammer,
+  IconLayoutColumns,
+  IconPencil,
   IconNews,
   IconPlus,
   IconPlugConnected,
   IconSearch,
   IconStar,
   IconTrash,
+  IconX,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -49,7 +52,6 @@ import {
   reorderAppsInGroup,
   reorderTabGroups,
   resolveTabUrl,
-  resolveLabEngine,
   runLocalWebSearch,
   selectLabApp,
   setTabGroupOpen,
@@ -58,8 +60,11 @@ import {
   toolIconUrl,
   type LabApp,
   type Level3BrowserState,
+  localWebSearchUrl,
+  resolveLabApp,
+  updateCustomLabApp,
 } from "@/lib/companies/level3-tools";
-import { openLabUrlInChrome } from "@/lib/ui/lab-prefs";
+import { openInHeliumTab, openSplitInHelium } from "@/lib/ui/open-window";
 import {
   isDesktopApp,
   navigateDesktopBrowser,
@@ -67,14 +72,26 @@ import {
 import { cn } from "@/lib/utils";
 
 function openLabApp(companyId: string, appId: string): Level3BrowserState {
+  // Outside Connect Desktop (Helium / normal browser): open the app as a NEW Helium tab (or focus
+  // the tab that already shows it) and leave Connect exactly as it is — no state change, no
+  // in-app preview/iframe page.
+  if (!isDesktopApp()) {
+    const prev = getLevel3Browser(companyId);
+    const app = resolveLabApp(prev, appId);
+    // Split-Link: both URLs side by side (left / right half), see openSplitInHelium.
+    if (app?.kind === "split" && app.url && app.url2) {
+      openSplitInHelium(app.url, app.url2);
+      return prev;
+    }
+    const url =
+      getConnection(prev, appId)?.projectUrl?.trim() || app?.url?.trim();
+    if (url) openInHeliumTab(url);
+    return prev;
+  }
   const next = selectLabApp(companyId, appId);
   const url = resolveTabUrl(next);
   if (url) {
     navigateDesktopBrowser(url);
-  }
-  // Connect-Chrome (`full`) is the browser — when NOT in desktop app, open Host-Chrome.
-  if (!isDesktopApp() && resolveLabEngine(next.engine) === "full") {
-    if (url) void openLabUrlInChrome(url);
   }
   return next;
 }
@@ -177,6 +194,8 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
   const [state, setState] = useState(() => getLevel3Browser(companyId));
   const [connectId, setConnectId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  /** Own app / Split-Link being edited (Rechtsklick › Bearbeiten). */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -202,10 +221,14 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
         onSubmit={(e) => {
           e.preventDefault();
           if (!search.trim()) return;
+          if (!isDesktopApp()) {
+            // Helium: search opens as a new tab, Connect stays unchanged.
+            openInHeliumTab(localWebSearchUrl(search));
+            return;
+          }
           const next = runLocalWebSearch(companyId, search);
           setState(next);
-          const url = resolveTabUrl(next);
-          navigateDesktopBrowser(url);
+          navigateDesktopBrowser(resolveTabUrl(next));
         }}
       >
         <div className="relative">
@@ -341,87 +364,25 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                       <ContextMenuItem
                         className="gap-2 rounded-lg px-2.5 py-2 text-destructive focus:text-destructive"
                         onClick={() => {
-                          if (
-                            window.confirm(
-                              `Gruppe „${group.label}“ wirklich löschen?`,
-                            )
-                          ) {
-                            setState(deleteTabGroup(companyId, group.id));
+                          const msg =
+                            group.apps.length > 0
+                              ? `Gruppe „${group.label}“ löschen? Die ${group.apps.length} App(s) werden ebenfalls entfernt.`
+                              : `Gruppe „${group.label}“ löschen?`;
+                          if (window.confirm(msg)) {
+                            setState(setTabGroupOpen(companyId, group.id, false));
+                            setTimeout(() => {
+                              setState(deleteTabGroup(companyId, group.id));
+                            }, 0);
                           }
-                        }}
+                        }
                       >
                         <IconTrash className="size-4" />
                         Gruppe löschen
                       </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-
-                  {open ? (
-                    <ul
-                      className={cn(
-                        "mt-0.5 grid gap-0.5 pl-2 transition-all duration-300 ease-out",
-                      )}
-                    >
-                      <div className="min-h-0 overflow-hidden">
-                        {group.apps.length === 0 ? (
-                          <li className="px-2 py-1.5 text-[11px] text-sidebar-foreground/35">
-                            Leerer Ordner — App hierher ziehen
-                          </li>
-                        ) : (
-                          group.apps.map((app) => (
-                            <AppRow
-                              app={app}
-                              companyId={companyId}
-                              dragOverId={dragOverId}
-                              groupId={group.id}
-                              key={`${group.id}-${app.id}`}
-                              onChange={setState}
-                              onConnect={setConnectId}
-                              setDragOverId={setDragOverId}
-                              state={state}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </ul>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {ungrouped.length > 0 ? (
-          <div className="mt-3">
-            <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
-              Weitere
-            </SidebarGroupLabel>
-            <ul className="flex flex-col gap-0.5 px-0.5">
-              {ungrouped.map((app) => (
-                <AppRow
-                  app={app}
-                  companyId={companyId}
-                  dragOverId={dragOverId}
-                  key={`ungrouped-${app.id}`}
-                  onChange={setState}
-                  onConnect={setConnectId}
-                  setDragOverId={setDragOverId}
-                  state={state}
-                />
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
-
-      {adding ? (
-        <AddAppInline
-          companyId={companyId}
-          groupId={groups[0]?.id}
-          onCancel={() => setAdding(false)}
           onDone={(next) => {
             setState(next);
             setAdding(false);
+            setEditingId(null);
           }}
         />
       ) : (
@@ -470,6 +431,7 @@ function AppRow({
   setDragOverId,
   onChange,
   onConnect,
+  onEdit,
 }: {
   app: LabApp;
   companyId: string;
@@ -479,6 +441,7 @@ function AppRow({
   setDragOverId: (id: string | null) => void;
   onChange: (next: Level3BrowserState) => void;
   onConnect: (id: string) => void;
+  onEdit?: (id: string) => void;
 }) {
   const conn = getConnection(state, app.id);
   const active = !state.starred && state.activeTool === app.id;
@@ -560,6 +523,14 @@ function AppRow({
               <span className="min-w-0 flex-1 truncate text-[13px] tracking-tight">
                 {app.label}
               </span>
+              {app.kind === "split" ? (
+                <span
+                  className="flex shrink-0 items-center text-sidebar-foreground/40"
+                  title="Split-Link: öffnet zwei Seiten nebeneinander"
+                >
+                  <IconLayoutColumns className="size-3.5" stroke={1.6} />
+                </span>
+              ) : null}
               {conn ? (
                 <span
                   aria-label="Verbunden"
@@ -583,6 +554,35 @@ function AppRow({
                   className="size-1.5 shrink-0 rounded-full bg-sidebar-foreground/25 transition-colors group-hover/row:bg-sidebar-foreground/50"
                 />
               )}
+              <span
+                className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  aria-label={
+                    app.builtin
+                      ? `${app.label} aus dieser Gruppe entfernen`
+                      : `Tab ${app.label} entfernen`
+                  }
+                  className="rounded-md p-1 text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent hover:text-destructive"
+                  onClick={() => {
+                    if (app.builtin) {
+                      onChange(removeAppFromGroups(companyId, app.id));
+                      return;
+                    }
+                    onChange(removeCustomLabApp(companyId, app.id));
+                  }}
+                  title={
+                    app.builtin
+                      ? "Aus dieser Gruppe entfernen"
+                      : "Tab entfernen"
+                  }
+                  type="button"
+                >
+                  <IconX className="size-3.5" stroke={1.75} />
+                </button>
+              </span>
             </button>
           </SidebarMenuItem>
         </ContextMenuTrigger>
@@ -617,6 +617,15 @@ function AppRow({
             >
               <IconFolder className="size-4" />
               Aus Gruppe entfernen
+            </ContextMenuItem>
+          ) : null}
+          {!app.builtin && onEdit ? (
+            <ContextMenuItem
+              className="gap-2 rounded-lg px-2.5 py-2"
+              onClick={() => onEdit(app.id)}
+            >
+              <IconPencil className="size-4" />
+              Bearbeiten
             </ContextMenuItem>
           ) : null}
           {!app.builtin ? (
@@ -704,41 +713,64 @@ export function LabIconRail({
             )}
             key={group.id}
           >
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    aria-expanded={open}
-                    aria-label={`${group.label} · ${group.apps.length} Apps`}
-                    className={cn(
-                      "relative flex size-9 items-center justify-center overflow-hidden rounded-[10px] bg-gradient-to-br shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] ring-1 transition-transform duration-200 hover:scale-[1.04]",
-                      visual.accent,
-                      visual.ring,
-                      open && "ring-2",
-                    )}
-                    onClick={() =>
-                      setState(
-                        setTabGroupOpen(companyId, group.id, !open),
-                      )
-                    }
-                    type="button"
-                  >
-                    <FolderIcon
-                      className="size-4 text-white drop-shadow-[0_1px_0_rgba(0,0,0,0.25)]"
-                      stroke={1.75}
-                    />
-                  </button>
-                }
-              />
-              <TooltipContent side="right">
-                <span className="font-medium">{group.label}</span>
-                <span className="block text-[10px] text-background/70">
-                  {group.apps.length} App
-                  {group.apps.length === 1 ? "" : "s"}
-                  {open ? " · offen" : " — klicken zum Öffnen"}
-                </span>
-              </TooltipContent>
-            </Tooltip>
+            <div className={cn("group/rail relative", open && "mb-0.5")}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      aria-expanded={open}
+                      aria-label={`${group.label} · ${group.apps.length} Apps`}
+                      className={cn(
+                        "relative flex size-9 items-center justify-center overflow-hidden rounded-[10px] bg-gradient-to-br shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] ring-1 transition-transform duration-200 hover:scale-[1.04]",
+                        visual.accent,
+                        visual.ring,
+                        open && "ring-2",
+                      )}
+                      onClick={() =>
+                        setState(
+                          setTabGroupOpen(companyId, group.id, !open),
+                        )
+                      }
+                      type="button"
+                    >
+                      <FolderIcon
+                        className="size-4 text-white drop-shadow-[0_1px_0_rgba(0,0,0,0.25)]"
+                        stroke={1.75}
+                      />
+                    </button>
+                  }
+                />
+                <TooltipContent side="right">
+                  <span className="font-medium">{group.label}</span>
+                  <span className="block text-[10px] text-background/70">
+                    {group.apps.length} App
+                    {group.apps.length === 1 ? "" : "s"}
+                    {open ? " · offen" : " — klicken zum Öffnen"}
+                  </span>
+                </TooltipContent>
+              </Tooltip>
+              <button
+                aria-label={`Gruppe "${group.label}" löschen`}
+                className="absolute -right-0.5 -top-0.5 hidden size-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm opacity-0 transition-opacity group-hover/rail:flex group-hover/rail:opacity-100 hover:bg-destructive/90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const msg =
+                    group.apps.length > 0
+                      ? `Gruppe "${group.label}" löschen? Die ${group.apps.length} App(s) werden ebenfalls entfernt.`
+                      : `Gruppe "${group.label}" löschen?`;
+                  if (window.confirm(msg)) {
+                    setState(setTabGroupOpen(companyId, group.id, false));
+                    setTimeout(() => {
+                      setState(deleteTabGroup(companyId, group.id));
+                    }, 0);
+                  }
+                }}
+                title={`Gruppe "${group.label}" löschen`}
+                type="button"
+              >
+                <IconTrash className="size-2.5" stroke={2} />
+              </button>
+            </div>
 
             {open ? (
               <ul className="flex flex-col items-center gap-1">
@@ -894,21 +926,64 @@ function ToolGlyph({ icon, tint }: { icon: string; tint: string }) {
 function AddAppInline({
   companyId,
   groupId,
+  groups,
+  editApp,
   onCancel,
   onDone,
 }: {
   companyId: string;
   groupId?: string;
+  groups: { id: string; label: string }[];
+  /** Set = edit this own app / Split-Link instead of adding a new one. */
+  editApp?: LabApp;
   onCancel: () => void;
   onDone: (next: Level3BrowserState) => void;
 }) {
-  const [label, setLabel] = useState("");
-  const [url, setUrl] = useState("");
+  const [kind, setKind] = useState<"browser" | "split">(
+    editApp?.kind === "split" ? "split" : "browser",
+  );
+  const [label, setLabel] = useState(editApp?.label ?? "");
+  const [url, setUrl] = useState(editApp?.url ?? "");
+  const [url2, setUrl2] = useState(editApp?.url2 ?? "");
+  const [icon, setIcon] = useState(
+    editApp?.icon && editApp.icon !== "googlechrome" ? editApp.icon : "",
+  );
+  const [target, setTarget] = useState(groupId ?? groups[0]?.id ?? "");
+  const split = kind === "split";
+  const ready = Boolean(label.trim() && url.trim() && (!split || url2.trim()));
+
+  const save = () => {
+    if (!ready) return;
+    if (editApp) {
+      onDone(
+        updateCustomLabApp(companyId, editApp.id, {
+          label,
+          url,
+          url2: split ? url2 : undefined,
+          icon,
+          groupId: target || undefined,
+        }),
+      );
+      return;
+    }
+    onDone(
+      addCustomLabApp(companyId, {
+        kind: split ? "split" : "browser",
+        label,
+        url,
+        url2: split ? url2 : undefined,
+        icon: icon || undefined,
+        groupId: target || undefined,
+      }),
+    );
+  };
 
   return (
     <div className="space-y-2 rounded-xl border border-sidebar-border/70 bg-sidebar-accent/40 p-2.5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[12px] font-medium">App-Symbol</p>
+        <p className="text-[12px] font-medium">
+          {editApp ? "Bearbeiten" : "App hinzufügen"}
+        </p>
         <button
           className="text-[10px] text-sidebar-foreground/40 hover:text-sidebar-foreground"
           onClick={onCancel}
@@ -917,6 +992,31 @@ function AddAppInline({
           Abbrechen
         </button>
       </div>
+      {editApp ? null : (
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-background/60 p-0.5 text-[11px]">
+          <button
+            className={cn(
+              "rounded-md px-2 py-1",
+              !split ? "bg-background shadow-sm" : "text-sidebar-foreground/50",
+            )}
+            onClick={() => setKind("browser")}
+            type="button"
+          >
+            Einzel-App
+          </button>
+          <button
+            className={cn(
+              "flex items-center justify-center gap-1 rounded-md px-2 py-1",
+              split ? "bg-background shadow-sm" : "text-sidebar-foreground/50",
+            )}
+            onClick={() => setKind("split")}
+            type="button"
+          >
+            <IconLayoutColumns className="size-3" />
+            Split-Link
+          </button>
+        </div>
+      )}
       <Input
         className="h-7 border-sidebar-border bg-background text-[11px]"
         onChange={(e) => setLabel(e.target.value)}
@@ -926,19 +1026,50 @@ function AddAppInline({
       <Input
         className="h-7 border-sidebar-border bg-background text-[11px]"
         onChange={(e) => setUrl(e.target.value)}
-        placeholder="https://…"
+        placeholder={split ? "URL links (https://…)" : "https://…"}
         value={url}
       />
+      {split ? (
+        <Input
+          className="h-7 border-sidebar-border bg-background text-[11px]"
+          onChange={(e) => setUrl2(e.target.value)}
+          placeholder="URL rechts (https://…)"
+          value={url2}
+        />
+      ) : null}
+      <Input
+        className="h-7 border-sidebar-border bg-background text-[11px]"
+        onChange={(e) => setIcon(e.target.value)}
+        placeholder="Icon (simpleicons-Name, z. B. notion) – optional"
+        value={icon}
+      />
+      {groups.length > 0 ? (
+        <select
+          aria-label="Gruppe"
+          className="h-7 w-full rounded-md border border-sidebar-border bg-background px-1.5 text-[11px]"
+          onChange={(e) => setTarget(e.target.value)}
+          value={target}
+        >
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      {split ? (
+        <p className="text-[10px] leading-snug text-sidebar-foreground/45">
+          Ein Klick öffnet beide Seiten nebeneinander (linke / rechte Bildschirmhälfte).
+        </p>
+      ) : null}
       <Button
         className="h-7 w-full"
-        disabled={!label.trim() || !url.trim()}
-        onClick={() =>
-          onDone(addCustomLabApp(companyId, { label, url, groupId }))
-        }
+        disabled={!ready}
+        onClick={save}
         size="sm"
         type="button"
       >
-        Hinzufügen
+        {editApp ? "Speichern" : "Hinzufügen"}
       </Button>
     </div>
   );

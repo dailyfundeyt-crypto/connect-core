@@ -21,6 +21,8 @@ import {
 } from "@/components/channels/composer";
 import { VoiceCallOverlay } from "@/components/voice/voice-call-overlay";
 import { attachmentUrl } from "@/lib/channels/attachments";
+import { assistantIds, waitForAgentReply } from "@/lib/voice/agent-reply";
+import { registerVoiceTarget } from "@/lib/voice/notch-bridge";
 import { newId } from "../../lib/new-id";
 
 export function ConversationView({
@@ -423,6 +425,60 @@ export function ConversationView({
     });
   }, [apply, disabled, inFlight, restoreFailedRun]);
 
+  /*
+   * VOICE: SEND THE WAY THE COMPOSER DOES, THEN WAIT FOR WHAT THE AGENT REALLY SAID.
+   *
+   * The call overlay and the Connect Notch bridge both come through here. The turn is a normal
+   * send (same chat, same queue/interrupt rules, attachments included), and the answer is read off
+   * the transcript as it streams, so what gets spoken is the agent's own reply rather than a canned
+   * acknowledgement. Refs, because the wait outlives many renders.
+   */
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const inFlightRef = useRef(inFlight);
+  inFlightRef.current = inFlight;
+  const voiceTargetAgentId = voiceAgentId ?? agents[0]?.id;
+
+  const runVoiceTurn = useCallback(
+    async (
+      text: string,
+      attachments: Attachment[] = [],
+      onText?: (partial: string) => void,
+    ): Promise<string> => {
+      const draft: ComposerDraft = {
+        text,
+        agentId: voiceTargetAgentId ?? null,
+        mcpServerIds: [],
+        commandIds: [],
+        isEmpty: false,
+        attachments,
+      };
+      const before = assistantIds(messagesRef.current);
+      const busy = inFlightRef.current;
+      // Same rule as the composer: a Hermes chat interrupts, any other one parks the message.
+      if (busy && interruptWhileBusy) onStop?.();
+      const started = submit(draft, busy && !interruptWhileBusy);
+      return waitForAgentReply({
+        getMessages: () => messagesRef.current,
+        getPending: () => inFlightRef.current,
+        before,
+        turn: started ?? Promise.resolve(),
+        ...(onText ? { onText } : {}),
+      });
+    },
+    [interruptWhileBusy, onStop, submit, voiceTargetAgentId],
+  );
+
+  // This chat can take spoken turns from the Notch while it is on screen.
+  useEffect(() => {
+    if (!channelId || disabled) return;
+    return registerVoiceTarget({
+      channelId,
+      ...(voiceTargetAgentId ? { agentId: voiceTargetAgentId } : {}),
+      run: (text, attachments, onText) => runVoiceTurn(text, attachments, onText),
+    });
+  }, [channelId, disabled, runVoiceTurn, voiceTargetAgentId]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex flex-1 min-h-0">
@@ -528,19 +584,9 @@ export function ConversationView({
             voiceAgentName ?? agents[0]?.name ?? "Connect"
           }
           onClose={() => setVoiceOpen(false)}
-          onUserUtterance={async (spoken) => {
-            const draft: ComposerDraft = {
-              text: spoken,
-              agentId: voiceAgentId ?? agents[0]?.id ?? null,
-              mcpServerIds: [],
-              commandIds: [],
-              isEmpty: false,
-              attachments: [],
-            };
-            await submit(draft, false);
-            const who = voiceAgentName ?? agents[0]?.name ?? "Ich";
-            return `${who} hier. Verstanden: „${spoken.slice(0, 140)}${spoken.length > 140 ? "…" : ""}“. Ich arbeite daran und melde mich im Chat.`;
-          }}
+          onUserUtterance={(spoken, onText) =>
+            runVoiceTurn(spoken, [], onText)
+          }
           open={voiceOpen}
         />
       </div>

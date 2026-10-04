@@ -1,4 +1,4 @@
-//! Running a command without putting a console window on somebody's screen.
+﻿//! Running a command without putting a console window on somebody's screen.
 //!
 //! Every shell-out here is a black `conhost` window on Windows unless it is asked not to be.
 //! `podman`, `wsl.exe`, `powershell` and `bun` are all console applications, and Windows gives a
@@ -7,7 +7,7 @@
 //! allocated before anything is written to.
 //!
 //! The visible half of this was Stop: `compose down` takes several seconds, so its window had time
-//! to be seen, in the foreground, over OpenBot. The rest are quicker and flash instead, once per
+//! to be seen, in the foreground, over Connect. The rest are quicker and flash instead, once per
 //! poll, for the whole of a first run.
 //!
 //! Unix has no equivalent problem and no equivalent flag, so there the wrapper is the identity.
@@ -125,15 +125,15 @@ mod tests {
     fn runs_the_program_it_is_given() {
         let program = if cfg!(windows) { "cmd" } else { "echo" };
         let args: &[&str] = if cfg!(windows) {
-            &["/C", "echo openbot"]
+            &["/C", "echo Connect"]
         } else {
-            &["openbot"]
+            &["Connect"]
         };
         let out = command(program)
             .args(args)
             .output()
             .expect("the wrapped command should run");
         assert!(out.status.success());
-        assert!(String::from_utf8_lossy(&out.stdout).contains("openbot"));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("Connect"));
     }
 }

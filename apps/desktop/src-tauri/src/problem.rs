@@ -1,10 +1,10 @@
-//! What a person is told when something fails, and what a developer is told at the same time.
+﻿//! What a person is told when something fails, and what a developer is told at the same time.
 //!
 //! TWO PARTS, ALWAYS, and this exists because one part is never enough for both readers. The
 //! person needs a sentence about their situation and what to do next; whoever is debugging needs
 //! the actual output, verbatim, including the bits that are only meaningful to them. Collapse them
 //! and one of the two is failed: a plain sentence alone throws away the evidence, and raw engine
-//! output alone is what put "pull access denied for openbot-agent-langgraph-agui, repository does
+//! output alone is what put "pull access denied for Connect-agent-langgraph-agui, repository does
 //! not exist or may require 'docker login'" in front of somebody who was setting up an app.
 //!
 //! The window shows `said` as the failure and keeps `detail` behind a disclosure, so the default
@@ -27,7 +27,7 @@ pub struct Problem {
     pub said: String,
     /// For whoever is debugging. Verbatim, and never shown as the headline.
     ///
-    /// `None` where the plain sentence IS the whole truth — a refusal this deployment decided, with
+    /// `None` where the plain sentence IS the whole truth â€” a refusal this deployment decided, with
     /// no underlying output behind it.
     pub detail: Option<String>,
     /// The credential operation that failed, never inferred from provider log text.
@@ -98,17 +98,17 @@ pub fn said_about(output: &str) -> String {
         || lower.contains("manifest unknown")
         || lower.contains("not found: manifest")
     {
-        return "OpenBot could not download one of the parts it needs. That version may not have \
-                been published yet. Check for an OpenBot update, and try again."
+        return "Connect could not download one of the parts it needs. That version may not have \
+                been published yet. Check for an Connect update, and try again."
             .into();
     }
     if lower.contains("port is already allocated") || lower.contains("address already in use") {
-        return "Something else on this computer is using a port OpenBot needs. Close it, or \
+        return "Something else on this computer is using a port Connect needs. Close it, or \
                 restart the computer, and try again."
             .into();
     }
     if lower.contains("no space left") {
-        return "This computer has run out of disk space, so OpenBot could not finish. Free some \
+        return "This computer has run out of disk space, so Connect could not finish. Free some \
                 space and try again."
             .into();
     }
@@ -116,7 +116,7 @@ pub fn said_about(output: &str) -> String {
         || lower.contains("is the docker daemon running")
         || lower.contains("connection refused")
     {
-        return "OpenBot cannot reach the container engine. Start Docker or Podman, wait for it to \
+        return "Connect cannot reach the container engine. Start Docker or Podman, wait for it to \
                 finish starting, and try again."
             .into();
     }
@@ -126,12 +126,12 @@ pub fn said_about(output: &str) -> String {
             .into();
     }
     if lower.contains("unauthorized") || lower.contains("permission denied") {
-        return "OpenBot was refused permission for something it needed. The details below say \
+        return "Connect was refused permission for something it needed. The details below say \
                 what, and are worth sending to whoever set this up."
             .into();
     }
 
-    "Something went wrong while setting OpenBot up. The details below are worth sending to \
+    "Something went wrong while setting Connect up. The details below are worth sending to \
      whoever set this up."
         .into()
 }
@@ -144,19 +144,19 @@ mod tests {
     #[test]
     fn a_refused_pull_reads_as_a_missing_release_not_a_login_problem() {
         let raw =
-            "Error response from daemon: pull access denied for openbot-agent-langgraph-agui, \
+            "Error response from daemon: pull access denied for Connect-agent-langgraph-agui, \
                    repository does not exist or may require 'docker login'";
         let said = said_about(raw);
         assert!(said.contains("could not download"), "{said}");
         // The person is never told to run `docker login`, which is not a thing they have.
         assert!(!said.to_lowercase().contains("docker login"), "{said}");
-        assert!(!said.contains("openbot-agent"), "{said}");
+        assert!(!said.contains("Connect-agent"), "{said}");
     }
 
     #[test]
     fn a_taken_port_says_so_in_words_somebody_can_act_on() {
         let said = said_about("Bind for 0.0.0.0:4202 failed: port is already allocated");
-        assert!(said.contains("port OpenBot needs"), "{said}");
+        assert!(said.contains("port Connect needs"), "{said}");
     }
 
     #[test]

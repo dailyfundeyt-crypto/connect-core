@@ -6,17 +6,20 @@
  * to the browser so the AI can apply changes. Local websearch runs in Chromium.
  */
 
-import { navigateDesktopBrowser } from "@/lib/desktop-bridge";
+import { isDesktopApp, navigateDesktopBrowser } from "@/lib/desktop-bridge";
 
-export type LabAppKind = "browser" | "computer";
+/** `split` = Split-Link: two URLs opened side by side (left / right half of the screen). */
+export type LabAppKind = "browser" | "computer" | "split";
 
 export type LabApp = {
   id: string;
   kind: LabAppKind;
   label: string;
   blurb: string;
-  /** URL the Chromium pane opens (browser apps + optional docs for computer). */
+  /** URL the Chromium pane opens (browser apps + optional docs for computer). Split-Link: left. */
   url?: string;
+  /** Split-Link only: URL for the right half. */
+  url2?: string;
   /** Hint for agents driving Computer-Use on the sandbox PC. */
   computerHint?: string;
   icon: string;
@@ -216,6 +219,8 @@ export type Level3BrowserState = {
   engine?: "embed" | "full";
   /** Last local websearch query (shown in chrome). */
   lastSearch?: string;
+  /** Example Split-Link was added once (deleting it keeps it deleted). */
+  splitExampleSeeded?: boolean;
   updatedAt: string;
 };
 
@@ -319,7 +324,7 @@ function emptyState(companyId: string): Level3BrowserState {
     connections: [],
     starred: false,
     customApps: [],
-    tabGroups: defaultTabGroups(),
+    tabGroups: [],
     engine: "full",
     updatedAt: "",
   };
@@ -335,14 +340,19 @@ export function resolveLabEngine(
 function normalizeGroups(
   groups: LabTabGroup[] | undefined,
 ): LabTabGroup[] {
-  if (!Array.isArray(groups) || groups.length === 0) return defaultTabGroups();
+  if (!Array.isArray(groups)) return [];
   const defaults = defaultTabGroups();
-  const existingIds = new Set(groups.map((g) => g.id));
-  const missing = defaults.filter((d) => !existingIds.has(d.id));
-
-  // Heal broken state — legacy data may have created one-off groups per app.
-  // Their label looks like an app name (no "group-" prefix, no accent).
-  // Merge those apps back into the matching default group.
+  const defaultIds = new Set(defaults.map((d) => d.id));
+  const accented = new Set<GroupAccent>([
+    "technische",
+    "fundamentals",
+    "sentimentalle",
+    "sektorielle",
+    "build",
+    "ai",
+  ]);
+  // Heal broken state — legacy data created one-off groups per app: label looks like an app
+  // name, id WITHOUT the "group-" prefix and no accent. Their known apps go back to Technische.
   const knownAppIds = new Set<string>([
     "markettrace",
     "tradingview",
@@ -360,67 +370,73 @@ function normalizeGroups(
     "gmail",
     "calendar",
   ]);
-  const accented = new Set<GroupAccent>([
-    "technische",
-    "fundamentals",
-    "sentimentalle",
-    "sektorielle",
-    "build",
-    "ai",
-  ]);
-  const defaultById = new Map(defaults.map((d) => [d.id, d]));
-  const defaultByAccent = new Map<GroupAccent, LabTabGroup>();
-  for (const d of defaults) {
-    if (d.accent) defaultByAccent.set(d.accent, d);
-  }
 
-  const leftovers = new Map<string, LabTabGroup>();
-  const cleaned: LabTabGroup[] = [];
+  // Keep the person's own groups, order, app lists and collapsed state as stored. (Earlier this
+  // rebuilt default groups from the default app lists on every read and dropped user-created
+  // groups, so added/moved apps did not survive a reload.)
+  const kept: LabTabGroup[] = [];
+  const legacyApps: string[] = [];
   for (const g of groups) {
-    const isDefault = defaultById.has(g.id);
-    const isAccent = g.accent && accented.has(g.accent);
-    if (isDefault || isAccent) {
-      cleaned.push(g);
-      continue;
-    }
-    // Foreign group — collect its apps into the matching default group by accent
-    // or into "Technische" as the catch-all (since most extras were trading apps).
-    if (g.appIds.length > 0) {
-      leftovers.set(g.id, g);
-    }
+    if (!g || typeof g.id !== "string") continue;
+    const appIds = Array.isArray(g.appIds)
+      ? [...new Set(g.appIds.filter((id): id is string => typeof id === "string"))]
+      : [];
+    const legit =
+      defaultIds.has(g.id) ||
+      g.id.startsWith("group-") ||
+      Boolean(g.accent && accented.has(g.accent));
+    if (legit) kept.push({ ...g, appIds });
+    else legacyApps.push(...appIds.filter((id) => knownAppIds.has(id)));
   }
 
-  const merged = new Map<string, string[]>();
-  for (const g of defaults) merged.set(g.id, [...g.appIds]);
-  for (const foreign of leftovers.values()) {
-    const target = defaultByAccent.get("technische")!;
-    for (const appId of foreign.appIds) {
-      if (!knownAppIds.has(appId)) continue;
-      const list = merged.get(target.id)!;
-      if (!list.includes(appId)) list.push(appId);
-    }
-  }
-  const rebuiltDefaults = defaults.map((d) => ({
-    ...d,
-    appIds: merged.get(d.id) ?? d.appIds,
-  }));
-
-  const order = [
-    ...missing,
-    ...rebuiltDefaults.filter((d) => existingIds.has(d.id)),
-    ...cleaned.filter((g) => !defaultById.has(g.id) && !(g.accent && accented.has(g.accent))),
-  ];
-
-  // Deduplicate by id while preserving order.
+  // Deduplicate by id while preserving order; drop dangling parents.
   const seen = new Set<string>();
-  return order.filter((g) => {
+  const unique = kept.filter((g) => {
     if (seen.has(g.id)) return false;
     seen.add(g.id);
     return true;
   });
+  return unique.map((g) =>
+    g.parentId && !seen.has(g.parentId) ? { ...g, parentId: undefined } : g,
+  );
+}
+
+/** Editable example Split-Link, seeded once into Technische (deterministic id). */
+export const SPLIT_EXAMPLE_ID = "split-example-notion-tradingview";
+
+function splitExampleApp(): LabApp {
+  return {
+    id: SPLIT_EXAMPLE_ID,
+    kind: "split",
+    label: "Notion + TradingView",
+    blurb: "Split-Link (Beispiel – Rechtsklick › Bearbeiten)",
+    url: "https://www.notion.so",
+    url2: "https://de.tradingview.com/chart/",
+    icon: "notion",
+    tint: "#111111",
+    builtin: false,
+  };
+}
+
+/** Adds the example Split-Link once per company state (flag `splitExampleSeeded`). */
+function withSplitExample(state: Level3BrowserState): Level3BrowserState {
+  if (state.splitExampleSeeded) return state;
+  const hasApp = state.customApps.some((a) => a.id === SPLIT_EXAMPLE_ID);
+  const customApps = hasApp ? state.customApps : [...state.customApps, splitExampleApp()];
+  const inSomeGroup = state.tabGroups.some((g) => g.appIds.includes(SPLIT_EXAMPLE_ID));
+  const tabGroups = inSomeGroup
+    ? state.tabGroups
+    : state.tabGroups.map((g) =>
+        g.id === "group-technische" ? { ...g, appIds: [SPLIT_EXAMPLE_ID, ...g.appIds] } : g,
+      );
+  return { ...state, customApps, tabGroups, splitExampleSeeded: true };
 }
 
 export function getLevel3Browser(companyId: string): Level3BrowserState {
+  return withSplitExample(readLevel3Browser(companyId));
+}
+
+function readLevel3Browser(companyId: string): Level3BrowserState {
   const raw = readAll()[companyId];
   if (!raw) return emptyState(companyId);
 
@@ -576,43 +592,90 @@ export function unstarToBrowser(companyId: string): Level3BrowserState {
   });
 }
 
+function withProtocol(url: string): string {
+  const u = url.trim();
+  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
+}
+
 export function addCustomLabApp(
   companyId: string,
   input: {
     kind?: LabAppKind;
     label: string;
     url: string;
+    /** Split-Link: right URL (kind "split"). */
+    url2?: string;
+    /** simpleicons.org slug, e.g. "notion" (default: googlechrome). */
+    icon?: string;
     groupId?: string;
   },
 ): Level3BrowserState {
   const prev = getLevel3Browser(companyId);
   const label = input.label.trim();
   const url = input.url.trim();
-  if (!label || !url) return prev;
-  const withProto = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-  const id = `custom-${Date.now().toString(36)}`;
+  const split = input.kind === "split";
+  if (!label || !url || (split && !input.url2?.trim())) return prev;
+  const withProto = withProtocol(url);
+  const id = `${split ? "split" : "custom"}-${Date.now().toString(36)}`;
   const app: LabApp = {
     id,
-    kind: "browser",
+    kind: split ? "split" : "browser",
     label,
-    blurb: "Eigene App",
+    blurb: split ? "Split-Link" : "Eigene App",
     url: withProto,
-    icon: "googlechrome",
-    tint: "#4285F4",
+    ...(split ? { url2: withProtocol(input.url2 ?? "") } : {}),
+    icon: input.icon?.trim().toLowerCase() || "googlechrome",
+    tint: split ? "#111111" : "#4285F4",
     builtin: false,
   };
   const groups = [...normalizeGroups(prev.tabGroups)];
   const targetId = input.groupId ?? groups[0]?.id;
   const nextGroups = groups.map((g) =>
-    g.id === targetId ? { ...g, appIds: [...g.appIds, id] } : g,
+    g.id === targetId ? { ...g, appIds: [...g.appIds, id], collapsed: false } : g,
   );
+  // Helium / browser: the new entry is only stored — Connect stays on the current view.
+  // Connect Desktop (WPF) keeps the old behaviour and shows the new app right away.
+  const showNow = isDesktopApp() && !split;
   return setLevel3Browser(companyId, {
     customApps: [...prev.customApps, app],
     tabGroups: nextGroups,
-    activeTool: id,
-    customUrl: withProto,
-    browsing: true,
-    starred: false,
+    ...(showNow
+      ? { activeTool: id, customUrl: withProto, browsing: true, starred: false }
+      : {}),
+  });
+}
+
+/** Edit an own app / Split-Link (name, icon, URLs). Built-in apps are not editable. */
+export function updateCustomLabApp(
+  companyId: string,
+  appId: string,
+  patch: { label?: string; url?: string; url2?: string; icon?: string; groupId?: string },
+): Level3BrowserState {
+  const prev = getLevel3Browser(companyId);
+  const current = prev.customApps.find((a) => a.id === appId);
+  if (!current) return prev;
+  const next: LabApp = {
+    ...current,
+    ...(patch.label?.trim() ? { label: patch.label.trim() } : {}),
+    ...(patch.url?.trim() ? { url: withProtocol(patch.url) } : {}),
+    ...(current.kind === "split" && patch.url2?.trim() ? { url2: withProtocol(patch.url2) } : {}),
+    ...(patch.icon !== undefined ? { icon: patch.icon.trim().toLowerCase() || "googlechrome" } : {}),
+    ...(current.id === SPLIT_EXAMPLE_ID ? { blurb: "Split-Link" } : {}),
+  };
+  let tabGroups = normalizeGroups(prev.tabGroups);
+  if (patch.groupId && tabGroups.some((g) => g.id === patch.groupId)) {
+    const already = tabGroups.find((g) => g.id === patch.groupId)?.appIds.includes(appId);
+    if (!already) {
+      tabGroups = tabGroups.map((g) =>
+        g.id === patch.groupId
+          ? { ...g, appIds: [...g.appIds, appId] }
+          : { ...g, appIds: g.appIds.filter((id) => id !== appId) },
+      );
+    }
+  }
+  return setLevel3Browser(companyId, {
+    customApps: prev.customApps.map((a) => (a.id === appId ? next : a)),
+    tabGroups,
   });
 }
 

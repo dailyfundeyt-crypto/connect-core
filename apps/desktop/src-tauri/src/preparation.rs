@@ -1,4 +1,4 @@
-//! Local installation checkpoints. These contain no credentials and never grant runtime ownership.
+﻿//! Local installation checkpoints. These contain no credentials and never grant runtime ownership.
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -7,10 +7,10 @@ use sha2::{Digest, Sha256};
 
 use crate::{deployment, engine::Address, harness::HarnessChoice, problem::Problem, quiet, stack};
 
-pub const REQUIRED: &str = "Finish installing OpenBot's local software before signing in or starting. Return to Install and try again.";
-pub const FILE: &str = ".openbot-prepared.json";
-const DEPENDENCIES: &str = ".openbot-dependencies.json";
-const LAUNCH: &str = ".openbot-launched.json";
+pub const REQUIRED: &str = "Finish installing Connect's local software before signing in or starting. Return to Install and try again.";
+pub const FILE: &str = ".Connect-prepared.json";
+const DEPENDENCIES: &str = ".Connect-dependencies.json";
+const LAUNCH: &str = ".Connect-launched.json";
 const PACKAGES: [&str; 4] = ["", "server", "app", "worker"];
 
 #[derive(Serialize, Deserialize)]
@@ -77,13 +77,13 @@ pub fn installation(root: &Path) -> Option<Launch> {
 pub fn save_selected_root(config: &Path, root: &Path) -> Result<(), Problem> {
     let root = std::fs::canonicalize(root).map_err(|e| {
         Problem::with(
-            "OpenBot could not remember this installation for next time.",
+            "Connect could not remember this installation for next time.",
             e.to_string(),
         )
     })?;
     std::fs::create_dir_all(config).map_err(|e| {
         Problem::with(
-            "OpenBot could not remember this installation for next time.",
+            "Connect could not remember this installation for next time.",
             e.to_string(),
         )
     })?;
@@ -103,7 +103,7 @@ pub fn required(detail: impl Into<String>) -> Problem {
 
 fn hash_files(root: &Path, files: impl IntoIterator<Item = PathBuf>) -> Result<String, Problem> {
     let mut hash = Sha256::new();
-    hash.update(b"openbot-preparation-v1\0");
+    hash.update(b"Connect-preparation-v1\0");
     hash.update(
         std::fs::canonicalize(root)
             .map_err(|e| required(e.to_string()))?
@@ -132,7 +132,7 @@ fn fingerprint(root: &Path) -> Result<String, Problem> {
     hash_files(
         root,
         [
-            PathBuf::from(".openbot-deployment"),
+            PathBuf::from(".Connect-deployment"),
             PathBuf::from("container-images.json"),
             PathBuf::from("docker-compose.yml"),
             PathBuf::from(DEPENDENCIES),

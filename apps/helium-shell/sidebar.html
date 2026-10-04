@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connect Sidebar</title>
+  <link rel="stylesheet" href="sidebar.css" id="sidebar-theme" />
+  <!-- Dark variant overrides (loaded when preference is dark or auto-detected).
+       Override link comes after base so its rules win via cascade. -->
+  <script>
+    (function() {
+      var pref = localStorage.getItem('connectShell.theme');
+      var isDark = pref === 'dark' ||
+        (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) {
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'sidebar-dark.css';
+        document.head.appendChild(link);
+        document.getElementById('sidebar-theme').disabled = true;
+      }
+    })();
+  </script>
+  <!-- Reihenfolge wichtig: erst Konfiguration, dann Logik. Funktioniert identisch als
+       Helium-Side-Panel (Extension), in WebView2 (Connect Desktop) oder als normale Seite. -->
+  <script src="tabs.config.js" defer></script>
+  <script src="open-window.js" defer></script>
+  <script src="sidebar.js" defer></script>
+</head>
+<body>
+  <aside class="shell" id="shell" aria-label="Connect Sidebar">
+    <!-- Top-Rail wie Connect (apps/app company-switcher + company-level-chips, WPF MainWindow.xaml):
+         Logo/Home · Focus · Messages · Browser · Unternehmen · Einklappen -->
+    <header class="rail" aria-label="Connect-Modus">
+      <nav class="rail__modes" id="rail-modes"></nav>
+      <button class="rail__btn rail__collapse" id="rail-collapse" type="button" title="Sidebar verkleinern">
+        <span class="ico" style="--ico:url(icons/chevron-left.svg)"></span>
+      </button>
+    </header>
+
+    <!-- Suche + Erstellen (wie Connect: Search… + "+") -->
+    <div class="searchbar">
+      <label class="search">
+        <span class="ico ico--sm" style="--ico:url(icons/search.svg)"></span>
+        <input id="search" type="search" placeholder="Search…" aria-label="Sidebar durchsuchen" autocomplete="off" />
+      </label>
+      <button class="rail__btn rail__btn--solid" id="create" type="button" title="Erstellen" aria-haspopup="menu">
+        <span class="ico" style="--ico:url(icons/plus.svg)"></span>
+      </button>
+      <div class="menu" id="create-menu" role="menu" hidden></div>
+    </div>
+
+    <div class="view-title" id="view-title"></div>
+
+    <!-- Angeheftete Favoriten (Arc: Kachel-Raster oben) -->
+    <section class="pinned" id="pinned" aria-label="Angeheftet"></section>
+
+    <!-- Tabs des aktiven Space bzw. Links der aktiven Connect-Ansicht -->
+    <div class="space-title" id="space-title"></div>
+    <nav class="tabs" id="tabs" aria-label="Tabs"></nav>
+
+    <button class="tab tab--new" id="helium-connect-btn" type="button" title="Helium + Connect im Browser">
+      <span class="tab__icon tab__icon--ghost"><span class="ico ico--sm" style="--ico:url(icons/zap.svg)"></span></span>
+      <span class="tab__label">Helium + Connect</span>
+    </button>
+
+    <!-- Space-Umschalter (Arc: Punkte unten) -->
+    <footer class="spaces" id="spaces" aria-label="Spaces"></footer>
+    <div class="shell__foot">
+      <span class="shell__env" id="env-badge" title="Aktive Klick-Weiterleitung">.</span>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+  </aside>
+</body>
+</html>

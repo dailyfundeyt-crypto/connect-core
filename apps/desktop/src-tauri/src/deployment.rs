@@ -1,7 +1,7 @@
-//! Putting the deployment on disk, which is not what the installer carries.
+﻿//! Putting the deployment on disk, which is not what the installer carries.
 //!
-//! The installer stays small: a Tauri binary and nothing else. What it needs to run a deployment —
-//! `docker-compose.yml`, `server`, `app`, `worker`, the tenant package — is fetched on first run and
+//! The installer stays small: a Tauri binary and nothing else. What it needs to run a deployment â€”
+//! `docker-compose.yml`, `server`, `app`, `worker`, the tenant package â€” is fetched on first run and
 //! kept beside it, at a version this app records. Two things follow from that split, and both are
 //! the reason for it: the download stays a download rather than becoming part of every installer,
 //! and the deployment can be moved forward on its own without shipping a new app.
@@ -16,12 +16,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 /// Written beside the deployment so the app can tell what it already put there.
-const STAMP: &str = ".openbot-deployment";
+const STAMP: &str = ".Connect-deployment";
 
 /// The release asset that says which images this version runs.
 ///
 /// Kept beside the deployment because the tree does not contain it: `docker-compose.yml` names
-/// `openbot-supervisor:latest` and friends as defaults, which are local build names that exist on a
+/// `Connect-supervisor:latest` and friends as defaults, which are local build names that exist on a
 /// developer's machine and nowhere else. A desktop install has never built anything, so without
 /// this file Compose asks Docker Hub for images that are not there and reports a denial, which
 /// reads as an authentication problem and is not one.
@@ -37,12 +37,12 @@ pub struct Installed {
 /// A release asset rather than a branch, and https rather than git, so nothing needs a git client
 /// or credentials to get a deployment.
 pub fn tarball_url(version: &str) -> String {
-    format!("https://github.com/CopilotKit/OpenBot/archive/refs/tags/{version}.tar.gz")
+    format!("https://github.com/CopilotKit/Connect/archive/refs/tags/{version}.tar.gz")
 }
 
 /// Where the release publishes its image manifest.
 pub fn images_url(version: &str) -> String {
-    format!("https://github.com/CopilotKit/OpenBot/releases/download/{version}/{IMAGES}")
+    format!("https://github.com/CopilotKit/Connect/releases/download/{version}/{IMAGES}")
 }
 
 pub fn images_path(root: &Path) -> PathBuf {
@@ -88,8 +88,8 @@ pub fn image_variables(root: &Path) -> Result<Vec<(String, String)>, String> {
 ///
 /// Every image reference comes from here, whether Compose reads it or the shell runs it directly.
 /// The alternative was a name built from a version, and an engine given an unqualified name looks
-/// it up on Docker Hub: `openbot-agent-langgraph-agui:v0.0.8` became
-/// `docker.io/library/openbot-agent-langgraph-agui`, and the person was shown "requested access to
+/// it up on Docker Hub: `Connect-agent-langgraph-agui:v0.0.8` became
+/// `docker.io/library/Connect-agent-langgraph-agui`, and the person was shown "requested access to
 /// the resource is denied", which reads as a credentials problem and is not one.
 ///
 /// An image this release does not publish is named as that. It is the honest answer and the
@@ -104,7 +104,7 @@ pub fn reference(root: &Path, published: &str) -> Result<String, String> {
         .images
         .get(published)
         .map(|image| image.reference.clone())
-        .ok_or_else(|| format!("OpenBot {} does not include {published}.", manifest.version))
+        .ok_or_else(|| format!("Connect {} does not include {published}.", manifest.version))
 }
 
 /// Every image the stack runs, or a failure that names the one that is missing.
@@ -217,7 +217,7 @@ pub fn fetch(root: &Path, version: &str) -> Result<(), String> {
 /// else (`..`, an absolute path, a Windows drive prefix) is refused outright.
 fn destination_in(root: &Path, path: &Path) -> Result<Option<PathBuf>, String> {
     // GitHub wraps everything in one directory named for the tag. Strip it, so the deployment
-    // lands at `root` rather than at `root/OpenBot-0.0.7`.
+    // lands at `root` rather than at `root/Connect-0.0.7`.
     let mut parts = path.components();
     parts.next();
     let relative: PathBuf = parts.collect();
@@ -306,7 +306,7 @@ fn fetch_images(root: &Path, version: &str) -> Result<(), String> {
 /// digests. One client, one user agent, one set of TLS defaults.
 pub fn get(url: &str) -> Result<Vec<u8>, String> {
     let response = reqwest::blocking::Client::builder()
-        .user_agent("openbot-desktop")
+        .user_agent("Connect-desktop")
         .build()
         .map_err(|error| format!("could not prepare the download: {error}"))?
         .get(url)
@@ -334,7 +334,7 @@ mod tests {
                     (
                         (*name).to_string(),
                         Image {
-                            reference: format!("ghcr.io/copilotkit/openbot-{name}@sha256:abc"),
+                            reference: format!("ghcr.io/copilotkit/Connect-{name}@sha256:abc"),
                         },
                     )
                 })
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn a_deployment_without_an_image_manifest_is_fetched_again_rather_than_refused() {
-        let dir = std::env::temp_dir().join(format!("openbot-manifest-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("Connect-manifest-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let _ = std::fs::remove_file(images_path(&dir));
         record(&dir, "v0.0.7").unwrap();
@@ -406,7 +406,7 @@ mod tests {
 
     #[test]
     fn an_empty_directory_needs_fetching() {
-        let dir = std::env::temp_dir().join(format!("openbot-dep-empty-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("Connect-dep-empty-{}", std::process::id()));
         assert!(needs_fetch(&dir, "v0.0.7"));
     }
 
@@ -452,7 +452,7 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("openbot-unpack-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("Connect-unpack-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("the scratch directory is made");
         dir
@@ -462,7 +462,7 @@ mod tests {
     fn the_test_archive_really_carries_the_traversal() {
         // Guards the guard: if the archive did not hold `..` the next test would
         // pass for the wrong reason.
-        let archive = tarball(&[("OpenBot-0.0.8/app/../../escaped.txt", b"owned")]);
+        let archive = tarball(&[("Connect-0.0.8/app/../../escaped.txt", b"owned")]);
         let decoder = flate2::read::GzDecoder::new(&archive[..]);
         let mut tar = tar::Archive::new(decoder);
         let paths: Vec<String> = tar
@@ -477,7 +477,7 @@ mod tests {
                     .to_string()
             })
             .collect();
-        assert_eq!(paths, ["OpenBot-0.0.8/app/../../escaped.txt"]);
+        assert_eq!(paths, ["Connect-0.0.8/app/../../escaped.txt"]);
     }
 
     #[test]
@@ -491,7 +491,7 @@ mod tests {
         let root = dir.join("deployment");
         std::fs::create_dir_all(&root).expect("the root is made");
 
-        let archive = tarball(&[("OpenBot-0.0.8/app/../../escaped.txt", b"owned")]);
+        let archive = tarball(&[("Connect-0.0.8/app/../../escaped.txt", b"owned")]);
         let outcome = unpack(&root, &archive);
 
         let climbed = dir.join("escaped.txt");
@@ -511,10 +511,10 @@ mod tests {
         let dir = scratch("ordinary");
 
         let archive = tarball(&[
-            ("OpenBot-0.0.8/app/index.ts", b"export {}"),
-            ("OpenBot-0.0.8/docker-compose.yml", b"services: {}"),
+            ("Connect-0.0.8/app/index.ts", b"export {}"),
+            ("Connect-0.0.8/docker-compose.yml", b"services: {}"),
             // Not part of a deployment: skipped, not refused.
-            ("OpenBot-0.0.8/docs/readme.md", b"# hi"),
+            ("Connect-0.0.8/docs/readme.md", b"# hi"),
         ]);
         unpack(&dir, &archive).expect("an ordinary download is laid out");
 
@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn a_recorded_version_is_not_fetched_again() {
-        let dir = std::env::temp_dir().join(format!("openbot-dep-same-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("Connect-dep-same-{}", std::process::id()));
         record(&dir, "v0.0.7").unwrap();
         std::fs::write(images_path(&dir), "{}").unwrap();
         assert!(!needs_fetch(&dir, "v0.0.7"));
@@ -545,7 +545,7 @@ mod tests {
     fn an_interrupted_fetch_is_replaced_rather_than_trusted() {
         // Files present, stamp absent: what an interrupted extract leaves behind. The stamp is
         // written last precisely so this case is distinguishable.
-        let dir = std::env::temp_dir().join(format!("openbot-dep-partial-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("Connect-dep-partial-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("server")).unwrap();
         std::fs::write(dir.join("docker-compose.yml"), "services: {}\n").unwrap();
         assert!(
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn unreadable_stamp_is_treated_as_absent_rather_than_fatal() {
-        let dir = std::env::temp_dir().join(format!("openbot-dep-bad-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("Connect-dep-bad-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(stamp_path(&dir), "{ not json").unwrap();
         assert!(installed(&dir).is_none());

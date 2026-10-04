@@ -65,17 +65,24 @@ function matches(query: string, ...fields: (string | undefined)[]): boolean {
 }
 
 /**
- * `@` picks an agent and/or an MCP server from the Sammlung.
+ * `@` picks an agent, MCP server, or saved tab from the Sammlung.
  *
  * Typing after `@` ranks MCP catalog entries (Gmail, Slack, Linear…) alongside
- * channel agents so the right connector surfaces without leaving the composer.
+ * channel agents and saved tabs so the right connector surfaces without leaving
+ * the composer.
+ *
+ * `savedTabs` — when provided, tabs are included in the results. Selecting a tab
+ * inserts `@Tab:<title>` which the agent runtime resolves to `{id, url, title}`.
  */
-export function agentTrigger(agents: readonly AgentOption[]): TriggerConfig {
+export function agentTrigger(
+  agents: readonly AgentOption[],
+  savedTabs?: readonly SavedTabOption[],
+): TriggerConfig {
   return mentionTrigger({
     char: AGENT_TRIGGER,
-    accessibilityLabel: "agent or MCP server",
+    accessibilityLabel: "agent, MCP server, or tab",
     reopenOnChipClick: true,
-    emptyMessage: "Kein Agent oder MCP-Server gefunden",
+    emptyMessage: "Kein Agent, MCP-Server oder Tab gefunden",
     onSearch: (query): TriggerSuggestion[] => {
       const agentHits = agents
         .filter((agent) =>
@@ -110,15 +117,40 @@ export function agentTrigger(agents: readonly AgentOption[]): TriggerConfig {
         },
       );
 
+      const tabHits: TriggerSuggestion[] = savedTabs
+        ? savedTabs
+            .filter((tab) =>
+              matches(query, tab.title, tab.url, tab.agentName),
+            )
+            .slice(0, 8)
+            .map((tab) => ({
+              value: `Tab:${tab.id}`,
+              label: `@Tab:${tab.title}`,
+              description: tab.agentName ? `Tab · ${tab.agentName}` : "Tab",
+            }))
+        : [];
+
       // Prefer exact / strong MCP matches when the query looks like a connector name.
       if (query.trim().length > 0) {
-        return [...mcpHits, ...agentHits].slice(0, 14);
+        return [...tabHits, ...mcpHits, ...agentHits].slice(0, 14);
       }
-      return [...agentHits.slice(0, 6), ...mcpHits.slice(0, 8)];
+      return [
+        ...agentHits.slice(0, 4),
+        ...tabHits.slice(0, 4),
+        ...mcpHits.slice(0, 6),
+      ];
     },
     onSelect: (suggestion) => suggestion.label,
   });
 }
+
+/** Tab mention: `@Tab:Title` inserts a reference to a saved browser tab */
+export type SavedTabOption = {
+  id: string;
+  title: string;
+  url: string;
+  agentName?: string;
+};
 
 /**
  * `/` is restricted to the start of a line, so a URL or a date in the middle of a sentence never
@@ -148,9 +180,11 @@ export function slashCommandTrigger(
 export function buildTriggers({
   agents,
   commands,
+  savedTabs,
 }: {
   agents: readonly AgentOption[];
   commands: readonly CommandOption[];
+  savedTabs?: readonly SavedTabOption[];
 }): TriggerConfig[] {
-  return [agentTrigger(agents), slashCommandTrigger(commands)];
+  return [agentTrigger(agents, savedTabs), slashCommandTrigger(commands)];
 }

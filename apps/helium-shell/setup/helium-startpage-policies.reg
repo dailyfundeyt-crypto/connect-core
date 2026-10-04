@@ -1,0 +1,20 @@
+Windows Registry Editor Version 5.00
+
+; NICHT automatisch angewendet. Nur als Vorlage.
+; Helium (Windows) liest Policies aus Software\Policies\Helium (Quelle:
+; imputnet/helium-windows patches/helium/windows/change-branding.patch).
+; ACHTUNG: Chromium ignoriert HomepageLocation, RestoreOnStartup(URLs) und
+; NewTabPageLocation auf Windows-PCs, die NICHT in einer AD-Domaene / MDM sind
+; ("sensitive policies"). Stefans PC: PartOfDomain = False  -> diese Datei wirkt
+; dort voraussichtlich NICHT (in chrome://policy pruefen). Bevorzugt: custom-ntp-Flag
+; + Einstellung "Beim Start: bestimmte Seite oeffnen" (siehe README).
+
+[HKEY_CURRENT_USER\Software\Policies\Helium]
+"HomepageLocation"="http://localhost:3010/"
+"HomepageIsNewTabPage"=dword:00000000
+"ShowHomeButton"=dword:00000001
+"RestoreOnStartup"=dword:00000004
+"NewTabPageLocation"="http://localhost:3010/"
+
+[HKEY_CURRENT_USER\Software\Policies\Helium\RestoreOnStartupURLs]
+"1"="http://localhost:3010/"

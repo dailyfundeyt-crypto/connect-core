@@ -1,0 +1,7 @@
+{
+  "AppPort": 3101,
+  "PgPort": 5544,
+  "LoadExtension": true,
+  "KeepBackendRunning": true,
+  "RemoteUrl": ""
+}

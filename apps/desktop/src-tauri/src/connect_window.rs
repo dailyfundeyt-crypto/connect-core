@@ -1,4 +1,4 @@
-//! The Connect product window: the same UI the dev server serves, inside a native frame.
+﻿//! The Connect product window: the same UI the dev server serves, inside a native frame.
 //!
 //! Nothing in here opens a browser, and nothing in here is allowed to name an address the
 //! person can read. The window asks which loopback answered and then shows that page. The
@@ -30,7 +30,7 @@ pub struct Status {
 
 impl Status {
     pub fn opening() -> Self {
-        Self::line(Phase::Opening, "Connect wird geöffnet.")
+        Self::line(Phase::Opening, "Connect wird geÃ¶ffnet.")
     }
 
     pub fn starting() -> Self {
@@ -56,7 +56,7 @@ impl Status {
     pub fn offline_no_wsl() -> Self {
         Self::line(
             Phase::Offline,
-            "Das Fenster läuft. Die Oberfläche braucht Docker mit WSL — auf diesem PC ist WSL nicht installiert.",
+            "Das Fenster lÃ¤uft. Die OberflÃ¤che braucht Docker mit WSL â€” auf diesem PC ist WSL nicht installiert.",
         )
     }
 
@@ -210,7 +210,7 @@ pub fn ancestor_dirs(start: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// `C:\Users\Kunc GmbH\OpenBot` → `/mnt/c/Users/Kunc GmbH/OpenBot`.
+/// `C:\Users\Kunc GmbH\Connect` â†’ `/mnt/c/Users/Kunc GmbH/Connect`.
 pub fn to_wsl_path(path: &Path) -> Option<String> {
     let raw = path.to_string_lossy().replace('\\', "/");
     let bytes = raw.as_bytes();
@@ -233,12 +233,12 @@ pub fn shell_single_quote(value: &str) -> String {
 /// these sentences are what the window shows.
 pub fn user_facing_lines() -> [&'static str; 6] {
     [
-        "Connect wird geöffnet.",
+        "Connect wird geÃ¶ffnet.",
         "Der lokale Dienst startet.",
         "Connect wird vorbereitet.",
         "Connect ist bereit.",
         "Connect ist noch nicht bereit. Starte den Dienst auf diesem PC und versuche es erneut.",
-        "Das Fenster läuft. Die Oberfläche braucht Docker mit WSL — auf diesem PC ist WSL nicht installiert.",
+        "Das Fenster lÃ¤uft. Die OberflÃ¤che braucht Docker mit WSL â€” auf diesem PC ist WSL nicht installiert.",
     ]
 }
 
@@ -299,14 +299,14 @@ mod tests {
 
     #[test]
     fn windows_path_with_spaces_maps_into_wsl() {
-        let path = PathBuf::from(r"C:\Users\Kunc GmbH\OpenBot");
+        let path = PathBuf::from(r"C:\Users\Kunc GmbH\Connect");
         assert_eq!(
             to_wsl_path(&path).as_deref(),
-            Some("/mnt/c/Users/Kunc GmbH/OpenBot")
+            Some("/mnt/c/Users/Kunc GmbH/Connect")
         );
         assert_eq!(
-            shell_single_quote("/mnt/c/Users/Kunc GmbH/OpenBot"),
-            "'/mnt/c/Users/Kunc GmbH/OpenBot'"
+            shell_single_quote("/mnt/c/Users/Kunc GmbH/Connect"),
+            "'/mnt/c/Users/Kunc GmbH/Connect'"
         );
     }
 
@@ -372,7 +372,7 @@ mod tests {
         assert!(looks_like_connect_ui("<html><title>Connect</title></html>"));
         assert!(looks_like_connect_ui("<TITLE>connect</TITLE>"));
         assert!(!looks_like_connect_ui(""));
-        assert!(!looks_like_connect_ui("<title>OpenBot</title>"));
+        assert!(!looks_like_connect_ui("<title>Connect</title>"));
     }
 
     #[test]

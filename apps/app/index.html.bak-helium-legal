@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Connect" />
+    <title>Connect</title>
+    <link rel="icon" href="/brand/connect-logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/brand/connect-logo.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Sets the theme before the first paint. Must stay inline and classic: `defer` or `type="module"` runs too late. -->
+    <script>
+      // Keep localhost consistent with backend BETTER_AUTH_URL to prevent OAuth state_mismatch
+      if (window.location.hostname === "127.0.0.1") {
+        window.location.hostname = "localhost";
+      }
+      // localStorage throws in some privacy modes; a theme is not worth taking the app down for.
+      try {
+        const dark = window.localStorage.getItem("connect-theme") === "dark";
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

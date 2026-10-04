@@ -1,4 +1,4 @@
-//! Drive the native Connect window onto the running app.
+﻿//! Drive the native Connect window onto the running app.
 //!
 //! The splash is ours. The page it navigates to is the Connect UI (the same
 //! process the dev stack serves). No system browser is started from here.
@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use openbot_desktop_lib::connect_window::{self, Status};
+use connect_desktop_lib::connect_window::{self, Status};
 use tauri::{Emitter, Manager};
 
 use crate::Shell;
@@ -213,17 +213,17 @@ fn wsl_has_distro() -> bool {
 
 fn spawn_service() -> Result<(), String> {
     let root = connect_window::deployment_root(candidate_roots())
-        .ok_or("no OpenBot directory with START.sh was found")?;
+        .ok_or("no Connect directory with START.sh was found")?;
     eprintln!("[connect] service directory {}", root.display());
     if cfg!(windows) {
         if !wsl_has_distro() {
             return Err("WSL has no distribution, so the service was not started".into());
         }
         let linux = connect_window::to_wsl_path(&root)
-            .ok_or("the OpenBot path could not be mapped for WSL")?;
+            .ok_or("the Connect path could not be mapped for WSL")?;
         let quoted = connect_window::shell_single_quote(&linux);
         let script = format!(
-            "cd {quoted} && chmod +x START.sh scripts/*.sh 2>/dev/null || true; OPENBOT_FORCE_START=1 ./START.sh"
+            "cd {quoted} && chmod +x START.sh scripts/*.sh 2>/dev/null || true; Connect_FORCE_START=1 ./START.sh"
         );
         let mut command = Command::new("wsl.exe");
         command.args(["-e", "bash", "-lc", &script]);
@@ -233,7 +233,7 @@ fn spawn_service() -> Result<(), String> {
         command
             .arg("START.sh")
             .current_dir(&root)
-            .env("OPENBOT_FORCE_START", "1");
+            .env("Connect_FORCE_START", "1");
         spawn_logged(command, &root)
     }
 }
@@ -252,8 +252,8 @@ fn candidate_roots() -> Vec<std::path::PathBuf> {
         }
     }
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    if let Some(openbot) = manifest.parent().and_then(|desktop| desktop.parent()) {
-        out.push(openbot.to_path_buf());
+    if let Some(Connect) = manifest.parent().and_then(|desktop| desktop.parent()) {
+        out.push(Connect.to_path_buf());
     }
     out
 }

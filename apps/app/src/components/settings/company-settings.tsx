@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import { IconPlus } from "@tabler/icons-react";
 import {
   Item,
   ItemContent,
@@ -13,6 +15,8 @@ import {
 import { fileToAvatarDataUrl } from "@/lib/agents/connect-avatars";
 import type { ConnectCompany } from "@/lib/companies/catalog";
 import {
+  deleteCompany,
+  isCustomCompany,
   listCompanies,
   subscribeCompanies,
   updateCompany,
@@ -64,9 +68,57 @@ export function CompanySettingsPanel() {
                 >
                   Edit
                 </Button>
+                <Button
+                  aria-label={`Delete ${company.name}`}
+                  className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => {
+                    const wasCustom = isCustomCompany(company.id);
+                    if (
+                      !window.confirm(
+                        wasCustom
+                          ? `Unternehmen \u201e${company.name}\u201c wirklich l\u00f6schen? ` +
+                              `Tabs, Gruppen und eigene Apps in diesem Workspace gehen verloren.`
+                          : `Delete "${company.name}" permanently? This cannot be undone.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    try {
+                      deleteCompany(company.id);
+                      setCompanies(listCompanies());
+                      if (editingId === company.id) setEditingId(null);
+                    } catch (caught) {
+                      window.alert(
+                        caught instanceof Error
+                          ? caught.message
+                          : "Delete failed.",
+                      );
+                    }
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Delete
+                </Button>
               </li>
             ))}
           </ul>
+          {companies.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-8">
+              <p className="text-sm text-muted-foreground">
+                No companies yet. Create one to get started.
+              </p>
+              <Button
+                onClick={() => void navigate({ to: "/company/new" })}
+                size="sm"
+                type="button"
+              >
+                <IconPlus className="size-4" />
+                New company
+              </Button>
+            </div>
+          ) : null}
           {editing ? (
             <CompanyEditForm
               company={editing}
@@ -145,20 +197,22 @@ function CompanyEditForm({
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
-        try {
-          updateCompany(company.id, {
-            name,
-            description,
-            logo: logo || null,
-            banner: banner || null,
-            category: category || null,
-            location: location || null,
-            website: website || null,
-          });
-          onSaved();
-        } catch (caught) {
-          setError(caught instanceof Error ? caught.message : "Could not save");
-        }
+        void (async () => {
+          try {
+            await updateCompany(company.id, {
+              name,
+              description,
+              logo: logo || null,
+              banner: banner || null,
+              category: category || null,
+              location: location || null,
+              website: website || null,
+            });
+            onSaved();
+          } catch (caught) {
+            setError(caught instanceof Error ? caught.message : "Could not save");
+          }
+        })();
       }}
     >
       <p className="text-sm font-semibold">Edit {company.name}</p>

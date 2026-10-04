@@ -38,6 +38,7 @@ import { newId } from "@/lib/new-id";
 import { cn } from "@/lib/utils";
 import { AgentBrowserModeSelect } from "@/components/agents/agent-browser-mode";
 import { AgentModelPicker } from "@/components/agents/agent-model-picker";
+import { AgentMcpButton } from "@/components/agent-hub/agent-mcp-button";
 import { ComposerPlusMenu } from "@/components/channels/composer/composer-plus-menu";
 import { Button } from "../../ui/button";
 import {
@@ -1476,6 +1477,7 @@ export function Composer({
                   <>
                     <AgentModelPicker agentId={agentId} size="sm" />
                     <AgentBrowserModeSelect agentId={agentId} compact />
+                    <AgentMcpButton agentId={agentId} />
                   </>
                 ) : (
                   <span className="px-1 text-[11px] text-muted-foreground">
@@ -1576,6 +1578,7 @@ export function Composer({
                         className="self-end"
                         compact
                       />
+                      <AgentMcpButton agentId={agentId} className="self-end" />
                     </>
                   ) : null}
                   <ComposerMicButton
@@ -1606,6 +1609,7 @@ export function Composer({
                     className="self-end"
                     compact
                   />
+                  <AgentMcpButton agentId={agentId} className="self-end" />
                 </>
               ) : null}
               {canStop ? (
@@ -1695,6 +1699,7 @@ export function Composer({
               <>
                 <AgentModelPicker agentId={agentId} size="sm" />
                 <AgentBrowserModeSelect agentId={agentId} compact />
+                    <AgentMcpButton agentId={agentId} />
               </>
             ) : null}
             {canStop ? (

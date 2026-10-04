@@ -1,4 +1,4 @@
-//! Signing in to CopilotKit Intelligence, so nobody is sent to a terminal for a key.
+﻿//! Signing in to CopilotKit Intelligence, so nobody is sent to a terminal for a key.
 //!
 //! THE LAST DEVELOPER-SHAPED ASK IN SETUP. Before this, the final screen wanted an "Intelligence
 //! project key", and the only way to produce one was `npx copilotkit login` followed by
@@ -9,7 +9,7 @@
 //!
 //! The flow is the CLI's own, done here instead: a loopback callback, an exchange, and a key this
 //! deployment provisions for the project the person chose. Reading it out of the CLI rather than
-//! inventing it is deliberate — the endpoints, the parameter names and the order all belong to
+//! inventing it is deliberate â€” the endpoints, the parameter names and the order all belong to
 //! whoever changes them, and guessing at somebody else's auth is how this breaks silently later.
 
 use std::io::{BufRead, BufReader, Write};
@@ -27,7 +27,7 @@ const PRODUCT_API: &str = "https://api.intelligence.copilotkit.ai";
 /// How long somebody gets to finish signing in.
 const PATIENCE: Duration = Duration::from_secs(600);
 
-/// A project somebody can put OpenBot in.
+/// A project somebody can put Connect in.
 #[derive(Clone, Debug, serde::Serialize, Deserialize, PartialEq, Eq)]
 pub struct Project {
     pub id: String,
@@ -185,7 +185,7 @@ impl SigningInToIntelligence {
         }
         reply(
             &mut stream,
-            "Signed in. You can close this tab and go back to OpenBot.",
+            "Signed in. You can close this tab and go back to Connect.",
         );
         Ok(Some(token))
     }
@@ -194,7 +194,7 @@ impl SigningInToIntelligence {
 /// A small page, so the browser does not sit on a blank tab.
 fn reply(stream: &mut TcpStream, said: &str) {
     let body = format!(
-        "<!doctype html><meta charset=utf-8><title>OpenBot</title>\
+        "<!doctype html><meta charset=utf-8><title>Connect</title>\
          <body style=\"font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0\">\
          <p>{said}</p>"
     );
@@ -227,7 +227,7 @@ fn client() -> Result<reqwest::blocking::Client, String> {
 Read a response as JSON, keeping what actually came back when it will not parse.
 
 WITHOUT THIS THE FAILURE IS UNDIAGNOSABLE, and it was. A sign-in that got all the way through the
-browser ended on "That sign-in returned something unexpected: error decoding response body" — which
+browser ended on "That sign-in returned something unexpected: error decoding response body" â€” which
 says a shape was wrong without saying which, from which endpoint, or what arrived instead. The body
 is the only thing that answers any of those, and it is exactly what a two-fold failure is for.
 
@@ -240,8 +240,8 @@ The same body with anything that looks like a credential masked.
 
 BECAUSE THE DISCLOSURE IS STILL A SCREEN. The body that diagnosed the field-name bug also carried a
 live session token, and a person doing the obvious thing with a technical detail is pasting it into
-a bug report. What a developer needs from this is the SHAPE — which fields arrived and what they
-were called — and the shape survives masking perfectly.
+a bug report. What a developer needs from this is the SHAPE â€” which fields arrived and what they
+were called â€” and the shape survives masking perfectly.
 */
 fn without_credentials(body: &str) -> String {
     let Ok(mut raw) = serde_json::from_str::<serde_json::Value>(body) else {
@@ -281,7 +281,7 @@ fn read_json(
         let mut shown = without_credentials(body.trim());
         shown.truncate(2000);
         crate::problem::Problem::with(
-            format!("CopilotKit's {what} came back in a shape OpenBot does not understand."),
+            format!("CopilotKit's {what} came back in a shape Connect does not understand."),
             format!("HTTP {status}\n{error}\n\n{shown}"),
         )
     })
@@ -320,7 +320,7 @@ fn exchange(clerk_token: &str) -> Result<String, crate::problem::Problem> {
         .map(|session| session.cli_token)
         .map_err(|error| {
             crate::problem::Problem::with(
-                "CopilotKit's sign-in came back without the session OpenBot needs.",
+                "CopilotKit's sign-in came back without the session Connect needs.",
                 format!("{error}\n\n{raw}"),
             )
         })
@@ -357,7 +357,7 @@ fn product_credential(session: &str) -> Result<String, crate::problem::Problem> 
         .map(|payload| payload.product_credential.token)
         .map_err(|error| {
             crate::problem::Problem::with(
-                "CopilotKit's credential came back in a shape OpenBot does not understand.",
+                "CopilotKit's credential came back in a shape Connect does not understand.",
                 format!("{error}\n\n{raw}"),
             )
         })
@@ -389,7 +389,7 @@ fn list_projects(product: &str) -> Result<Vec<Project>, crate::problem::Problem>
      */
     if found.is_empty() && !looks_genuinely_empty(&raw) {
         return Err(crate::problem::Problem::with(
-            "CopilotKit's project list came back in a shape OpenBot does not understand.",
+            "CopilotKit's project list came back in a shape Connect does not understand.",
             without_credentials(&raw.to_string()),
         ));
     }
@@ -431,7 +431,7 @@ pub fn provision_key(product: &str, project_id: &str) -> Result<String, crate::p
         /*
          * `project_id` AS A NUMBER, which is what the endpoint's own schema requires.
          *
-         * `api-keys-routes.ts` declares `project_id: z.number().int().positive()` — not `coerce`,
+         * `api-keys-routes.ts` declares `project_id: z.number().int().positive()` â€” not `coerce`,
          * so the string "7" is rejected outright. Measured as `HTTP 400 VALIDATION_ERROR: Request
          * validation failed.` on the last step of a sign-in that had otherwise worked, which is the
          * most expensive place in the product to fail.
@@ -441,7 +441,7 @@ pub fn provision_key(product: &str, project_id: &str) -> Result<String, crate::p
          */
         .json(&serde_json::json!({
             "project_id": as_number(project_id),
-            "name": "OpenBot Desktop",
+            "name": "Connect Desktop",
         }))
         .send()
         .map_err(|error| {

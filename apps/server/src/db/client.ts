@@ -68,6 +68,15 @@ function addressOf(databaseUrl: string) {
    * URL, `sslmode` and the rest, travels the same way.
    */
   const connection = Object.fromEntries(url.searchParams);
+  /*
+   * `sslmode` is a libpq client option, not a server parameter: passed through as a startup
+   * parameter Postgres refuses the connection. Hosted Postgres (Supabase's pooler) needs TLS, so
+   * `require`/`verify-*` turn on Bun's `tls`; `disable`/`allow`/`prefer` leave it off as before.
+   */
+  const sslmode = connection.sslmode;
+  delete connection.sslmode;
+  const tls =
+    sslmode !== undefined && !["disable", "allow", "prefer"].includes(sslmode);
 
   /*
    * A port that is not a port is refused before a socket is ever opened.
@@ -94,6 +103,7 @@ function addressOf(databaseUrl: string) {
     username: decodePart(url.username, "username"),
     password: decodePart(url.password, "password"),
     database,
+    ...(tls ? { tls: true } : {}),
     ...(Object.keys(connection).length > 0 ? { connection } : {}),
   };
 }

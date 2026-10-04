@@ -1,0 +1,5 @@
+<!-- Selbst erstelltes Monogramm (kein Fremd-Logo). Farbe/Buchstabe frei aenderbar. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <rect width="24" height="24" rx="6" fill="#6366F1"/>
+  <text x="12" y="16.5" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">X</text>
+</svg>

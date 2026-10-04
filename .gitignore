@@ -94,3 +94,24 @@ projects/**/*.wav
 **/out.txt
 
 .fix-logs/
+
+# --- OpenBot-v2-Helium copy: local-only artifacts, never commit ---
+backups/
+*.bak-helium
+*.bak-credentials
+*.static-only.json.bak
+.pg-data/
+/$null
+apps/connect-app/helium/
+apps/connect-app/runtime/
+apps/connect-app/_build/
+apps/connect-app/dist/
+apps/connect-app/profile/
+apps/connect-app/*.exe
+apps/connect-app/src/**/bin/
+apps/connect-app/src/**/obj/
+dist/
+.vercel/
+**/test-profile*/
+**/test-profiles/
+**/*-test-profile/

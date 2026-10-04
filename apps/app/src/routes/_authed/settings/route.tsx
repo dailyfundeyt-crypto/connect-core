@@ -1,18 +1,14 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { SidebarShell } from "@/components/layout/sidebar-shell";
-import { SettingsSidebar } from "@/components/settings/settings-sidebar";
 
 export const Route = createFileRoute("/_authed/settings")({
   component: RouteComponent,
 });
 
+/**
+ * Layout parent — no visual chrome.
+ * - /settings/ renders the self-contained minimalist page (no sidebar)
+ * - /settings/brain, /settings/mcp render their own PageShell with the sidebar
+ */
 function RouteComponent() {
-  return (
-    <SidebarShell width="300px">
-      <SettingsSidebar />
-      <main className="flex-1">
-        <Outlet />
-      </main>
-    </SidebarShell>
-  );
+  return <Outlet />;
 }

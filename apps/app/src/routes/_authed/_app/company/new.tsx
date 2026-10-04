@@ -46,7 +46,7 @@ function NewCompanyPage() {
     setBusy(true);
     setError(null);
     try {
-      const company = createCompany({
+      const company = await createCompany({
         name,
         description,
         ...(logo ? { logo } : {}),

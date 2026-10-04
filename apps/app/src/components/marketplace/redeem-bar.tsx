@@ -6,9 +6,10 @@ import {
   redeemCode,
   subscribeMarketplace,
 } from "@/lib/marketplace/store";
+import { addAgentToActiveCompany } from "@/lib/companies/store";
 
 /**
- * After a purchase on the seller’s own page (Swipe / Formular), the buyer
+ * After a purchase on the seller's own page (Swipe / Formular), the buyer
  * pastes the access code here. Connect never takes payment.
  */
 export function RedeemCodeBar({ onRedeemed }: { onRedeemed?: () => void }) {
@@ -30,10 +31,14 @@ export function RedeemCodeBar({ onRedeemed }: { onRedeemed?: () => void }) {
         try {
           const asset = redeemCode(code);
           setMessage(
-            `Freigeschaltet: ${asset.title} · Serial ${asset.serial}. Unter „Meine Bots“ / Besitz.`,
+            `Freigeschaltet: ${asset.title} · Serial ${asset.serial}. Unter „Meine Bots" / Besitz.`,
           );
           setCode("");
           onRedeemed?.();
+          // Immediately add the bot to the active company so it appears in the sidebar Agents list.
+          if (asset.kind === "bot") {
+            void addAgentToActiveCompany(asset.targetId);
+          }
         } catch (caught) {
           setError(
             caught instanceof Error ? caught.message : "Einlösen fehlgeschlagen.",

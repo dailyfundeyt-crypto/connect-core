@@ -56,7 +56,7 @@ export function ModelProviderSettingsPanel() {
     const offP = subscribeModelProvider(refresh);
     const offK = subscribeGlobalApiKeys(refresh);
     void fetchProviderStatus().then((s) => {
-      if (s) setHasManus(s.hasManusKey);
+      if (s) setHasManus(s.hasManusKey || Boolean(getGlobalApiKeys().manus.trim()));
     });
     return () => {
       offP();
@@ -271,7 +271,7 @@ export function ModelProviderSettingsPanel() {
           hasManus={hasManus}
           prefs={prefs}
           onRefresh={(s) => {
-            if (s) setHasManus(s.hasManusKey);
+            if (s) setHasManus(s.hasManusKey || Boolean(getGlobalApiKeys().manus.trim()));
           }}
         />
       </PageRows>
@@ -317,8 +317,9 @@ function ProviderStatusLine({
     });
   }, [prefs.provider, prefs.externalPath, hasManus, onRefresh]);
 
+  // The server only knows MANUS_API_KEY from its env; a key saved in Settings (key vault) counts too.
   const manusOn =
-    remote?.manusFeaturesEnabled ??
+    Boolean(remote?.manusFeaturesEnabled) ||
     (prefs.provider === "external" &&
       prefs.externalPath === "api_key" &&
       hasManus);

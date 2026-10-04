@@ -24,6 +24,13 @@ export type ConnectCompany = {
   category?: string;
   location?: string;
   website?: string;
+  /**
+   * Whether this company was seeded the first time the app ran.
+   * Used to show/hide the Delete button and to apply the one-time migration
+   * that removes the "default" protection so seed companies are deletable.
+   * False (or absent) for user-created companies.
+   */
+  isDefault?: boolean;
 };
 
 /** Full Connect roster — every company can staff Zentrale / Research / Delivered. */
@@ -50,6 +57,7 @@ export const CONNECT_COMPANIES: ConnectCompany[] = [
     category: "Operations company",
     location: "Remote",
     website: "nordwind.local",
+    isDefault: true,
   },
   {
     id: "lumen",
@@ -62,6 +70,7 @@ export const CONNECT_COMPANIES: ConnectCompany[] = [
     category: "Product company",
     location: "Remote",
     website: "lumen.local",
+    isDefault: true,
   },
   {
     id: "helm",
@@ -74,6 +83,7 @@ export const CONNECT_COMPANIES: ConnectCompany[] = [
     category: "Risk & compliance",
     location: "Remote",
     website: "helm.local",
+    isDefault: true,
   },
   {
     id: "pulse",
@@ -86,6 +96,7 @@ export const CONNECT_COMPANIES: ConnectCompany[] = [
     category: "Delivery company",
     location: "Remote",
     website: "pulse.local",
+    isDefault: true,
   },
 ];
 

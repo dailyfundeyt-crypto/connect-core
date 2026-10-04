@@ -1,4 +1,4 @@
-//! Metrics for an explicit image pull, before containers or provider sign-in start.
+﻿//! Metrics for an explicit image pull, before containers or provider sign-in start.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -133,7 +133,7 @@ pub fn pull_image(
     }
     command.args([
         "--project-name",
-        "openbot-image-pull",
+        "Connect-image-pull",
         "-f",
         "-",
         "pull",
@@ -202,7 +202,7 @@ pub(crate) fn run(
         bytes,
     });
     let output = output.map_err(|error| {
-        Problem::plain(format!("Could not pull the images OpenBot needs: {error}"))
+        Problem::plain(format!("Could not pull the images Connect needs: {error}"))
     })?;
     if output.status.success() {
         return Ok(());
@@ -371,7 +371,7 @@ Executing external compose provider
 
     #[test]
     fn reports_spawn_failure_once() {
-        let command = crate::quiet::command("openbot-test-missing-pull-executable");
+        let command = crate::quiet::command("Connect-test-missing-pull-executable");
         let mut reports = Vec::new();
         assert!(run(command, None, true, |metrics| reports.push(metrics)).is_err());
         assert_eq!(reports.len(), 1);

@@ -128,6 +128,8 @@ export type BotThread = {
   /** Mints a fresh thread and starts using it from now on, independent of whatever was
    * remembered. */
   startNew: () => void;
+  /** Continues an earlier conversation of this Bot (picked from the history list) from now on. */
+  switchTo: (threadId: string) => void;
 };
 
 /**
@@ -231,5 +233,16 @@ export function useBotThread(agentId: string): BotThread {
     });
   }, [agentId]);
 
-  return { threadId, history, startNew };
+  const switchTo = useCallback(
+    (next: string) => {
+      // Like New chat: a mount-time check still in flight must not put the old thread back.
+      startedNewRef.current = true;
+      remember(agentId, next);
+      setThreadId(next);
+      setHistory("ready");
+    },
+    [agentId],
+  );
+
+  return { threadId, history, startNew, switchTo };
 }

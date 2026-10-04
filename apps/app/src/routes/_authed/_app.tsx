@@ -5,7 +5,7 @@ import {
   useNavigate,
   useParams,
 } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { FocusOverlay } from "@/components/companies/focus-overlay";
 import { LevelChromeSidebar } from "@/components/companies/level-chrome-sidebar";
@@ -17,6 +17,12 @@ import {
   subscribeLevel,
 } from "@/lib/companies/level";
 import { isDesktopApp } from "@/lib/desktop-bridge";
+import { useNotchBridge } from "@/lib/voice/notch-bridge";
+import {
+  isMobileShellPath,
+  MobileShell,
+} from "@/components/mobile/mobile-shell";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 
 export const Route = createFileRoute("/_authed/_app")({
   component: RouteComponent,
@@ -44,6 +50,22 @@ function RouteComponent() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { companyId?: string };
+  // Handy (unter 768px + Touch): eigene Ansicht, Desktop bleibt unverändert.
+  const mobileShell = useMobileShell();
+
+  // Connect Notch voice calls: this window takes the spoken turns (never the sidebar-only window).
+  const openVoiceChannel = useCallback(
+    (channelId: string) => {
+      void navigate({ to: "/channel/$channelId", params: { channelId } });
+    },
+    [navigate],
+  );
+  useNotchBridge({
+    enabled:
+      typeof window !== "undefined" &&
+      (window as { __CONNECT_SIDEBAR__?: boolean }).__CONNECT_SIDEBAR__ !== true,
+    openChannel: openVoiceChannel,
+  });
 
   useEffect(() => subscribeLevel(() => setLevel(getActiveLevel())), []);
 
@@ -65,6 +87,7 @@ function RouteComponent() {
 
   // Browser (3) + Unternehmen (4) leave HQ work routes.
   useEffect(() => {
+    if (mobileShell) return;
     if (level !== 3 && level !== 4) return;
     if (!isHqPath(location.pathname)) return;
     const companyId =
@@ -79,7 +102,7 @@ function RouteComponent() {
       search: { level },
       replace: true,
     });
-  }, [level, location.pathname, navigate, params.companyId]);
+  }, [level, location.pathname, mobileShell, navigate, params.companyId]);
 
   const companyId =
     params.companyId ??
@@ -92,8 +115,10 @@ function RouteComponent() {
       ? (location.search as { agent?: string }).agent
       : undefined;
 
-  // Focus + Messages share AppSidebar. Browser + Unternehmen get slim chrome.
-  const hqShell = level === 1 || level === 2;
+  // Focus is its own fullscreen page (no sidebar, no company chrome). Messages uses AppSidebar;
+  // Browser + Unternehmen get slim chrome.
+  const focusFullscreen = level === 1;
+  const hqShell = level === 2;
   const isDesktop = isDesktopApp();
   const isSidebarRole =
     typeof window !== "undefined" && (window as any).__CONNECT_SIDEBAR__ === true;
@@ -102,26 +127,39 @@ function RouteComponent() {
 
   const hideMainInDesktop = isDesktop && level === 3 && !isMainRole;
 
+  if (mobileShell && isMobileShellPath(location.pathname)) {
+    return <MobileShell />;
+  }
+
   return (
     <SidebarShell
       className={
-        hqShell
-          ? "h-svh overflow-hidden"
-          : "lab-light h-svh overflow-hidden bg-background"
+        focusFullscreen
+          ? "h-svh overflow-hidden bg-neutral-950"
+          : hqShell
+            ? "h-svh overflow-hidden"
+            : "lab-light h-svh overflow-hidden bg-background"
       }
-      width={hqShell ? "340px" : "300px"}
+      width={focusFullscreen ? "0px" : hqShell ? "340px" : "300px"}
     >
-      {isMainRole ? null : (hqShell ? <AppSidebar /> : <LevelChromeSidebar />)}
+      {isMainRole || focusFullscreen
+        ? null
+        : hqShell
+          ? <AppSidebar />
+          : <LevelChromeSidebar />}
       {!isSidebarRole && !hideMainInDesktop && (
         <main
           className={
-            hqShell
-              ? "relative flex min-h-0 flex-1 flex-col overflow-hidden"
-              : "relative flex min-h-0 flex-1 flex-col overflow-hidden border-l border-neutral-200 bg-background"
+            focusFullscreen
+              ? "relative flex min-h-0 flex-1 flex-col overflow-hidden bg-neutral-950"
+              : hqShell
+                ? "relative flex min-h-0 flex-1 flex-col overflow-hidden"
+                : "relative flex min-h-0 flex-1 flex-col overflow-hidden border-l border-neutral-200 bg-background"
           }
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <Outlet />
+            {/* Focus is its own page: the previous page is not rendered underneath. */}
+            {focusFullscreen ? null : <Outlet />}
           </div>
           {level === 1 && companyId ? (
             <FocusOverlay

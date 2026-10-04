@@ -1,4 +1,4 @@
-//! The `.env` the shell writes, and the secrets it mints.
+﻿//! The `.env` the shell writes, and the secrets it mints.
 //!
 //! `scripts/start.sh` writes the same file for a developer. This writes it for somebody who will
 //! never open a terminal, which changes three things:
@@ -98,7 +98,7 @@ pub fn compose(
     // Absent means no harness was picked, and the package's gated rows stay dropped.
     harness: Option<&PickedHarness>,
     // What a previous run of THIS deployment already minted, so it is not minted again. Empty on a
-    // machine that has never run OpenBot, which is exactly when generating is right.
+    // machine that has never run Connect, which is exactly when generating is right.
     kept: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
@@ -150,7 +150,7 @@ pub fn compose(
          * Measured: answering the compatible row sets `BOT_MODEL` to whatever the person's own
          * endpoint calls its model, and switching back to an OpenAI key left it there. The Bot then
          * asked OpenAI for `local-model` and the last screen said "That account cannot use the
-         * model that was chosen" — about a model this run never chose. Exactly the failure the
+         * model that was chosen" â€” about a model this run never chose. Exactly the failure the
          * clearing above exists for, with one key missed.
          *
          * Removed rather than emptied, so `docker-compose.yml`'s own default applies. Blank would
@@ -169,7 +169,7 @@ pub fn compose(
          * The clearing above is for the case where the model screen HAS answered: whichever keys
          * that answer does not imply are emptied, so switching from a key to a plan cannot leave
          * the old key behind for a harness to prefer. With no answer there is nothing to be
-         * consistent with, and a key somebody set by hand is theirs to keep — see `write`, which
+         * consistent with, and a key somebody set by hand is theirs to keep â€” see `write`, which
          * preserves lines this does not own.
          */
         ModelCredential::None => {}
@@ -288,7 +288,7 @@ pub fn compose(
     env.insert(
         "DATABASE_URL".into(),
         format!(
-            "postgres://openbot:openbot@127.0.0.1:{}/openbot",
+            "postgres://Connect:Connect@127.0.0.1:{}/Connect",
             ports.postgres
         ),
     );
@@ -371,7 +371,7 @@ pub fn compose(
                  * Interpolated rather than written as a literal row per kind, because the loader
                  * refuses an unknown `agent.type` by refusing the whole file: a package carrying a
                  * literal `remote-mastra` row stops any server predating that kind from starting at
-                 * all, picked or not. Measured, not guessed — it is what a v0.0.8 deployment did.
+                 * all, picked or not. Measured, not guessed â€” it is what a v0.0.8 deployment did.
                  */
                 env.insert(
                     "PICKED_HARNESS_KIND".into(),
@@ -431,7 +431,7 @@ pub fn compose(
     // that came with the deployment, and the Bots somebody was given are not the Bots they get.
     env.insert("TENANT_PACKAGE_DIR".into(), "../examples/fintech".into());
 
-    // The one person, named. `OPENBOT_SINGLE_USER` says there is nobody else; this says who that
+    // The one person, named. `Connect_SINGLE_USER` says there is nobody else; this says who that
     // somebody is, so the routes that ask what an actor may do have an actor to answer about.
     env.insert(
         "INITIAL_ADMIN_EMAILS".into(),
@@ -444,7 +444,7 @@ pub fn compose(
     // every visitor is an administrator, which is the right refusal on a server and the wrong
     // question on a laptop: there is nobody else here. Saying so explicitly is how that refusal is
     // answered, and it is the same switch `ci.yml` uses for the same reason.
-    env.insert("OPENBOT_SINGLE_USER".into(), "true".into());
+    env.insert("Connect_SINGLE_USER".into(), "true".into());
 
     // Pull the published images rather than build them. A desktop install has no toolchain and no
     // reason to compile Chromium.
@@ -452,7 +452,7 @@ pub fn compose(
 
     // Which images, by digest, from the release's own manifest. Compose's defaults are local build
     // names, so leaving these unset does not fall back to something workable: it asks a registry
-    // for `openbot-supervisor:latest`, which nobody publishes, and the denial that comes back
+    // for `Connect-supervisor:latest`, which nobody publishes, and the denial that comes back
     // reads as a login problem.
     for (variable, reference) in images {
         env.insert(variable.clone(), reference.clone());
@@ -486,7 +486,7 @@ Nothing new had to be built to make a Bot appear.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PickedHarness {
     Installed {
-        /// The published image, e.g. `openbot-agent-crewai`. Named by the release, not derived.
+        /// The published image, e.g. `Connect-agent-crewai`. Named by the release, not derived.
         image: String,
         /// The port that image listens on, fixed by its own Dockerfile.
         port: u16,
@@ -587,7 +587,7 @@ pub const NO_KEY_NEEDED: &str = "no-key-needed";
 ///
 /// Named rather than written inline, because `write` has to recognise its own from a previous start
 /// as well as put one down.
-const BANNER: &str = "# Written by OpenBot Desktop. Anything else in this file is left alone.";
+const BANNER: &str = "# Written by Connect Desktop. Anything else in this file is left alone.";
 
 /// The secrets this deployment mints for itself, once.
 pub const MINTED: [&str; 6] = [
@@ -601,9 +601,9 @@ pub const MINTED: [&str; 6] = [
 
 const PUBLISHED: [&str; 4] = [
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    "openbot-dev-supervisor-token",
-    "openbot-dev-computer-token",
-    "openbot-dev-worker-secret",
+    "Connect-dev-supervisor-token",
+    "Connect-dev-computer-token",
+    "Connect-dev-worker-secret",
 ];
 
 /// Whether an original installation key can be reused without replacement.
@@ -646,7 +646,7 @@ fn carried(existing: &str) -> BTreeMap<String, String> {
 What a previous run already put in the `.env`.
 
 So the wizard never asks twice. A person who has set this up before, or whose IT department laid the
-file down for them, should not be made to find a key again — and "find it again" in practice means
+file down for them, should not be made to find a key again â€” and "find it again" in practice means
 opening a dotfile in a text editor, which is the exact thing this product exists not to require.
 
 Only the settings the wizard asks about are read back. Everything else in that file is somebody
@@ -716,7 +716,7 @@ pub(crate) fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<(
     let parent = path
         .parent()
         .ok_or_else(|| std::io::Error::other("missing parent directory"))?;
-    let temporary = parent.join(format!(".openbot-write-{:016x}.tmp", rand::random::<u64>()));
+    let temporary = parent.join(format!(".Connect-write-{:016x}.tmp", rand::random::<u64>()));
     let result = (|| {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -777,7 +777,7 @@ pub fn write(
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "OpenBot setting names and values must not contain line breaks.",
+            "Connect setting names and values must not contain line breaks.",
         ));
     }
     let existing = match std::fs::read_to_string(path) {
@@ -847,7 +847,7 @@ mod tests {
             .map(|(published, variable)| {
                 (
                     (*variable).to_string(),
-                    format!("ghcr.io/copilotkit/openbot-{published}@sha256:abc"),
+                    format!("ghcr.io/copilotkit/Connect-{published}@sha256:abc"),
                 )
             })
             .collect()
@@ -1090,7 +1090,7 @@ HTTPS_PROXY=http://proxy:8080
             "KEY_ENCRYPTION_KEY",
         ] {
             let value = env.get(key).expect(key);
-            assert!(!value.contains("openbot-dev"), "{key} kept a dev default");
+            assert!(!value.contains("Connect-dev"), "{key} kept a dev default");
             assert!(
                 value.len() > 20,
                 "{key} is too short to be a generated secret"
@@ -1222,7 +1222,7 @@ HTTPS_PROXY=http://proxy:8080
             &BTreeMap::new(),
         );
         assert_eq!(
-            env.get("OPENBOT_SINGLE_USER").map(String::as_str),
+            env.get("Connect_SINGLE_USER").map(String::as_str),
             Some("true")
         );
     }
@@ -1489,9 +1489,9 @@ HTTPS_PROXY=http://proxy:8080
         std::fs::write(
             &path,
             "KEY_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n\
-             SUPERVISOR_TOKEN=openbot-dev-supervisor-token\n\
-             COMPUTER_TOKEN=openbot-dev-computer-token\n\
-             WORKER_SHARED_SECRET=openbot-dev-worker-secret\n",
+             SUPERVISOR_TOKEN=Connect-dev-supervisor-token\n\
+             COMPUTER_TOKEN=Connect-dev-computer-token\n\
+             WORKER_SHARED_SECRET=Connect-dev-worker-secret\n",
         )
         .unwrap();
 
@@ -1611,7 +1611,7 @@ mod model_tests {
             .map(|(published, variable)| {
                 (
                     (*variable).to_string(),
-                    format!("ghcr.io/copilotkit/openbot-{published}@sha256:abc"),
+                    format!("ghcr.io/copilotkit/Connect-{published}@sha256:abc"),
                 )
             })
             .collect()
@@ -1746,7 +1746,7 @@ mod model_tests {
                 &Ports::default(),
                 &pinned(),
                 Some(&PickedHarness::Installed {
-                    image: "openbot-agent-crewai".into(),
+                    image: "Connect-agent-crewai".into(),
                     port,
                     name: "CrewAI".into(),
                     mastra,

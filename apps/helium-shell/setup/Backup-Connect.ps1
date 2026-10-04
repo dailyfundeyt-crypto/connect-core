@@ -1,0 +1,237 @@
+<#
+  Backup-Connect.ps1 - verschluesseltes Connect-Backup nach Google Drive (H:\Meine Ablage\Connect-Backups).
+
+  Was gesichert wird (jede Quelle als eigener pg_dump im ZIP, plus manifest.json mit Zeilenzahlen):
+    1. copy      - Datenbank der Kopie laut .env DATABASE_URL (heute lokal Docker 127.0.0.1:5433; nach dem
+                   Umstellen automatisch die dort eingetragene DB, z. B. Supabase)
+    2. supabase  - Supabase-Projekt connect-core laut .env.supabase (Schemas public + drizzle), falls erreichbar
+                   und nicht schon identisch mit Quelle 1
+    3. app       - installierte "Connect App" (eigene DB 127.0.0.1:5544), falls sie gerade laeuft; sonst das
+                   neueste vorhandene App-Backup aus %LOCALAPPDATA%\ConnectApp\data\backups
+  Enthalten: Agents, gespeicherte Apps/Komponenten, Einstellungen (connect_workspace_kv), Profil/Benutzer,
+  Channels, Medien, und der Server-Schluesseltresor (credentials) so wie gespeichert (AES-GCM verschluesselt).
+  Seit 04.10.: ausserdem der Brain-Ordner (Markdown, Documents\000_CNT\Plannung\Brain, ohne .git) und die
+  Secrets-Dateien .env, .env.supabase und %LOCALAPPDATA%\ConnectApp\data\connect.env (mit KEY_ENCRYPTION_KEY,
+  ohne den sich der Tresor nicht entschluesseln laesst) - NUR innerhalb des verschluesselten Archivs (secrets\).
+  NICHT enthalten: Browser-localStorage.
+
+  Ablauf: pg_dump -> ZIP (komprimiert) -> AES-256-CBC + HMAC-SHA256 (PBKDF2, 200k) -> Zielordner,
+  Pruefung der Zieldatei (HMAC), die neuesten 14 bleiben. Log: %TEMP%\connect-backup.log
+  Passwort: nie im Script; DPAPI-geschuetzt in %LOCALAPPDATA%\Connect\backup-password.dpapi (wird beim
+  ersten Lauf zufaellig erzeugt).
+
+  Aufruf:
+    Backup-Connect.ps1                  Backup jetzt
+    Backup-Connect.ps1 -IfDue           nur wenn das letzte Backup aelter als -DueHours ist (Standard 20 h)
+    Backup-Connect.ps1 -Register        geplanten Task anlegen/aktualisieren (stuendlich + bei Anmeldung, -IfDue -DueHours 0.9)
+    Backup-Connect.ps1 -Unregister      geplanten Task entfernen
+    Backup-Connect.ps1 -ShowPassword    Backup-Passwort anzeigen (in den Passwort-Manager legen!)
+    Backup-Connect.ps1 -SetPassword     eigenes Backup-Passwort setzen (gilt fuer kuenftige Backups)
+#>
+param(
+  [string]$Target = "H:\Meine Ablage\Connect-Backups",
+  [int]$Keep = 48,
+  [int]$KeepDays = 30,
+  [double]$DueHours = 20,
+  [string]$BrainDir = "C:\Users\Kunc GmbH\Documents\000_CNT\Plannung\Brain",
+  [switch]$IfDue,
+  [switch]$Register,
+  [switch]$Unregister,
+  [switch]$ShowPassword,
+  [switch]$SetPassword
+)
+$ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "ConnectBackup.Common.ps1")
+
+$TaskName = "Connect Backup (Google Drive)"
+$Root     = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+$Self     = $MyInvocation.MyCommand.Path
+
+if ($ShowPassword) {
+  $pw = Get-BackupPassword -CreateIfMissing
+  Write-Host "Backup-Passwort (sicher im Passwort-Manager ablegen, NICHT in Dateien/Chat):" -ForegroundColor Yellow
+  Write-Host $pw
+  exit 0
+}
+if ($SetPassword) {
+  $a = ConvertFrom-SecureStringPlain (Read-Host "Neues Backup-Passwort" -AsSecureString)
+  $b = ConvertFrom-SecureStringPlain (Read-Host "Wiederholen" -AsSecureString)
+  if ($a -ne $b) { throw "Passwoerter stimmen nicht ueberein." }
+  Set-BackupPassword $a
+  Write-Log "Backup-Passwort geaendert (DPAPI). Aeltere Backups brauchen weiterhin das alte Passwort." "OK"
+  exit 0
+}
+if ($Unregister) {
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  Write-Log "Geplanter Task '$TaskName' entfernt." "OK"
+  exit 0
+}
+if ($Register) {
+  $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+  $action = New-ScheduledTaskAction -Execute $ps -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Self`" -IfDue -DueHours 0.9" -WorkingDirectory $PSScriptRoot
+  # stuendlich (vorher nur taeglich 03:00); verpasste Laeufe werden nachgeholt
+  $daily = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddHours((Get-Date).Hour + 1).AddMinutes(30)) -RepetitionInterval (New-TimeSpan -Hours 1)
+  $logon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+  $logon.Delay = "PT5M"   # Google Drive + Docker erst hochfahren lassen
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+              -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 10) -Hidden
+  $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($daily, $logon) -Settings $settings -Principal $principal `
+    -Description "Verschluesseltes Connect-Backup nach $Target (Script: $Self). Log: %TEMP%\connect-backup.log" -Force | Out-Null
+  Write-Log "Geplanter Task '$TaskName' registriert: stuendlich + bei Anmeldung (+5 min), verpasste Laeufe werden nachgeholt." "OK"
+  exit 0
+}
+
+# ------------------------------------------------------------------ backup
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$work  = Join-Path $env:TEMP "connect-backup-$stamp"
+$errors = 0
+try {
+  if (-not (Test-Path (Split-Path $Target -Qualifier))) { throw "Laufwerk $(Split-Path $Target -Qualifier) nicht vorhanden (Google Drive fuer Desktop gestartet?)" }
+  if (-not (Test-Path $Target)) { New-Item -ItemType Directory -Path $Target | Out-Null; Write-Log "Zielordner angelegt: $Target" }
+
+  if ($IfDue) {
+    $last = Get-ChildItem $Target -Filter "connect-backup-*.zip.aes" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($last -and ((Get-Date) - $last.LastWriteTime).TotalHours -lt $DueHours) {
+      Write-Log "Uebersprungen: letztes Backup $($last.Name) ist juenger als $DueHours h."
+      exit 0
+    }
+  }
+
+  Write-Log "Backup startet ($stamp) -> $Target"
+  $password = Get-BackupPassword -CreateIfMissing
+  $pgBin = Find-PgBin $Root
+  $pgDump = Join-Path $pgBin "pg_dump.exe"
+  New-Item -ItemType Directory -Path $work | Out-Null
+  $manifest = [ordered]@{ created = (Get-Date).ToString("o"); host = $env:COMPUTERNAME; format = "pg_dump plain SQL (PostgreSQL 17)"; sources = @() }
+
+  function Backup-Db([string]$Name, $Db, [string[]]$Extra, [switch]$Optional) {
+    $file = Join-Path $work "$Name.sql"
+    if (-not $Db.IsRemote -and -not (Test-TcpPort $Db.Host $Db.Port)) {
+      if ($IfDue -and -not $Optional) {
+        Write-Log "$Name : $($Db.Host):$($Db.Port) noch nicht erreichbar, warte bis zu 3 min (Docker startet?)"
+        $until = (Get-Date).AddMinutes(3)
+        while ((Get-Date) -lt $until -and -not (Test-TcpPort $Db.Host $Db.Port)) { Start-Sleep -Seconds 15 }
+      }
+      if (-not (Test-TcpPort $Db.Host $Db.Port)) { Write-Log "$Name : Datenbank $($Db.Host):$($Db.Port) laeuft nicht - uebersprungen." "WARN"; return $false }
+    }
+    $env:PGPASSWORD = $Db.Password
+    try {
+      $pgArgs = @("-d", (Get-PgConnInfo $Db), "--no-owner", "--no-privileges", "--encoding=UTF8", "-f", $file) + $Extra
+      $r = Invoke-Native $pgDump $pgArgs
+    } finally { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
+    if ($r.ExitCode -ne 0 -or -not (Test-Path $file) -or (Get-Item $file).Length -lt 1000) {
+      Write-Log "$Name : pg_dump fehlgeschlagen (Exit $($r.ExitCode)): $(($r.Output | Select-Object -First 5) -join ' | ')" "ERROR"
+      Remove-Item $file -ErrorAction SilentlyContinue
+      $script:errors++
+      return $false
+    }
+    $counts = $null
+    try { $counts = Get-TableCounts $pgBin $Db } catch { Write-Log "$Name : Zeilenzahlen nicht ermittelt: $($_.Exception.Message)" "WARN" }
+    $script:manifest.sources += [ordered]@{ name = $Name; file = "$Name.sql"; host = "$($Db.Host):$($Db.Port)/$($Db.Database)"; bytes = (Get-Item $file).Length; rows = $counts }
+    $total = 0; if ($counts) { foreach ($v in $counts.Values) { $total += $v } }
+    Write-Log ("{0} : {1:N0} Bytes, {2} Tabellen, {3} Zeilen ({4}:{5})" -f $Name, (Get-Item $file).Length, $(if ($counts) { $counts.Count } else { "?" }), $total, $Db.Host, $Db.Port) "OK"
+    return $true
+  }
+
+  # 1) copy (.env DATABASE_URL = the DB the copy's server really uses)
+  $envMain = Read-DotEnv (Join-Path $Root ".env")
+  $copyDb = $null
+  if ($envMain["DATABASE_URL"]) {
+    $copyDb = ConvertFrom-PgUrl $envMain["DATABASE_URL"]
+    $extra = @(); if ($copyDb.IsSupabase) { $extra = @("-n", "public", "-n", "drizzle") }
+    [void](Backup-Db "copy" $copyDb $extra -Optional)
+  } else { Write-Log "copy : keine DATABASE_URL in $Root\.env" "WARN" }
+
+  # 2) Supabase (.env.supabase) unless it is the same DB as (1)
+  $envSb = Read-DotEnv (Join-Path $Root ".env.supabase")
+  if ($envSb["DATABASE_URL"]) {
+    $sbDb = ConvertFrom-PgUrl $envSb["DATABASE_URL"]
+    if (-not ($copyDb -and $copyDb.Host -eq $sbDb.Host -and $copyDb.User -eq $sbDb.User -and $copyDb.Database -eq $sbDb.Database)) {
+      [void](Backup-Db "supabase" $sbDb @("-n", "public", "-n", "drizzle"))
+    }
+  }
+
+  # 3) installed Connect App (own DB on 5544, only while the app runs)
+  $appEnvFile = Join-Path $env:LOCALAPPDATA "ConnectApp\data\connect.env"
+  if (Test-Path $appEnvFile) {
+    $appEnv = Read-DotEnv $appEnvFile
+    $appPort = 5544
+    $appCfg = Join-Path $env:LOCALAPPDATA "Programs\Connect App\connect-app.json"
+    if (Test-Path $appCfg) { try { $p = (Get-Content $appCfg -Raw | ConvertFrom-Json).PgPort; if ($p) { $appPort = [int]$p } } catch { } }
+    $appDb = [pscustomobject]@{ Host = "127.0.0.1"; Port = $appPort; User = "connect"; Password = $appEnv["CONNECT_APP_DB_PASSWORD"]; Database = "connect"; SslMode = "disable"; IsRemote = $false; IsSupabase = $false }
+    $ok = Backup-Db "app" $appDb @() -Optional
+    if (-not $ok) {
+      $snap = Get-ChildItem (Join-Path $env:LOCALAPPDATA "ConnectApp\data\backups") -Filter "*.dump" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+      if ($snap) {
+        Copy-Item $snap.FullName (Join-Path $work "app-snapshot.dump")
+        $manifest.sources += [ordered]@{ name = "app-snapshot"; file = "app-snapshot.dump"; note = "Connect App lief nicht; neuestes App-Backup ($($snap.Name), pg_dump custom format)"; bytes = $snap.Length }
+        Write-Log "app : App laeuft nicht, neuestes App-Backup $($snap.Name) uebernommen." "WARN"
+      }
+    }
+  }
+
+  # 4) Brain-Ordner (Markdown), ohne .git
+  if ($BrainDir -and (Test-Path $BrainDir)) {
+    $brainOut = Join-Path $work "brain"
+    New-Item -ItemType Directory -Path $brainOut | Out-Null
+    $rc = Invoke-Native "robocopy.exe" @($BrainDir, $brainOut, "/E", "/XD", ".git", "/R:1", "/W:1", "/NFL", "/NDL", "/NJH", "/NJS", "/NP")
+    if ($rc.ExitCode -ge 8) { Write-Log "brain : Kopieren fehlgeschlagen (robocopy $($rc.ExitCode))" "ERROR"; $errors++ }
+    else {
+      $bf = @(Get-ChildItem $brainOut -Recurse -File)
+      $bb = ($bf | Measure-Object Length -Sum).Sum
+      $manifest.sources += [ordered]@{ name = "brain"; file = "brain/"; path = $BrainDir; files = $bf.Count; bytes = $bb }
+      Write-Log ("brain : {0} Dateien, {1:N0} Bytes ({2})" -f $bf.Count, $bb, $BrainDir) "OK"
+    }
+  } else { Write-Log "brain : Ordner $BrainDir nicht gefunden - uebersprungen." "WARN" }
+
+  # 5) Secrets-Dateien (nur im verschluesselten Archiv; ohne KEY_ENCRYPTION_KEY ist der Tresor wertlos)
+  $secOut = Join-Path $work "secrets"
+  New-Item -ItemType Directory -Path $secOut | Out-Null
+  $secList = @()
+  foreach ($pair in @(@((Join-Path $Root ".env"), "copy.env"), @((Join-Path $Root ".env.supabase"), "copy.env.supabase"), @((Join-Path $env:LOCALAPPDATA "ConnectApp\data\connect.env"), "connect-app.env"))) {
+    if (Test-Path $pair[0]) { Copy-Item $pair[0] (Join-Path $secOut $pair[1]); $secList += $pair[1] }
+  }
+  if ($secList.Count) {
+    $manifest.sources += [ordered]@{ name = "secrets"; file = "secrets/"; files = $secList; note = "Klartext NUR im AES-Archiv. Enthaelt KEY_ENCRYPTION_KEY, DB-Passwoerter, OAuth-Secrets." }
+    Write-Log "secrets : $($secList -join ', ') (nur verschluesselt im Archiv)" "OK"
+  }
+
+  if ($manifest.sources.Count -eq 0) { throw "Keine Quelle gesichert - kein Backup erstellt." }
+  [IO.File]::WriteAllText((Join-Path $work "manifest.json"), ($manifest | ConvertTo-Json -Depth 6), $script:Utf8NoBom)
+
+  # compress + encrypt
+  $zip = Join-Path $env:TEMP "connect-backup-$stamp.zip"
+  [IO.Compression.ZipFile]::CreateFromDirectory($work, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+  $name = "connect-backup-$stamp.zip.aes"
+  $localEnc = Join-Path $env:TEMP $name
+  Protect-BackupFile $zip $localEnc $password
+  Remove-Item $zip -Force
+
+  # copy to Google Drive (temp name, then rename = no half files in Drive), verify there
+  $tmpDest = Join-Path $Target ".$name.part"
+  Copy-Item $localEnc $tmpDest -Force
+  $dest = Join-Path $Target $name
+  Move-Item $tmpDest $dest -Force
+  Remove-Item $localEnc -Force
+  [void](Unprotect-BackupFile $dest $password)
+  Write-Log ("Backup geschrieben und geprueft (HMAC ok): {0} ({1:N0} Bytes)" -f $dest, (Get-Item $dest).Length) "OK"
+
+  # retention
+  $all = @(Get-ChildItem $Target -Filter "connect-backup-*.zip.aes" -File | Sort-Object Name -Descending)
+  $keepSet = @{}
+  $all | Select-Object -First $Keep | ForEach-Object { $keepSet[$_.FullName] = $true }
+  $all | Where-Object { $_.LastWriteTime -gt (Get-Date).AddDays(-$KeepDays) } | Group-Object { $_.LastWriteTime.ToString("yyyyMMdd") } | ForEach-Object { $keepSet[($_.Group | Sort-Object Name -Descending | Select-Object -First 1).FullName] = $true }
+  foreach ($old in $all) { if (-not $keepSet[$old.FullName]) { Remove-Item $old.FullName -Force; Write-Log "Altes Backup entfernt: $($old.Name)" } }
+  Write-Log "Fertig. $($keepSet.Count) Backups im Ordner (neueste $Keep + je Tag eins fuer $KeepDays Tage)." "OK"
+}
+catch {
+  Write-Log "Backup FEHLGESCHLAGEN: $($_.Exception.Message)" "ERROR"
+  $errors++
+}
+finally {
+  # plaintext dumps never stay on disk
+  if (Test-Path $work) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
+  Get-ChildItem $env:TEMP -Filter "connect-backup-$stamp.zip*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+if ($errors -gt 0) { exit 1 } else { exit 0 }

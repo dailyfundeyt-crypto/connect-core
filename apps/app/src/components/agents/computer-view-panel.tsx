@@ -10,6 +10,10 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { AgentBrowserModeSelect } from "@/components/agents/agent-browser-mode";
+import {
+  focusAgentChrome,
+  useAgentChromeFrame,
+} from "@/components/agents/agent-chrome-live";
 import { BrowserRoutinesPanel } from "@/components/agents/browser-routines-panel";
 import { ManusHilfePanel } from "@/components/agents/manus-hilfe-panel";
 import { PhoneWatchPane } from "@/components/agents/phone-watch-pane";
@@ -207,27 +211,15 @@ export function ComputerViewPanel({
             />
           </figure>
         ) : chromeLive ? (
-          <figure className="overflow-hidden rounded-2xl border bg-[#ececef]">
-            <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2">
-              <span className="flex gap-1">
-                <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-                <span className="size-2.5 rounded-full bg-[#febc2e]" />
-                <span className="size-2.5 rounded-full bg-[#28c840]" />
-              </span>
-              <div className="min-w-0 flex-1 rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
-                Chrome Browser · {name ?? "Bot"}
-              </div>
-              <IconBrandChrome className="size-3.5 shrink-0 text-muted-foreground" />
-            </div>
-            <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#f0f0f2] p-6 text-center">
-              <IconBrandChrome className="size-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Browser aktiv</p>
-              <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
-                {session.message ??
-                  "Host-Chrome mit eigenem Profil — Fenster auf dem Desktop."}
-              </p>
-            </div>
-          </figure>
+          <ChromeLiveStage
+            agentId={agentId}
+            message={session.message}
+            name={name}
+            onRestart={() => {
+              stopAgentBrowser(agentId);
+              void boot();
+            }}
+          />
         ) : (
           <BrowserBootStage
             busy={busy}
@@ -254,6 +246,82 @@ export function ComputerViewPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Big view: live CDP frames of the agent's own Helium/Chrome profile. */
+function ChromeLiveStage({
+  agentId,
+  name,
+  message,
+  onRestart,
+}: {
+  agentId: string;
+  name?: string;
+  message?: string;
+  onRestart: () => void;
+}) {
+  const { src, error, pageUrl } = useAgentChromeFrame(agentId, {
+    intervalMs: 900,
+    onUnavailable: onRestart,
+  });
+  const [focusNote, setFocusNote] = useState<string | null>(null);
+  return (
+    <figure className="overflow-hidden rounded-2xl border bg-[#ececef]">
+      <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2">
+        <span className="flex gap-1">
+          <span className="size-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="size-2.5 rounded-full bg-[#febc2e]" />
+          <span className="size-2.5 rounded-full bg-[#28c840]" />
+        </span>
+        <div className="min-w-0 flex-1 truncate rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
+          {pageUrl || `Agent-Browser · ${name ?? "Bot"}`}
+        </div>
+        <Button
+          className="h-7 px-2 text-[11px]"
+          onClick={() => {
+            void focusAgentChrome(agentId).then((res) =>
+              setFocusNote(res.ok ? null : (res.error ?? "Fenster nicht erreichbar.")),
+            );
+          }}
+          size="sm"
+          title="Agent-Fenster (eigenes Helium-Profil) nach vorne holen"
+          type="button"
+          variant="ghost"
+        >
+          Fenster zeigen
+        </Button>
+        <IconBrandChrome className="size-3.5 shrink-0 text-muted-foreground" />
+      </div>
+      {src && !error ? (
+        <img
+          alt={`Live-Ansicht ${name ?? "Bot"}`}
+          className="block aspect-[16/10] w-full bg-white object-contain object-top"
+          draggable={false}
+          src={src}
+        />
+      ) : (
+        <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#f0f0f2] p-6 text-center">
+          <IconBrandChrome className="size-8 text-muted-foreground" />
+          <p className="text-sm font-medium">
+            {error ? "Keine Live-Vorschau" : "Live-Vorschau lädt…"}
+          </p>
+          <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
+            {error ?? message ?? "Eigenes Browser-Profil des Agenten."}
+          </p>
+          {error ? (
+            <Button onClick={onRestart} size="sm" type="button" variant="outline">
+              Agent-Browser starten
+            </Button>
+          ) : null}
+        </div>
+      )}
+      {focusNote ? (
+        <p className="border-t border-black/10 px-3 py-1.5 text-[11px] text-destructive">
+          {focusNote}
+        </p>
+      ) : null}
+    </figure>
   );
 }
 

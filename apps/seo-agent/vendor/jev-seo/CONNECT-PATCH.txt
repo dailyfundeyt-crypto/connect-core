@@ -1,0 +1,1 @@
+Upstream: https://github.com/AgriciDaniel/jev-seo @ 55a184a (MIT, (c) 2026 Agrici Daniel). Local changes for Connect: see ../../vendor-jev-seo.patch (configurable judge endpoint for local Laya, zero price, Helium for JS rendering).

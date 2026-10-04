@@ -1,0 +1,93 @@
+diff --git a/jevseo/crawl.py b/jevseo/crawl.py
+index d67c07b..b1ced83 100644
+--- a/jevseo/crawl.py
++++ b/jevseo/crawl.py
+@@ -7,6 +7,8 @@ missing the visible content.
+ """
+ from __future__ import annotations
+ 
++import os
++
+ import gzip
+ import ipaddress
+ import random
+@@ -189,7 +191,10 @@ class Renderer:
+                 from playwright.sync_api import sync_playwright
+ 
+                 self._pw = sync_playwright().start()
+-                self._browser = self._pw.chromium.launch()
++                # Connect SEO-Agent patch: render with an existing Chromium build (Helium) when
++                # JEVSEO_CHROMIUM_PATH is set, so no Playwright browser download is needed.
++                exe = os.environ.get("JEVSEO_CHROMIUM_PATH")
++                self._browser = self._pw.chromium.launch(headless=True, **({"executable_path": exe} if exe else {}))
+                 self.available = True
+             page = self._browser.new_page(user_agent=USER_AGENT)
+             page.goto(url, wait_until="networkidle", timeout=30000)
+diff --git a/jevseo/jev.py b/jevseo/jev.py
+index 9bc7288..3b07b10 100644
+--- a/jevseo/jev.py
++++ b/jevseo/jev.py
+@@ -18,10 +18,19 @@ import requests
+ 
+ from jevseo.env import secret
+ 
+-API = "https://api.typesafe.ai/v1/systemone"
+-MODELS_API = "https://api.typesafe.ai/v1/models"
++import os as _os
++
++# Connect SEO-Agent patch: the judge endpoint is configurable so a local Laya server
++# (laya-serve, Apache-2.0, same /v1/systemone wire protocol) can replace the hosted Jev API.
++# Unset JEVSEO_JEV_URL keeps the original TypeSafe behaviour unchanged.
++API = _os.environ.get("JEVSEO_JEV_URL") or "https://api.typesafe.ai/v1/systemone"
++MODELS_API = API.rsplit("/v1/", 1)[0] + "/v1/models"
+ MODEL = "jev-latest"
+-USD_PER_MTOK = 0.042  # docs.typesafe.ai/models, retrieved 2026-09-20; re-check with the Jev brain staleness rule
++JUDGE_NAME = _os.environ.get("JEVSEO_JUDGE_NAME") or "Jev"
++# A local judge costs nothing; JEVSEO_USD_PER_MTOK=0 makes the ledger say so.
++TIMEOUT = float(_os.environ.get("JEVSEO_JEV_TIMEOUT") or 90)  # local CPU judges need longer
++WORKERS = int(_os.environ.get("JEVSEO_JEV_WORKERS") or 6)  # a single-worker local judge queues; fewer avoids timeouts
++USD_PER_MTOK = float(_os.environ.get("JEVSEO_USD_PER_MTOK") or 0.042)  # docs.typesafe.ai/models, retrieved 2026-09-20
+ PAGE_TEXT_CHARS = 6000
+ ACT = 0.80  # Choice and Score confidence at or above this is decisive
+ YES, NO = 0.80, 0.20  # Noul decisive bands (Noul has no confidence field)
+@@ -329,11 +338,11 @@ def keyword_batches(keywords: list[dict], pages: list[dict], site_ctx: dict, siz
+ # ---------------------------------------------------------------- client
+ class Jev:
+     def __init__(self, budget_usd: float = 0.25, log=print):
+-        self.key = secret("TYPESAFE_API_KEY")
++        self.key = secret("JEVSEO_JEV_KEY") or secret("TYPESAFE_API_KEY")
+         self.budget = budget_usd
+         self.log = log
+         self.lock = threading.Lock()
+-        self.ledger = {"model_requested": MODEL, "model_returned": None, "requests": 0, "failed": 0, "input_tokens": 0, "output_tokens": 0, "est_reserved_tokens": 0, "skipped_budget": 0, "errors": []}
++        self.ledger = {"judge": JUDGE_NAME, "endpoint": API, "model_requested": MODEL, "model_returned": None, "requests": 0, "failed": 0, "input_tokens": 0, "output_tokens": 0, "est_reserved_tokens": 0, "skipped_budget": 0, "errors": []}
+ 
+     @property
+     def available(self) -> bool:
+@@ -354,7 +363,7 @@ class Jev:
+         try:
+             for attempt in range(5):
+                 try:
+-                    r = requests.post(API, data=body, headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}, timeout=90)
++                    r = requests.post(API, data=body, headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}, timeout=TIMEOUT)
+                 except requests.RequestException as err:
+                     if attempt < 4:
+                         time.sleep(2**attempt)
+@@ -455,7 +464,7 @@ def judge(crawl: dict, pages: list[dict], budget_usd: float, log=print, dfs: dic
+         return p["url"], ans
+ 
+     step = max(1, -(-len(pages) // 5))  # about five progress lines per run
+-    with ThreadPoolExecutor(max_workers=6) as pool:
++    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+         for i, (url, ans) in enumerate(pool.map(one, pages), 1):
+             out["pages"][url] = ans
+             if i % step == 0 or i == len(pages):
+@@ -484,7 +493,7 @@ def judge(crawl: dict, pages: list[dict], budget_usd: float, log=print, dfs: dic
+         log(f"Jev: judging relevance and best page for {len(kws)} keywords")
+         batches = list(keyword_batches(kws, pages, site_ctx))
+         results = {}
+-        with ThreadPoolExecutor(max_workers=6) as pool:
++        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+             for (state, questions, keys, catalogue), ans in zip(batches, pool.map(lambda b: jev.ask(b[0], b[1]), batches)):
+                 for kid, kw in keys:
+                     if not ans:

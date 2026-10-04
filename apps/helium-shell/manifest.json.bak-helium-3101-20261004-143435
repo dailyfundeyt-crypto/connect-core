@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Connect Shell (Arc-Sidebar)",
+  "short_name": "Connect Shell",
+  "version": "0.4.7",
+  "description": "Arc-artige Sidebar für Helium/Chromium: Connect (localhost:3010) als App-Fenster ohne Adressleiste, Modus-Leiste wie Connect, Apps/Links als neue Helium-Tabs (vorhandene Tabs werden fokussiert), Split-Links nebeneinander, Tab-Sitzungen automatisch gesichert.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "storage",
+    "scripting",
+    "system.display"
+  ],
+  "host_permissions": [
+    "http://localhost:3010/*",
+    "http://127.0.0.1:3010/*"
+  ],
+  "background": {
+    "service_worker": "sw-0.4.7.js"
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "chrome_settings_overrides": {
+    "homepage": "http://localhost:3010/",
+    "startup_pages": [
+      "http://localhost:3010/"
+    ]
+  },
+  "action": {
+    "default_title": "Connect-Sidebar öffnen"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Connect-Sidebar öffnen/schließen"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3010/*",
+        "http://127.0.0.1:3010/*"
+      ],
+      "js": [
+        "connect-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

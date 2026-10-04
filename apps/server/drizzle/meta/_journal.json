@@ -302,6 +302,13 @@
       "when": 1789999200000,
       "tag": "0042_connect_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790950000000,
+      "tag": "0043_connect_chat_store",
+      "breakpoints": true
     }
   ]
 }

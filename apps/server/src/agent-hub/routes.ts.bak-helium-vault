@@ -1,0 +1,236 @@
+/**
+ * /api/agent-hub: Verbinder (MCP) catalogue, servers, per-agent model / MCP / browser settings.
+ *
+ * Loopback only, like the Brain routes: these start local processes and hold model keys, so a
+ * request must come from this desktop (Host, Origin and, where known, the peer address).
+ */
+import { mkdirSync } from "node:fs";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
+import type { AppVariables } from "../auth/guards";
+import { agentBrowserDirs, publicCatalog, safeSegment } from "./catalog";
+import { listLinks, setLink } from "./db";
+import { errorText } from "./mcp-manager";
+import { agentHub, DEFAULT_BASE_URLS, HubError, type ModelProvider } from "./service";
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+const LOOPBACK_IP = /^(127\.|::1$|::ffff:127\.)/;
+const PROVIDERS: ModelProvider[] = ["default", "openai", "anthropic", "ollama-local", "ollama-cloud", "openai-compatible"];
+
+function hostnameOf(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value.includes("://") ? value : `http://${value}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+const localOnly: MiddlewareHandler = async (context, next) => {
+  const refuse = () => context.json({ error: "Verbinder sind nur lokal auf diesem PC erreichbar." }, 403);
+  const host = hostnameOf(context.req.header("host"));
+  if (!host || !LOOPBACK_HOSTS.has(host)) return refuse();
+  const origin = context.req.header("origin");
+  if (origin && origin !== "null") {
+    const originHost = hostnameOf(origin);
+    if (!originHost || !LOOPBACK_HOSTS.has(originHost)) return refuse();
+  }
+  const server = (context.env as { server?: { requestIP?: (r: Request) => { address: string } | null } } | undefined)?.server;
+  const address = server?.requestIP?.(context.req.raw)?.address;
+  if (address && !LOOPBACK_IP.test(address)) return refuse();
+  await next();
+};
+
+type Ctx = { var: AppVariables };
+const isAdmin = (context: Ctx) => (context.var.actor as { role?: string } | undefined)?.role !== "user";
+
+export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables: AppVariables }>) {
+  const routes = new Hono<{ Variables: AppVariables }>();
+  routes.use("*", localOnly);
+  routes.use("*", requireUser);
+  routes.use("*", async (context, next) => {
+    if (!agentHub()) return context.json({ error: "Verbinder sind auf diesem Server nicht eingerichtet." }, 503);
+    if (context.req.method !== "GET" && !isAdmin(context)) {
+      return context.json({ error: "Nur Administratoren dürfen Verbinder ändern." }, 403);
+    }
+    await next();
+  });
+
+  const hub = () => agentHub()!;
+  const fail = (context: { json: (body: unknown, status: number) => Response }, error: unknown) =>
+    context.json({ error: errorText(error) }, error instanceof HubError ? 400 : 500);
+
+  routes.get("/catalog", async (context) => {
+    const servers = await hub().listServers();
+    return context.json({ catalog: publicCatalog(), servers, defaults: DEFAULT_BASE_URLS });
+  });
+
+  routes.get("/servers", async (context) => context.json({ servers: await hub().listServers() }));
+
+  routes.post("/servers", async (context) => {
+    const body = (await context.req.json().catch(() => null)) as { catalogKey?: unknown; values?: unknown; agentId?: unknown; attach?: unknown; id?: unknown } | null;
+    if (typeof body?.catalogKey !== "string") return context.json({ error: "Verbinder fehlt." }, 400);
+    const values: Record<string, string> = {};
+    if (body.values && typeof body.values === "object") {
+      for (const [key, value] of Object.entries(body.values as Record<string, unknown>)) if (typeof value === "string") values[key] = value;
+    }
+    const agentId = typeof body.agentId === "string" && body.agentId.trim() ? body.agentId.trim() : undefined;
+    try {
+      const definition = await hub().addServer({
+        catalogKey: body.catalogKey,
+        values,
+        ...(agentId ? { agentId } : {}),
+        ...(typeof body.id === "string" && body.id ? { id: body.id } : {}),
+      });
+      if (definition.options && typeof definition.options.profile === "string") mkdirSync(definition.options.profile, { recursive: true });
+      if (agentId && body.attach !== false) await setLink(hub().deps.database, agentId, definition.id, true);
+      const server = await hub().connectServer(definition.id);
+      return context.json({ server });
+    } catch (error) {
+      return fail(context, error);
+    }
+  });
+
+  routes.post("/servers/:id/connect", async (context) => {
+    try {
+      const server = await hub().connectServer(context.req.param("id"));
+      return server ? context.json({ server }) : context.json({ error: "Server nicht gefunden." }, 404);
+    } catch (error) {
+      return fail(context, error);
+    }
+  });
+
+  routes.post("/servers/:id/stop", async (context) => {
+    await hub().manager.disconnect(context.req.param("id"));
+    return context.json({ server: await hub().serverView(context.req.param("id")) });
+  });
+
+  routes.delete("/servers/:id", async (context) => {
+    try {
+      await hub().removeServer(context.req.param("id"));
+      return context.json({ ok: true });
+    } catch (error) {
+      return fail(context, error);
+    }
+  });
+
+  routes.get("/agents/:agentId", async (context) => {
+    const agentId = context.req.param("agentId");
+    const model = await hub().modelSettings(agentId);
+    const links = await listLinks(hub().deps.database, agentId);
+    return context.json({
+      agentId,
+      model: model ? { provider: model.provider, model: model.model, baseUrl: model.baseUrl ?? null, hasKey: !!model.credentialId, keyHint: model.keyHint ?? null } : { provider: "default", model: "", baseUrl: null, hasKey: false, keyHint: null },
+      links: links.map((link) => ({ serverId: link.server_id, enabled: link.enabled })),
+      browser: { ...agentBrowserDirs(agentId), serverId: `browser-${safeSegment(agentId).toLowerCase()}` },
+      recent: hub().recentCalls(agentId),
+    });
+  });
+
+  routes.put("/agents/:agentId/mcp/:serverId", async (context) => {
+    const body = (await context.req.json().catch(() => null)) as { enabled?: unknown } | null;
+    const agentId = context.req.param("agentId");
+    const serverId = context.req.param("serverId");
+    const definition = await hub().getDefinition(serverId);
+    if (!definition) return context.json({ error: "Server nicht gefunden." }, 404);
+    if (definition.ownerAgentId && definition.ownerAgentId !== agentId) return context.json({ error: "Dieser Browser gehört einem anderen Agent." }, 400);
+    await setLink(hub().deps.database, agentId, serverId, body?.enabled !== false);
+    return context.json({ ok: true });
+  });
+
+  routes.put("/agents/:agentId/model", async (context) => {
+    const body = (await context.req.json().catch(() => null)) as { provider?: unknown; model?: unknown; baseUrl?: unknown; apiKey?: unknown; clearKey?: unknown } | null;
+    const provider = PROVIDERS.find((candidate) => candidate === body?.provider);
+    if (!provider) return context.json({ error: "Unbekannter Anbieter." }, 400);
+    const model = typeof body?.model === "string" ? body.model : "";
+    if (provider !== "default" && !model.trim()) return context.json({ error: "Bitte einen Modellnamen angeben." }, 400);
+    try {
+      const saved = await hub().saveModelSettings(context.req.param("agentId"), {
+        provider,
+        model,
+        ...(typeof body?.baseUrl === "string" ? { baseUrl: body.baseUrl } : {}),
+        ...(typeof body?.apiKey === "string" ? { apiKey: body.apiKey } : {}),
+        clearKey: body?.clearKey === true,
+      });
+      return context.json({ model: { provider: saved.provider, model: saved.model, baseUrl: saved.baseUrl ?? null, hasKey: !!saved.credentialId, keyHint: saved.keyHint ?? null } });
+    } catch (error) {
+      return fail(context, error);
+    }
+  });
+
+  /** One tiny completion through the agent's own model, so a wrong key or name shows up here. */
+  routes.post("/agents/:agentId/model/test", async (context) => {
+    const agentId = context.req.param("agentId");
+    const settings = await hub().modelSettings(agentId);
+    if (!settings) return context.json({ ok: true, text: "Standardmodell von Connect (globale Einstellung)." });
+    const started = Date.now();
+    try {
+      let key: string | null = settings.credentialId ? await hub().readSecret(settings.credentialId) : null;
+      if (settings.provider === "anthropic") {
+        key ??= process.env.ANTHROPIC_API_KEY ?? null;
+        const response = await fetch(`${settings.baseUrl || "https://api.anthropic.com/v1"}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": key ?? "", "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: settings.model, max_tokens: 20, messages: [{ role: "user", content: "Antworte nur mit: OK" }] }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        const json = (await response.json().catch(() => null)) as { content?: { text?: string }[]; error?: { message?: string } } | null;
+        if (!response.ok) return context.json({ ok: false, error: json?.error?.message ?? `HTTP ${response.status}` });
+        return context.json({ ok: true, text: json?.content?.[0]?.text ?? "", ms: Date.now() - started });
+      }
+      if (settings.provider === "openai") key ??= process.env.OPENAI_API_KEY ?? null;
+      const base = settings.baseUrl || DEFAULT_BASE_URLS[settings.provider] || "";
+      const response = await fetch(`${base}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key || "ollama"}` },
+        body: JSON.stringify({ model: settings.model, max_tokens: 400, messages: [{ role: "user", content: "Antworte nur mit dem Wort OK." }] }),
+        signal: AbortSignal.timeout(180_000),
+      });
+      const json = (await response.json().catch(() => null)) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } | string } | null;
+      if (!response.ok) {
+        const message = typeof json?.error === "string" ? json.error : json?.error?.message;
+        return context.json({ ok: false, error: message ?? `HTTP ${response.status}` });
+      }
+      const text = (json?.choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+      return context.json({ ok: true, text: text.slice(0, 200), ms: Date.now() - started });
+    } catch (error) {
+      return context.json({ ok: false, error: errorText(error) });
+    }
+  });
+
+  routes.get("/ollama/models", async (context) => {
+    try {
+      const response = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(4_000) });
+      const json = (await response.json()) as { models?: { name: string; size?: number; details?: { parameter_size?: string } }[] };
+      return context.json({ running: true, models: (json.models ?? []).map((model) => ({ name: model.name, size: model.size ?? 0, parameters: model.details?.parameter_size ?? null })) });
+    } catch {
+      return context.json({ running: false, models: [] });
+    }
+  });
+
+  /** The agent's own browser: Playwright MCP + normal Helium + its own profile folder. */
+  routes.put("/agents/:agentId/browser", async (context) => {
+    const body = (await context.req.json().catch(() => null)) as { enabled?: unknown; headless?: unknown } | null;
+    const agentId = context.req.param("agentId");
+    try {
+      const definition = await hub().addServer({ catalogKey: "browser", values: { headless: body?.headless === false ? "false" : "true" }, agentId });
+      if (typeof definition.options?.profile === "string") mkdirSync(definition.options.profile, { recursive: true });
+      await setLink(hub().deps.database, agentId, definition.id, body?.enabled !== false);
+      const server = body?.enabled === false ? await hub().serverView(definition.id) : await hub().connectServer(definition.id);
+      return context.json({ server });
+    } catch (error) {
+      return fail(context, error);
+    }
+  });
+
+  routes.post("/agents/:agentId/browser/test", async (context) => {
+    const agentId = context.req.param("agentId");
+    const servers = await hub().listServers();
+    const server = servers.find((candidate) => candidate.catalogKey === "browser" && candidate.ownerAgentId === agentId);
+    if (!server) return context.json({ ok: false, error: "Für diesen Agent ist noch kein Browser eingerichtet." });
+    const text = await hub().callTool(agentId, server.id, "browser_navigate", { url: "https://example.com" });
+    return context.json({ ok: /Example Domain/i.test(text), text: text.slice(0, 600) });
+  });
+
+  return routes;
+}

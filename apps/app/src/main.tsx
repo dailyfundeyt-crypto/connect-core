@@ -25,6 +25,11 @@ void import("@/lib/companies/workspace-sync").then((m) => {
   void m.hydrateConnectWorkspace();
 });
 
+// API keys live encrypted on the server; localStorage is only the mirror (+ one-time migration).
+void import("@/lib/agents/key-vault-sync").then((m) => {
+  m.startKeyVaultSync();
+});
+
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/sw.js").catch(() => {

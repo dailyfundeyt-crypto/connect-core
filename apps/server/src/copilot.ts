@@ -36,6 +36,10 @@ import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
+import { createLocalCopilotHandler } from "./chat-store/routes";
+import type { PostgresAgentRunner } from "./chat-store/runner";
+import { localThreadLocks } from "./chat-store/local-intelligence";
+import type { ChatStore } from "./chat-store/store";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -321,6 +325,16 @@ export function standingInstructionsGuidance(
   ].join("\n\n");
 }
 
+/**
+ * Per-agent model (Agent Hub). index.ts installs the resolver once; without it every built-in Bot
+ * runs on the deployment model exactly as before.
+ */
+export type AgentModelOverride = { model?: unknown; apiKey?: string | null; error?: string; label?: string };
+let agentModelResolver: ((agentId: string) => Promise<AgentModelOverride | null>) | undefined;
+export function setAgentModelResolver(resolver: (agentId: string) => Promise<AgentModelOverride | null>) {
+  agentModelResolver = resolver;
+}
+
 export function builtInAgentConfiguration(
   agent: RegisteredBuiltInAgent,
   model: RuntimeModel,
@@ -356,8 +370,21 @@ export function builtInAgentConfiguration(
    */
   standingInstructions?: string | null,
   planModel?: PlanModel,
+  /** Per-agent model from the Agent Hub (Agent → Einstellungen → Modell). Absent = deployment model. */
+  modelOverride?: AgentModelOverride | null,
 ): BuiltInAgentConfiguration {
-  if (!apiKey && !planModel) {
+  if (modelOverride?.error && !planModel) {
+    const message = modelOverride.error;
+    return {
+      type: "custom",
+      // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
+      factory: async function* () {
+        throw new Error(message);
+      },
+    };
+  }
+  const override = !planModel && modelOverride?.model ? modelOverride : null;
+  if (!apiKey && !planModel && !override) {
     return {
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
@@ -372,7 +399,7 @@ export function builtInAgentConfiguration(
   const standing = standingInstructionsGuidance(standingInstructions);
 
   return {
-    model: planModel ?? `${model.provider}/${model.defaultModel}`,
+    model: planModel ?? (override ? (override.model as never) : `${model.provider}/${model.defaultModel}`),
     /*
      * The package's role, then the person's own standing instructions, then what this Bot actually
      * holds, then the computer.
@@ -406,7 +433,7 @@ export function builtInAgentConfiguration(
         : []),
       ...(computerGuidance ? [computerGuidance] : []),
     ].join("\n\n"),
-    ...(planModel ? {} : { apiKey: apiKey ?? undefined }),
+    ...(planModel ? {} : { apiKey: (override ? override.apiKey : apiKey) ?? undefined }),
     /*
      * A run stops after one step unless told otherwise, which for a Bot with tools means it calls
      * one and never speaks: the tool executes, the result arrives, and the run ends before the model
@@ -917,6 +944,12 @@ async function buildAgent(
    * the message is known. The guidance it is given is generated from the tools passed here, which is
    * what keeps a narrowed run from being told it holds something it was not offered.
    */
+  const modelOverride = agentModelResolver
+    ? await agentModelResolver(agent.id).catch((error: unknown) => {
+        console.error(`[agent-hub] model for ${agent.id}:`, error);
+        return null;
+      })
+    : null;
   const withTools = (
     tools: GrantedTool[],
     input?: RunAgentInput,
@@ -931,7 +964,7 @@ async function buildAgent(
         computerGuidance,
         connectedVendors,
         standingInstructions,
-        model.plan && input
+        !modelOverride && model.plan && input
           ? new PlanModel(
               model.plan,
               agent.id,
@@ -940,6 +973,7 @@ async function buildAgent(
               signal,
             )
           : undefined,
+        modelOverride,
       ),
       loadAttachment,
       markAttachmentsSent,
@@ -2077,8 +2111,17 @@ export function mountCopilotRuntime(
    * write is scoped to rows that person uploaded. Appended last. Absent means nothing is recorded.
    */
   markAttachmentsSentForActor?: (actorId: string) => MarkAttachmentsSent,
+  /**
+   * Where conversations live when there is no CopilotKit Intelligence (`config.runtime.mode` is
+   * "local"): Connect's own Postgres tables and the runner over them. Required in that mode.
+   */
+  localChatStore?: { store: ChatStore; runner: PostgresAgentRunner } | null,
 ) {
   const { intelligence } = config.runtime;
+  const local = config.runtime.mode === "local" ? (localChatStore ?? null) : null;
+  if (config.runtime.mode === "local" && !local) {
+    throw new Error("The local chat store is required when CopilotKit Intelligence is not configured.");
+  }
 
   /**
    * The same Bot a person's run would get, built without a request.
@@ -2132,25 +2175,36 @@ export function mountCopilotRuntime(
    * One client, used by the runtime and by anything reading a thread beside it, so a hop reads the
    * history a person's run would read rather than a second view of it that could disagree.
    */
-  const intelligenceClient = observeIntelligenceAuthentication(
-    new IntelligenceKnowingANewThread({
-      apiUrl: intelligence.apiUrl,
-      wsUrl: intelligence.gatewayWsUrl,
-      apiKey: intelligence.apiKey,
-    }),
-  );
+  const makeIntelligenceClient = () =>
+    observeIntelligenceAuthentication(
+      new IntelligenceKnowingANewThread({
+        apiUrl: intelligence.apiUrl,
+        wsUrl: intelligence.gatewayWsUrl,
+        apiKey: intelligence.apiKey,
+      }),
+    );
+  // Never built in local mode; that branch returns before anything below reads it.
+  const intelligenceClient = (local ? null : makeIntelligenceClient()) as ReturnType<typeof makeIntelligenceClient>;
 
   const runtime = new CopilotRuntime({
+    /*
+     * LOCAL MODE: no Intelligence, so the runtime runs over SSE with Connect's Postgres-backed
+     * runner. Threads are scoped per person by the routes in front of it (chat-store/routes.ts).
+     */
+    ...(local
+      ? { runner: local.runner }
+      : {
+          identifyUser,
+          // The subclass, not the base: a thread nobody has run yet reads as empty, not a 500.
+          intelligence: intelligenceClient,
+          licenseToken: intelligence.licenseToken,
+        }),
     // `mode` is inferred from the presence of `intelligence`; passing it is a type error.
     //
     // identifyUser is NOT optional in practice. Threads and memory are scoped to the user it
     // returns, so omitting it puts every person in the deployment in the same thread space and one
-    // person's conversations become another's.
-    identifyUser,
-    // The subclass, not the base: a thread nobody has run yet reads as empty rather than as a 500.
-    // See IntelligenceKnowingANewThread.
-    intelligence: intelligenceClient,
-    licenseToken: intelligence.licenseToken,
+    // person's conversations become another's. Given in the Intelligence branch above, with the
+    // subclass IntelligenceKnowingANewThread so a thread nobody has run yet reads as empty.
     // Carried on the events the runtime already sends, so Connect's traffic is separable from any
     // other deployment's. Adds no events of its own.
     telemetryProperties: {
@@ -2202,10 +2256,22 @@ export function mountCopilotRuntime(
       loadAttachmentForActor,
       markAttachmentsSentForActor,
     ) as never,
-  });
+  } as never);
+
+  if (local) {
+    return mountLocalRuntimeParts({
+      handler: createLocalCopilotHandler(createCopilotHonoHandler({ runtime, basePath }), local.store, identifyUser, basePath),
+      store: local.store,
+      runner: local.runner,
+      agentFor,
+      onRunBusy,
+    });
+  }
 
   return {
     handler: createCopilotHonoHandler({ runtime, basePath }),
+    /** Local mode only (see mountLocalRuntimeParts); hops here go through the platform runner. */
+    localRunner: undefined as PostgresAgentRunner | undefined,
     /**
      * How to reach the platform's runner, exactly as the runtime reaches it.
      *
@@ -2313,6 +2379,57 @@ export function mountCopilotRuntime(
         { messages: [] } as Read,
       );
       return read.messages;
+    },
+  };
+}
+
+/**
+ * The pieces `mountCopilotRuntime` hands back, for local mode (no CopilotKit Intelligence).
+ *
+ * Same shape as the Intelligence branch so index.ts does not care which one it got:
+ *   - threadLock: one run per conversation, held in this process (there is only one process);
+ *   - history: the conversation as Postgres holds it;
+ *   - localRunner: the runtime's own runner, which hops (and routines, see index.ts) run through;
+ *   - runnerConnection: there is no platform runner to reach; asking for it says so instead of
+ *     dialling nowhere.
+ */
+function mountLocalRuntimeParts<Handler, AgentFor>(input: {
+  handler: Handler;
+  store: ChatStore;
+  runner: PostgresAgentRunner;
+  agentFor: AgentFor;
+  onRunBusy?: (input: { threadId: string; busy: boolean }) => void;
+}) {
+  const held = localThreadLocks;
+  return {
+    handler: input.handler,
+    /** The runtime's own runner, for hops: they run in this process exactly like a person's turn. */
+    localRunner: input.runner as PostgresAgentRunner | undefined,
+    runnerConnection: (): { url: string; authToken: string } => {
+      throw new Error("Bot hand-offs need CopilotKit Intelligence; this App stores chats locally.");
+    },
+    threadLock: {
+      acquire: async (lock: { threadId: string; runId: string; userId: string; agentId: string }) => {
+        if (held.has(lock.threadId)) return null;
+        held.set(lock.threadId, lock.runId);
+        try {
+          input.onRunBusy?.({ threadId: lock.threadId, busy: true });
+        } catch {}
+        return { runId: lock.runId };
+      },
+      renew: async (_lock: { threadId: string; runId: string }) => {},
+      release: async (lock: { threadId: string; runId: string }) => {
+        if (held.get(lock.threadId) === lock.runId) held.delete(lock.threadId);
+        try {
+          input.onRunBusy?.({ threadId: lock.threadId, busy: false });
+        } catch {}
+      },
+    },
+    agentFor: input.agentFor,
+    history: async (read: { threadId: string; actorId: string }) => {
+      const thread = await input.store.thread(read.threadId);
+      if (thread?.userId && thread.userId !== read.actorId) return [];
+      return (await input.store.messages(read.threadId)) as never[];
     },
   };
 }

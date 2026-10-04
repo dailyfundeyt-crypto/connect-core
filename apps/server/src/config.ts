@@ -10,7 +10,13 @@ import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 
 export type RuntimeCapabilities = {
-  mode: "intelligence";
+  /**
+   * `"intelligence"`: CopilotKit Intelligence owns threads (a real project key is configured).
+   * `"local"`: no usable key, so chats are kept in this deployment's own Postgres
+   * (`chat-store/`), which is durable too. The Intelligence settings are still carried so code
+   * that builds a client keeps compiling; nothing in local mode reaches the platform for a chat.
+   */
+  mode: "intelligence" | "local";
   durableHistory: true;
   intelligence: IntelligenceSettings;
 };
@@ -868,7 +874,33 @@ function oktaAuth(
  * for a token the platform had stopped handing out. It is still read and still forwarded when a
  * deployment sets one, which is what a self-hosted Intelligence with its own licence needs.
  */
+/** A key that cannot be a real project key: unset, or one of the local-development placeholders. */
+export function isPlaceholderIntelligenceKey(value: string | undefined): boolean {
+  const key = value?.trim() ?? "";
+  return !key || /placeholder|^ck_local/i.test(key);
+}
+
 function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
+  /*
+   * CONNECT_CHAT_STORE=local|intelligence chooses explicitly; unset (or "auto") means local whenever
+   * the Intelligence key is missing or a placeholder. Local mode needs none of the three values.
+   */
+  const choice = optional(environment, "CONNECT_CHAT_STORE")?.toLowerCase();
+  const local =
+    choice === "local" ||
+    (choice !== "intelligence" && isPlaceholderIntelligenceKey(environment.INTELLIGENCE_API_KEY));
+  if (local) {
+    return {
+      mode: "local",
+      durableHistory: true,
+      intelligence: {
+        apiUrl: optional(environment, "INTELLIGENCE_API_URL") ?? "https://api.cloud.copilotkit.ai",
+        gatewayWsUrl: optional(environment, "INTELLIGENCE_GATEWAY_WS_URL") ?? "wss://api.cloud.copilotkit.ai",
+        apiKey: optional(environment, "INTELLIGENCE_API_KEY") ?? "",
+        licenseToken: optional(environment, "COPILOTKIT_LICENSE_TOKEN"),
+      },
+    };
+  }
   const settings = {
     apiUrl: url(environment, "INTELLIGENCE_API_URL"),
     gatewayWsUrl: url(environment, "INTELLIGENCE_GATEWAY_WS_URL"),

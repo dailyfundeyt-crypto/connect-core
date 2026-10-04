@@ -11,6 +11,11 @@ import {
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
+import { createBrainRoutes } from "./brain/routes";
+import { createDriveBackupRoutes } from "./drive-backup/routes";
+import { DriveBackupService } from "./drive-backup/service";
+import { createVoiceBridgeRoutes } from "./voice/bridge-routes";
+import { createAgentHubRoutes } from "./agent-hub/routes";
 import {
   type AuditEventType,
   type AuditInitiator,
@@ -58,6 +63,8 @@ import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { createIntelligenceClient } from "./intelligence-client";
+import { createLocalThreadReader } from "./chat-store/routes";
+import { chatStore } from "./chat-store/store";
 import { parsePageLimit } from "./paging";
 import type { OnboardingStore } from "./people/onboarding";
 import { MAX_PAGE, type PeopleStore } from "./people/store";
@@ -1189,6 +1196,20 @@ export function createApp(
   }
 
   // Phase B/C: Bot-CLI → Codex API key / plan proxy + usage dashboard.
+  // Settings › Brain: read-only view of the local Brain folder (loopback only, off when serverless).
+  app.route("/api/brain", createBrainRoutes(requireUser));
+
+  // Connect Notch voice calls: spoken turns relayed to the open Connect window, plus same-origin
+  // proxies to the local speech services (whisper-local STT, Kokoro TTS). Loopback only.
+  app.route(
+    "/api/voice-bridge",
+    createVoiceBridgeRoutes({
+      requireUser,
+      ...(channelStore ? { channelStore } : {}),
+    }).app,
+  );
+  app.route("/api/agent-hub", createAgentHubRoutes(requireUser));
+
   app.route(
     "/api/cli-bridge",
     createCliBridgeRoutes(requireUser, {
@@ -1198,6 +1219,39 @@ export function createApp(
         : {}),
     }),
   );
+
+  // Settings › Sicherung: verschluesselte Google-Drive-Sicherung (drive.file), Zeitplan + Wiederherstellen.
+  if (attachmentDatabase && config.keyEncryptionKey) {
+    const driveBackup = new DriveBackupService({
+      database: attachmentDatabase,
+      encryptionKey: config.keyEncryptionKey,
+      ...(config.publicUrl ? { publicUrl: config.publicUrl } : {}),
+      port: config.port,
+      serverless: process.env.CONNECT_SERVERLESS === "1",
+    });
+    const localOrigins = [`http://localhost:${config.port}`, `http://127.0.0.1:${config.port}`];
+    app.route(
+      "/api/drive-backup",
+      createDriveBackupRoutes({
+        service: driveBackup,
+        requireUser,
+        encryptionKey: config.keyEncryptionKey,
+        allowedOrigins: [
+          // First entry = fallback when a callback carries no usable origin: localhost before 127.0.0.1.
+          ...(process.env.CONNECT_DRIVE_BACKUP_APP_URL ? [process.env.CONNECT_DRIVE_BACKUP_APP_URL] : []),
+          ...(process.env.TRUSTED_ORIGINS ?? "")
+            .split(",")
+            .map((o) => o.trim())
+            .sort((x, y) => Number(y.includes("//localhost")) - Number(x.includes("//localhost"))),
+          ...(config.appUrl ? [config.appUrl] : []),
+          ...(config.publicUrl ? [config.publicUrl] : []),
+          ...localOrigins,
+          ...(process.env.OPENBOT_APP_URL ? [process.env.OPENBOT_APP_URL] : []),
+        ],
+      }),
+    );
+    if (process.env.NODE_ENV !== "test") driveBackup.startScheduler();
+  }
 
   if (attachmentDatabase) {
     app.route(
@@ -1494,9 +1548,12 @@ export function createApp(
         // rather than assumed, though: this is the one place besides the runtime mount itself that
         // needs to reach Intelligence, and it should keep working unmodified if that guarantee ever
         // loosens and a deployment can legitimately have no reader to build.
-        createThreadReader(
-          createIntelligenceClient(config.runtime.intelligence),
-        ),
+        // Local mode (no Intelligence key): whether this person has the thread in Postgres.
+        config.runtime.mode === "local" && chatStore()
+          ? createLocalThreadReader(chatStore()!)
+          : createThreadReader(
+              createIntelligenceClient(config.runtime.intelligence),
+            ),
       ),
     );
   }

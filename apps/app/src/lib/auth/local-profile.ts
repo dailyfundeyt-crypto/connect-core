@@ -63,6 +63,9 @@ export async function setLocalProfile(input: {
     let url = input.avatarUrl;
     if (url.startsWith("data:")) {
       url = await persistConnectDataUrl(url, "user-profile-avatar");
+      // Gleiche Media-ID bei jedem Upload, Server cached "immutable" -> Version anhängen,
+      // damit das neue Foto sofort statt des alten aus dem Browser-Cache erscheint.
+      url = `${url}${url.includes("?") ? "&" : "?"}v=${Date.now().toString(36)}`;
     }
     next.avatarUrl = url;
   }

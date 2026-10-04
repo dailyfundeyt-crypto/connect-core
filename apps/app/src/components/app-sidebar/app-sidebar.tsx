@@ -22,6 +22,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { UserAvatar } from "@/components/app-sidebar/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,7 +67,11 @@ import { relativeTime } from "@/lib/relative-time";
 import { NewAgentGroupDialog } from "@/components/agents/new-agent-group-dialog";
 import { CompanyAgentsNav } from "@/components/companies/company-agents-nav";
 import { CompanyAppFoldersNav } from "@/components/companies/company-app-folders-nav";
-import { SidebarCollapseGlyph } from "@/components/companies/company-level-chips";
+import {
+  CompanyLevelChips,
+  SidebarCollapseGlyph,
+} from "@/components/companies/company-level-chips";
+import { CompanySwitcher } from "@/components/companies/company-switcher";
 import { useTheme } from "@/components/theme-provider";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
@@ -91,37 +96,6 @@ function useLocalProfileState() {
   return profile;
 }
 
-function UserAvatar({
-  profile,
-  fallbackEmail,
-}: {
-  profile: LocalProfile;
-  fallbackEmail?: string | null;
-}) {
-  const customName =
-    profile.name.trim() && profile.name !== "Connect User"
-      ? profile.name.trim()
-      : "";
-  const displayName = customName || fallbackEmail || "?";
-  const initials = displayName.includes("@")
-    ? displayName.slice(0, 2).toUpperCase()
-    : displayName
-        .trim()
-        .split(/\s+/)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase() ?? "")
-        .join("") || "?";
-
-  return (
-    <div className="flex size-[28px] items-center justify-center overflow-hidden rounded-full bg-muted-foreground/10 text-xs text-foreground/70">
-      {profile.avatarUrl ? (
-        <img alt="" className="size-full object-cover" src={profile.avatarUrl} />
-      ) : (
-        initials
-      )}
-    </div>
-  );
-}
 
 /**
  * Cap layout animation because `layout` measures every animated row on each reorder.
@@ -353,8 +327,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="gap-2 border-b border-sidebar-border/50 p-2.5 pb-3 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-1.5">
-        {/* Top rail: collapse */}
+        {/* Top rail: Logo (Company-Switcher) · Focus · Messages · Browser · Unternehmen · collapse */}
         <div className="flex w-full shrink-0 items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
+          <CompanySwitcher />
+          <CompanyLevelChips />
           <Button
             aria-label={
               sidebarState === "collapsed"
@@ -537,6 +513,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               >
                 <UserAvatar
                   fallbackEmail={currentUser?.email}
+                  fallbackImage={currentUser?.image}
                   profile={localProfile}
                 />
                 <span className="min-w-0 flex-1 truncate text-sm tracking-tight">
@@ -552,6 +529,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <div className="flex items-center gap-2.5 px-2 py-2">
                   <UserAvatar
                     fallbackEmail={currentUser?.email}
+                  fallbackImage={currentUser?.image}
                     profile={localProfile}
                   />
                   <div className="min-w-0">

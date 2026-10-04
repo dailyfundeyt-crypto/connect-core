@@ -36,7 +36,12 @@ export type AgentBrowserSession = {
   cdpUrl?: string;
   message?: string;
   startedAt?: string;
+  /** When status became "starting" — stale starts (reload mid-request) are retried. */
+  startingAt?: string;
 };
+
+/** A "starting" session older than this is treated as aborted (e.g. page reload / HMR). */
+const STALE_STARTING_MS = 30_000;
 
 const SESSION_KEY = "connect.agent-browser-session";
 const EVENT = "connect-agent-browser-changed";
@@ -93,12 +98,19 @@ export function setAgentBrowserMode(
 }
 
 export function getAgentBrowserSession(agentId: string): AgentBrowserSession {
-  return (
-    readSessions()[agentId] ?? {
-      mode: getAgentBrowserMode(agentId),
-      status: "idle",
+  const stored = readSessions()[agentId];
+  if (!stored) {
+    return { mode: getAgentBrowserMode(agentId), status: "idle" };
+  }
+  if (stored.status === "starting") {
+    const since = stored.startingAt ? Date.parse(stored.startingAt) : Number.NaN;
+    if (!Number.isFinite(since) || Date.now() - since > STALE_STARTING_MS) {
+      // Start request never finished (reload while starting) — allow a new start
+      // instead of spinning on "startet…" forever.
+      return { ...stored, status: "idle", message: undefined, startingAt: undefined };
     }
-  );
+  }
+  return stored;
 }
 
 function patchSession(
@@ -160,6 +172,7 @@ export async function ensureAgentBrowserStarted(
     mode,
     anchorTarget,
     status: "starting",
+    startingAt: new Date().toISOString(),
     message: startingMsg,
     liveViewUrl: undefined,
     cdpUrl: undefined,
@@ -267,6 +280,8 @@ export async function ensureAgentBrowserStarted(
       const res = await fetch("/api/connect/open-chrome", {
         method: "POST",
         credentials: "include",
+        // Never leave the card on "startet…" if the server/launcher hangs.
+        signal: AbortSignal.timeout(20_000),
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           url: openUrl,

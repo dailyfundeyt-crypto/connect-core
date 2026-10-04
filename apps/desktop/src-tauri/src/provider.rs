@@ -1,4 +1,4 @@
-//! The model provider screen's list, as data.
+﻿//! The model provider screen's list, as data.
 //!
 //! Two providers are first-class and everything else is one row. That is not a shortlist waiting to
 //! be grown: it is the shape, and growing it is how this screen turns into a directory nobody

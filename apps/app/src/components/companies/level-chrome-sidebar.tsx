@@ -11,12 +11,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
+  CompanyLevelChips,
   SidebarCollapseGlyph,
 } from "@/components/companies/company-level-chips";
+import { CompanySwitcher } from "@/components/companies/company-switcher";
 import { CompanyAgentsNav } from "@/components/companies/company-agents-nav";
 import { CompanyAppFoldersNav } from "@/components/companies/company-app-folders-nav";
 import { CometSlideOver } from "@/components/companies/comet-slide-over";
 import { LabIconRail, LabToolsNav } from "@/components/companies/lab-tools-nav";
+import { UserAvatar } from "@/components/app-sidebar/user-avatar";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,7 +66,7 @@ import {
 
 /**
  * Slim chrome for Lab + Unternehmen — tools / company bots.
- * User footer (Settings / Dark mode / Log out / Connect-Chrome) always visible.
+ * User footer: profile menu (Settings / Dark mode / Log out / Connect-Chrome); same avatar as app-sidebar.
  */
 export function LevelChromeSidebar(
   props: React.ComponentProps<typeof Sidebar>,
@@ -144,13 +147,17 @@ export function LevelChromeSidebar(
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="gap-0 border-b border-sidebar-border/50 px-1.5 pt-2 pb-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:pt-1.5">
+        {/* Top rail: Logo (Company-Switcher) · Focus · Messages · Browser · Unternehmen · collapse */}
+        <div className="flex w-full shrink-0 items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
+        <CompanySwitcher />
+        <CompanyLevelChips />
         <Button
           aria-label={
             sidebarState === "collapsed"
               ? "Sidebar ausklappen"
               : "Sidebar verkleinern"
           }
-          className="ml-auto flex size-8 shrink-0 rounded-lg p-0 text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className="ml-auto flex size-8 shrink-0 rounded-lg p-0 group-data-[collapsible=icon]:ml-0 text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground"
           onClick={toggleSidebar}
           size="icon"
           title="Icon-Leiste (⌘B)"
@@ -159,6 +166,7 @@ export function LevelChromeSidebar(
         >
           <SidebarCollapseGlyph expanded={sidebarState === "expanded"} />
         </Button>
+        </div>
       </SidebarHeader>
       <SidebarContent className="scroll-fade-b px-1.5 pt-2 group-data-[collapsible=icon]:overflow-y-auto group-data-[collapsible=icon]:overflow-x-hidden group-data-[collapsible=icon]:px-1.5">
         {level === 3 && companyId ? (
@@ -215,41 +223,6 @@ export function LevelChromeSidebar(
       <SidebarFooter className="border-t border-sidebar-border/60 bg-gradient-to-b from-sidebar-accent/30 to-sidebar-accent/55 p-2 group-data-[collapsible=icon]:px-1">
         <SidebarMenu>
           <SidebarMenuItem>
-            <div className="mb-1.5 flex w-full items-center justify-between gap-1 group-data-[collapsible=icon]:hidden">
-              <button
-                aria-label={dark ? "Light mode aktivieren" : "Dark mode aktivieren"}
-                className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-[11.5px] font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                onClick={() => setDark(!dark)}
-                title={dark ? "Light mode" : "Dark mode"}
-                type="button"
-              >
-                {dark ? (
-                  <IconSun className="size-3.5" stroke={1.75} />
-                ) : (
-                  <IconMoon className="size-3.5" stroke={1.75} />
-                )}
-                {dark ? "Light" : "Dark"}
-              </button>
-              <button
-                aria-label="Einstellungen öffnen"
-                className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-[11.5px] font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                onClick={async () => {
-                  const { isDesktopApp, navigateDesktopBrowser } = await import(
-                    "@/lib/desktop-bridge"
-                  );
-                  if (isDesktopApp()) {
-                    navigateDesktopBrowser("http://localhost:3010/settings");
-                  } else {
-                    void navigate({ to: "/settings" });
-                  }
-                }}
-                title="Einstellungen"
-                type="button"
-              >
-                <IconSettings className="size-3.5" stroke={1.75} />
-                Settings
-              </button>
-            </div>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -257,17 +230,12 @@ export function LevelChromeSidebar(
                 }
               >
                 <span className="relative shrink-0">
-                  <div className="flex size-[28px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted-foreground/10 text-xs ring-1 ring-sidebar-border/70">
-                    {profile.avatarUrl ? (
-                      <img
-                        alt=""
-                        className="size-full object-cover"
-                        src={profile.avatarUrl}
-                      />
-                    ) : (
-                      displayName.slice(0, 2).toUpperCase()
-                    )}
-                  </div>
+                  <UserAvatar
+                    className="size-[28px] ring-1 ring-sidebar-border/70"
+                    fallbackEmail={displayName}
+                    fallbackImage={currentUser?.image}
+                    profile={profile}
+                  />
                   <span
                     aria-hidden
                     className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_2px_var(--sidebar)]"
@@ -293,17 +261,12 @@ export function LevelChromeSidebar(
                 sideOffset={8}
               >
                 <div className="flex items-center gap-2.5 px-2 py-2">
-                  <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted-foreground/10 text-xs">
-                    {profile.avatarUrl ? (
-                      <img
-                        alt=""
-                        className="size-full object-cover"
-                        src={profile.avatarUrl}
-                      />
-                    ) : (
-                      displayName.slice(0, 2).toUpperCase()
-                    )}
-                  </div>
+                  <UserAvatar
+                    className="size-8"
+                    fallbackEmail={displayName}
+                    fallbackImage={currentUser?.image}
+                    profile={profile}
+                  />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{displayName}</p>
                     {currentUser?.email ? (

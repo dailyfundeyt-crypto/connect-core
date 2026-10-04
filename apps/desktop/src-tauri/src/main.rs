@@ -1,4 +1,4 @@
-// A window, not a console. Release builds on Windows must not open one behind the app.
+﻿// A window, not a console. Release builds on Windows must not open one behind the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
@@ -12,13 +12,13 @@ mod desktop_telemetry;
 #[cfg(test)]
 mod test_support;
 
-use openbot_desktop_lib::{
-    acquire, deployment, deployment_release, engine, env as openbot_env, harness, host_access,
+use connect_desktop_lib::{
+    acquire, deployment, deployment_release, engine, env as Connect_env, harness, host_access,
     install, preparation, problem::Problem, provider, pull_metrics, quiet, stack, supervise,
     telemetry, tray, windows as win,
 };
 
-const QUIT_CLEANUP_NOTICE_FILE: &str = ".openbot-quit-cleanup-notice";
+const QUIT_CLEANUP_NOTICE_FILE: &str = ".Connect-quit-cleanup-notice";
 const QUIT_MENU_ACCELERATOR: &str = "CmdOrCtrl+KeyQ";
 const QUIT_CLEANUP_NOTICE_LIMIT: usize = 16 * 1024;
 use serde::{Deserialize, Serialize};
@@ -55,7 +55,7 @@ struct Shell {
     /// Going back to the setup screen is a navigation, and a navigation is a fresh page: React
     /// remounts with no progress and the sentence explaining what happened is lost at the one
     /// moment it is worth reading. Held here instead, and asked for on load.
-    last_failure: Mutex<Option<openbot_desktop_lib::problem::Problem>>,
+    last_failure: Mutex<Option<connect_desktop_lib::problem::Problem>>,
     /// Reading the notification must not make a partially running deployment adoptable again.
     recovery_required: Mutex<Option<RecoveryRequired>>,
     selected_root: Mutex<Option<PathBuf>>,
@@ -66,20 +66,20 @@ struct Shell {
     stopped_container_root: Mutex<Option<PathBuf>>,
     /// An Intelligence sign-in waiting for its loopback callback.
     signing_in_to_intelligence:
-        Mutex<Option<openbot_desktop_lib::intelligence::SigningInToIntelligence>>,
+        Mutex<Option<connect_desktop_lib::intelligence::SigningInToIntelligence>>,
     /// The credential that sign-in produced, held so a project can be chosen with it.
     intelligence_credential: Mutex<Option<String>>,
     /// A ChatGPT sign-in waiting for the browser redirect to complete it.
     ///
     /// Held for the same reason the Claude one is: a person leaves and comes back in the middle.
-    /// Unlike that one, nothing is typed here — the callback finishes it.
-    signing_in_to_chatgpt: Mutex<Option<openbot_desktop_lib::plan::SigningInToChatGpt>>,
+    /// Unlike that one, nothing is typed here â€” the callback finishes it.
+    signing_in_to_chatgpt: Mutex<Option<connect_desktop_lib::plan::SigningInToChatGpt>>,
     /// A plan sign-in waiting for the code from the browser.
     ///
     /// Held across two commands because a person has to leave and approve in the middle of it, and
     /// the flow that showed the URL is the only one that can redeem the code: each start mints its
     /// own PKCE challenge and state, so a second start invalidates the first.
-    signing_in: Mutex<Option<openbot_desktop_lib::plan::SigningIn>>,
+    signing_in: Mutex<Option<connect_desktop_lib::plan::SigningIn>>,
     /// The configured setup destination, resolved using Tauri's build mode and platform.
     /// WebView2's current URL can still be about:blank during startup; it is never a setup source.
     setup_url: Mutex<Option<String>>,
@@ -88,7 +88,7 @@ struct Shell {
     connect_product: std::sync::atomic::AtomicBool,
     connect_attach_started: std::sync::atomic::AtomicBool,
     connect_service_spawned: std::sync::atomic::AtomicBool,
-    connect_status: Mutex<openbot_desktop_lib::connect_window::Status>,
+    connect_status: Mutex<connect_desktop_lib::connect_window::Status>,
 }
 
 /// The deployment whose Compose up may have created containers, including a partial failure.
@@ -103,7 +103,7 @@ struct ContainerDeployment {
 struct RecoveryRequired {
     root: PathBuf,
     generation: u64,
-    connection: Option<openbot_desktop_lib::problem::Connection>,
+    connection: Option<connect_desktop_lib::problem::Connection>,
 }
 
 /// Callers serialize eligibility and any navigation with `startup`. A failed Start may advance
@@ -153,7 +153,7 @@ impl<'a> StartAttempt<'a> {
     fn begin(shell: &'a Shell) -> Result<Self, Problem> {
         use std::sync::atomic::Ordering::SeqCst;
         shell.starting.compare_exchange(false, true, SeqCst, SeqCst).map_err(|_| {
-            Problem::plain("OpenBot is already starting or finishing a cancelled startup. Wait for it to finish, then try again.")
+            Problem::plain("Connect is already starting or finishing a cancelled startup. Wait for it to finish, then try again.")
         })?;
         Ok(Self {
             shell,
@@ -181,7 +181,7 @@ impl<'a> StartAttempt<'a> {
     }
 
     fn cancelled() -> Problem {
-        Problem::plain("OpenBot startup was cancelled by Stop. Start again when you are ready.")
+        Problem::plain("Connect startup was cancelled by Stop. Start again when you are ready.")
     }
 }
 
@@ -221,7 +221,7 @@ struct SavedConfiguration {
     intelligence_api_key: Option<bool>,
     model_api_keys: SavedModelApiKeys,
     model_sessions: SavedModelSessions,
-    model: Option<openbot_desktop_lib::saved_intent::ModelIntent>,
+    model: Option<connect_desktop_lib::saved_intent::ModelIntent>,
 }
 
 #[derive(Serialize)]
@@ -267,9 +267,9 @@ fn ready_responding_engine_after_compose_repair(
     let Some(address) = ready.address.clone().filter(|_| ready.responding) else {
         return Err(Problem::with(
             if install_missing_native {
-                "OpenBot installed the container software, but the engine is not answering. Try again."
+                "Connect installed the container software, but the engine is not answering. Try again."
             } else {
-                "OpenBot installed Compose, but the container engine is not answering. Try again."
+                "Connect installed Compose, but the container engine is not answering. Try again."
             },
             ready.detail,
         ));
@@ -409,7 +409,7 @@ async fn prepare_installation(
             let _startup = attempt.lock_current()?;
             if shell.containers.lock().unwrap().is_some() || shell.root.lock().unwrap().is_some() {
                 return Err(Problem::plain(
-                    "Stop OpenBot before changing its local installation.",
+                    "Stop Connect before changing its local installation.",
                 ));
             }
             remember_selected_root(&shell, &root);
@@ -461,8 +461,8 @@ async fn prepare_installation(
             .is_some();
         let mut images = stack::installation_images(&address, &root, installed, &settings)?;
         for published in [
-            openbot_desktop_lib::plan::SIGN_IN_IMAGE,
-            openbot_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE,
+            connect_desktop_lib::plan::SIGN_IN_IMAGE,
+            connect_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE,
         ] {
             images.push(deployment::reference(&root, published)?);
         }
@@ -532,7 +532,7 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
     .await
     .map_err(|error| {
         Problem::with(
-            "OpenBot could not check the software it runs on. Try again.",
+            "Connect could not check the software it runs on. Try again.",
             format!("the engine check did not run: {error}"),
         )
     })?;
@@ -553,7 +553,7 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
                 .await
                 .map_err(|error| {
                     Problem::with(
-                        "OpenBot could not start its container service.",
+                        "Connect could not start its container service.",
                         error.to_string(),
                     )
                 })??;
@@ -578,7 +578,7 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
         app,
         "install-engine",
         true,
-        "Looking for the software OpenBot runs on.",
+        "Looking for the software Connect runs on.",
     );
     let telemetry_app = app.clone();
     let installed = tauri::async_runtime::spawn_blocking(move || {
@@ -599,7 +599,7 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
     .await
     .map_err(|error| {
         Problem::with(
-            "OpenBot could not install the software it needs. Try again.",
+            "Connect could not install the software it needs. Try again.",
             format!("the install task did not run: {error}"),
         )
     })?;
@@ -642,7 +642,7 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
         .filter(|_| ready.responding)
         .ok_or_else(|| {
             Problem::with(
-                "OpenBot set up the software it runs on, but it is still not answering. Try again.",
+                "Connect set up the software it runs on, but it is still not answering. Try again.",
                 ready.detail,
             )
         })
@@ -653,7 +653,7 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
 fn ensure_linux_podman_api(shell: &Shell, address: &engine::Address) -> Result<(), Problem> {
     if !matches!(*shell.quit.phase.lock().unwrap(), QuitPhase::Idle) {
         return Err(Problem::plain(
-            "OpenBot is quitting. Start it again to continue.",
+            "Connect is quitting. Start it again to continue.",
         ));
     }
     shell
@@ -689,7 +689,7 @@ async fn deployment_ready<R: tauri::Runtime>(
     .map_err(|error| {
         report(app, "deployment", false, error.clone());
         Problem::with(
-            "OpenBot could not download what it needs to run. Check the internet \
+            "Connect could not download what it needs to run. Check the internet \
              connection and try again.",
             error,
         )
@@ -726,8 +726,8 @@ fn sign_in_reference(
 ) -> Result<String, Problem> {
     reference(root, published).map_err(|error| {
         Problem::with(
-            "This version of OpenBot cannot sign in to that plan. Use an API key instead, or \
-             update OpenBot.",
+            "This version of Connect cannot sign in to that plan. Use an API key instead, or \
+             update Connect.",
             error,
         )
     })
@@ -754,7 +754,7 @@ struct ChosenModel {
 }
 
 impl ChosenModel {
-    fn into_credential(self, root: &Path) -> Result<openbot_env::ModelCredential, Problem> {
+    fn into_credential(self, root: &Path) -> Result<Connect_env::ModelCredential, Problem> {
         self.into_credential_with(root, saved_secret)
     }
 
@@ -762,7 +762,7 @@ impl ChosenModel {
         self,
         root: &Path,
         mut saved_secret: impl FnMut(&Path, &str) -> Result<String, Problem>,
-    ) -> Result<openbot_env::ModelCredential, Problem> {
+    ) -> Result<Connect_env::ModelCredential, Problem> {
         let given = |value: Option<String>| value.unwrap_or_default().trim().to_string();
         let saved = self.saved.unwrap_or(false);
         match (self.provider.as_str(), self.login.as_str()) {
@@ -775,7 +775,7 @@ impl ChosenModel {
                 if saved && api_key.is_empty() {
                     return Err("That saved OpenAI API key is no longer available.".into());
                 }
-                Ok(openbot_env::ModelCredential::OpenAi { api_key })
+                Ok(Connect_env::ModelCredential::OpenAi { api_key })
             }
             ("anthropic", "api-key") => {
                 let api_key = if saved {
@@ -786,7 +786,7 @@ impl ChosenModel {
                 if saved && api_key.is_empty() {
                     return Err("That saved Anthropic API key is no longer available.".into());
                 }
-                Ok(openbot_env::ModelCredential::Anthropic { api_key })
+                Ok(Connect_env::ModelCredential::Anthropic { api_key })
             }
             ("anthropic", "plan") => {
                 let token = if saved {
@@ -799,7 +799,7 @@ impl ChosenModel {
                     // comes up and a Bot that cannot answer, which reads as a broken product.
                     return Err("That Claude plan was not signed in to.".into());
                 }
-                Ok(openbot_env::ModelCredential::ClaudePlan { token })
+                Ok(Connect_env::ModelCredential::ClaudePlan { token })
             }
             /*
              * The sign-in hands back the vendor's whole token store, not one token, and it travels
@@ -808,11 +808,11 @@ impl ChosenModel {
              */
             ("openai", "plan") => {
                 let store = if saved {
-                    openbot_env::read_plan_store(root)
+                    Connect_env::read_plan_store(root)
                         .map_err(|error| {
                             Problem::with(
-                                "OpenBot could not read the saved ChatGPT sign-in.",
-                                format!("{}: {error}", root.join(openbot_env::CHATGPT_STORE_FILE).display()),
+                                "Connect could not read the saved ChatGPT sign-in.",
+                                format!("{}: {error}", root.join(Connect_env::CHATGPT_STORE_FILE).display()),
                             )
                         })?
                         .unwrap_or_default()
@@ -822,7 +822,7 @@ impl ChosenModel {
                 if store.is_empty() {
                     return Err("That ChatGPT plan was not signed in to.".into());
                 }
-                Ok(openbot_env::ModelCredential::ChatGptPlan { store })
+                Ok(Connect_env::ModelCredential::ChatGptPlan { store })
             }
             ("openai-compatible", "endpoint") => {
                 let base_url = given(self.base_url);
@@ -847,7 +847,7 @@ impl ChosenModel {
                     return Err("Enter the model name your endpoint serves.".into());
                 }
                 let api_key = if saved {
-                    use openbot_desktop_lib::saved_intent::{
+                    use connect_desktop_lib::saved_intent::{
                         compatible_key_from_record, SavedIntent, COMPATIBLE_CREDENTIAL,
                     };
                     if !SavedIntent::read(root).has_compatible_key_for(&base_url) {
@@ -858,7 +858,7 @@ impl ChosenModel {
                 } else {
                     given(self.api_key)
                 };
-                Ok(openbot_env::ModelCredential::Compatible {
+                Ok(Connect_env::ModelCredential::Compatible {
                     base_url,
                     container_base_url: (!container_base_url.is_empty())
                         .then_some(container_base_url),
@@ -877,10 +877,10 @@ impl ChosenModel {
 fn start_stack_credential(
     root: &Path,
     model: ChosenModel,
-) -> Result<openbot_env::ModelCredential, Problem> {
+) -> Result<Connect_env::ModelCredential, Problem> {
     model
         .into_credential(root)
-        .map_err(|problem| problem.connection(openbot_desktop_lib::problem::Connection::Model))
+        .map_err(|problem| problem.connection(connect_desktop_lib::problem::Connection::Model))
 }
 
 #[cfg(test)]
@@ -888,14 +888,14 @@ fn start_stack_credential_with(
     root: &Path,
     model: ChosenModel,
     saved_secret: impl FnMut(&Path, &str) -> Result<String, Problem>,
-) -> Result<openbot_env::ModelCredential, Problem> {
+) -> Result<Connect_env::ModelCredential, Problem> {
     model
         .into_credential_with(root, saved_secret)
-        .map_err(|problem| problem.connection(openbot_desktop_lib::problem::Connection::Model))
+        .map_err(|problem| problem.connection(connect_desktop_lib::problem::Connection::Model))
 }
 
 fn saved_secret(root: &Path, key: &str) -> Result<String, Problem> {
-    openbot_desktop_lib::vault::already_given_no_ui(root, &root.join(".env"), &[key])
+    connect_desktop_lib::vault::already_given_no_ui(root, &root.join(".env"), &[key])
         .map(|found| found.get(key).cloned().unwrap_or_default())
 }
 
@@ -906,14 +906,14 @@ fn intelligence_key_for_start(
 ) -> Result<String, Problem> {
     let key = if given.trim().is_empty() {
         resolve(root, "INTELLIGENCE_API_KEY").map_err(|problem| {
-            problem.connection(openbot_desktop_lib::problem::Connection::Intelligence)
+            problem.connection(connect_desktop_lib::problem::Connection::Intelligence)
         })?
     } else {
         given
     };
     if key.trim().is_empty() {
         return Err(Problem::plain("That saved CopilotKit connection is no longer available. Sign in again or enter a project key.")
-            .connection(openbot_desktop_lib::problem::Connection::Intelligence));
+            .connection(connect_desktop_lib::problem::Connection::Intelligence));
     }
     Ok(key)
 }
@@ -925,20 +925,20 @@ fn require_existing_encryption_key(
 ) -> Result<(), Problem> {
     if secrets
         .get("KEY_ENCRYPTION_KEY")
-        .is_some_and(|value| openbot_env::usable_encryption_key(value))
+        .is_some_and(|value| Connect_env::usable_encryption_key(value))
     {
         return Ok(());
     }
-    let configured = openbot_desktop_lib::saved_intent::SavedIntent::read(root)
+    let configured = connect_desktop_lib::saved_intent::SavedIntent::read(root)
         .model
         .is_some()
-        || openbot_env::already_set(&root.join(".env"), &["DATABASE_URL"])
+        || Connect_env::already_set(&root.join(".env"), &["DATABASE_URL"])
             .contains_key("DATABASE_URL");
     // A reinstall can remove every root-local marker and secret while Compose keeps its volume.
     // Only a verified fresh database may receive a newly minted encryption key.
     if configured || existing_postgres_volume()? {
         return Err(Problem::plain(
-            "This installation's saved encryption key is missing, invalid, or public. Restore its original private key from backup, or get help preserving its saved data. OpenBot will not replace the key automatically.",
+            "This installation's saved encryption key is missing, invalid, or public. Restore its original private key from backup, or get help preserving its saved data. Connect will not replace the key automatically.",
         ));
     }
     Ok(())
@@ -962,7 +962,7 @@ async fn start_stack<R: tauri::Runtime>(
     organization_auth_url: Option<String>,
     // Both registers on the way out: see `problem.rs`. Anything that still returns a bare string
     // converts to the plain half, so a path without its own sentence reads as it always did.
-) -> Result<(), openbot_desktop_lib::problem::Problem> {
+) -> Result<(), connect_desktop_lib::problem::Problem> {
     let root = stack::root_from(&root);
     start_stack_inner(
         app,
@@ -1000,9 +1000,9 @@ async fn start_stack_inner<R: tauri::Runtime>(
                 && url.password().is_none()
         }) {
             return Err(Problem::plain(
-                "Enter a valid http:// or https:// organization OpenBot URL.",
+                "Enter a valid http:// or https:// organization Connect URL.",
             )
-            .connection(openbot_desktop_lib::problem::Connection::Organization));
+            .connection(connect_desktop_lib::problem::Connection::Organization));
         }
     }
     let shell = app.state::<Shell>();
@@ -1017,7 +1017,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
             .is_some_and(|owned| owned.root != root)
         {
             return Err(Problem::plain(
-                "OpenBot still has services from another installation to stop. Choose Stop OpenBot before starting in a different folder.",
+                "Connect still has services from another installation to stop. Choose Stop Connect before starting in a different folder.",
             ));
         }
         // A rejected concurrent Start must not replace the accepted attempt's selection.
@@ -1045,7 +1045,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
      * independent there. A subscription is not: it buys that vendor's own models through a path
      * that speaks that vendor's subscription auth, and nothing else. Signing in to a Claude plan
      * and keeping the default Bot produced a clean start and a Bot whose log said "Missing
-     * credentials. Please pass an `api_key`" — the person had answered both screens correctly and
+     * credentials. Please pass an `api_key`" â€” the person had answered both screens correctly and
      * had no way to know which answer to change.
      *
      * Nobody is asked to know this, which is the audience rule. The plan re-points the Bot, and
@@ -1054,12 +1054,12 @@ async fn start_stack_inner<R: tauri::Runtime>(
     let requested_harness = harness.clone();
     let harness =
         match &credential {
-            openbot_env::ModelCredential::ClaudePlan { .. } => harness::speaking_for("anthropic")
+            Connect_env::ModelCredential::ClaudePlan { .. } => harness::speaking_for("anthropic")
                 .map(|id| harness::HarnessChoice {
                     id: id.into(),
                     agent_url: None,
                 }),
-            openbot_env::ModelCredential::ChatGptPlan { .. } => harness::speaking_for("openai")
+            Connect_env::ModelCredential::ChatGptPlan { .. } => harness::speaking_for("openai")
                 .map(|id| harness::HarnessChoice {
                     id: id.into(),
                     agent_url: None,
@@ -1068,12 +1068,12 @@ async fn start_stack_inner<R: tauri::Runtime>(
         };
     let picked = harness::picked(harness.as_ref(), &root).map_err(|error| {
         // Two registers, because one of these refusals is about a release and the other is
-        // about a pick. "OpenBot v0.0.8 does not include agent-langgraph-agui" is the
+        // about a pick. "Connect v0.0.8 does not include agent-langgraph-agui" is the
         // evidence, not the sentence: it names a published image, which is not a thing the
         // person chose or can change.
         Problem::with(
-            "This version of OpenBot does not include the Bot you picked. Go back and choose \
-                 another, or update OpenBot.",
+            "This version of Connect does not include the Bot you picked. Go back and choose \
+                 another, or update Connect.",
             error,
         )
     })?;
@@ -1119,26 +1119,26 @@ async fn start_stack_inner<R: tauri::Runtime>(
         }
 
         let api_key = intelligence_key_for_start(&root, api_key, saved_secret)?;
-        let existing_secrets = openbot_desktop_lib::vault::already_given_no_ui(
+        let existing_secrets = connect_desktop_lib::vault::already_given_no_ui(
             &root,
             &root.join(".env"),
-            &openbot_env::MINTED[..],
+            &Connect_env::MINTED[..],
         )?;
         require_existing_encryption_key(&root, &existing_secrets, || {
             stack::postgres_volume_exists(&found, &root, &existing_secrets)
         })?;
 
-        let mut settings = openbot_env::compose(
-            &openbot_env::Intelligence {
+        let mut settings = Connect_env::compose(
+            &Connect_env::Intelligence {
                 api_url,
                 gateway_ws_url,
                 api_key,
             },
-            &openbot_env::Model {
+            &Connect_env::Model {
                 credential: credential.clone(),
             },
             &status,
-            &openbot_env::Ports::default(),
+            &Connect_env::Ports::default(),
             &deployment::image_variables(&root)?,
             picked.as_ref(),
             // What a previous start of this deployment already minted. Without it every Start writes a
@@ -1146,7 +1146,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
             &existing_secrets,
         );
         if let Some(authority) = organization_auth_url {
-            settings.insert("OPENBOT_ORGANIZATION_AUTH_URL".into(), authority);
+            settings.insert("Connect_ORGANIZATION_AUTH_URL".into(), authority);
         }
         /*
          * The credentials come out here and never reach the file.
@@ -1157,7 +1157,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
          * store, and travel from there to the processes that need them as environment, which is where
          * a secret can live without being written down. See `vault` for what each platform gets.
          */
-        let (settings, mut secrets) = openbot_desktop_lib::vault::split(settings);
+        let (settings, mut secrets) = connect_desktop_lib::vault::split(settings);
         /*
          * The credentials, plus any setting this answer dropped.
          *
@@ -1172,7 +1172,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
                 purge.insert(key.into(), String::new());
             }
         }
-        openbot_desktop_lib::saved_intent::persist_configuration(
+        connect_desktop_lib::saved_intent::persist_configuration(
             &root,
             &settings,
             &secrets,
@@ -1192,7 +1192,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
          * The check below covers the host processes, and it runs too late for this: a port already held
          * makes `compose up` fail inside the daemon, and what reaches the person is
          * "Bind for 0.0.0.0:4202 failed: port is already allocated". Every harness has a fixed port of
-         * its own, so this is not a rare case — anything else using it, including a previous run's
+         * its own, so this is not a rare case â€” anything else using it, including a previous run's
          * container, produces that sentence.
          */
         /*
@@ -1258,7 +1258,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
         let reclaimed = cleanup_before_start(&app, &attempt, &root, stack::stop_processes_under)?;
 
         // Before spawning: if these are still held, whatever answers later is not ours.
-        let ports = openbot_env::Ports::default();
+        let ports = Connect_env::Ports::default();
         if reclaimed > 0 {
             // A kill is not instant and the check is. Without this the socket of a process this run
             // just stopped reads as somebody else's, and the refusal names a process that no longer
@@ -1284,7 +1284,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
     use base64::Engine as _;
     let host_token =
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
-    secrets.insert("OPENBOT_DESKTOP_HOST_TOKEN".into(), host_token.clone());
+    secrets.insert("Connect_DESKTOP_HOST_TOKEN".into(), host_token.clone());
 
     let logs_for_wait = logs.clone();
     let generation = start_host_processes(
@@ -1299,8 +1299,8 @@ async fn start_stack_inner<R: tauri::Runtime>(
                 started,
                 &logs_for_wait,
                 &stack::Ready {
-                    api: openbot_env::Ports::default().server,
-                    app: openbot_env::Ports::default().app,
+                    api: Connect_env::Ports::default().server,
+                    app: Connect_env::Ports::default().app,
                 },
                 std::time::Duration::from_secs(180),
             )
@@ -1319,7 +1319,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
         .map(|owned| owned.address.clone())
         .ok_or_else(|| Problem::plain("The local container runtime is unavailable."))?;
     let config = host_access::HostAccessConfig::new(
-        format!("http://127.0.0.1:{}", openbot_env::Ports::default().server),
+        format!("http://127.0.0.1:{}", Connect_env::Ports::default().server),
         host_token,
         address,
         deployment::reference(&root, "agent-computer")?,
@@ -1334,7 +1334,7 @@ async fn start_stack_inner<R: tauri::Runtime>(
     preparation::record_launch(&root, requested_harness.as_ref())?;
     let config = app.path().app_config_dir().map_err(|error| {
         Problem::with(
-            "OpenBot could not remember this installation for next time.",
+            "Connect could not remember this installation for next time.",
             error.to_string(),
         )
     })?;
@@ -1403,7 +1403,7 @@ fn stop_everything_with<C, D>(
     down: D,
 ) -> Result<(), String>
 where
-    C: FnOnce(&Path) -> Result<usize, openbot_desktop_lib::problem::Problem>,
+    C: FnOnce(&Path) -> Result<usize, connect_desktop_lib::problem::Problem>,
     D: FnOnce(&Path) -> Result<(), String>,
 {
     shell
@@ -1462,7 +1462,7 @@ fn down_owned_containers(shell: &Shell, root: &Path) -> Result<(), String> {
         Some(owned) => stack::down(&owned.address, root),
         None if shell.stopped_container_root.lock().unwrap().as_deref() == Some(root) => Ok(()),
         None if root.join("docker-compose.yml").exists() => Err(
-            "OpenBot has no runtime ownership for this installation. Stop its containers using the original engine and context before starting OpenBot again.".into(),
+            "Connect has no runtime ownership for this installation. Stop its containers using the original engine and context before starting Connect again.".into(),
         ),
         None => Ok(()),
     }
@@ -1501,7 +1501,7 @@ fn stop_held_process_handles(
     for (name, child) in children.iter_mut() {
         let failure = |error| {
             Problem::with(
-                "OpenBot could not stop one of its host processes.",
+                "Connect could not stop one of its host processes.",
                 format!("could not finish stopping held {name}: {error}"),
             )
         };
@@ -1596,11 +1596,11 @@ where
     let result = match (host_access_result, result) {
         (Ok(()), result) => result,
         (Err(error), Ok(_)) => Err(Problem::with(
-            "OpenBot could not stop a folder operation.",
+            "Connect could not stop a folder operation.",
             error,
         )),
         (Err(error), Err(problem)) => Err(Problem::with(
-            "OpenBot could not finish stopping its work.",
+            "Connect could not finish stopping its work.",
             format!("{error}\n{}", problem_detail(problem)),
         )),
     };
@@ -1790,7 +1790,7 @@ fn require_no_exited_compose_services(
         report_failure(line.to_string());
     }
     Err(Problem::with(
-        "Part of OpenBot stopped during startup.",
+        "Part of Connect stopped during startup.",
         detail,
     ))
 }
@@ -1800,10 +1800,10 @@ fn cleanup_before_start<R, C>(
     attempt: &StartAttempt<'_>,
     root: &Path,
     cleanup: C,
-) -> Result<usize, openbot_desktop_lib::problem::Problem>
+) -> Result<usize, connect_desktop_lib::problem::Problem>
 where
     R: tauri::Runtime,
-    C: FnOnce(&Path) -> Result<usize, openbot_desktop_lib::problem::Problem>,
+    C: FnOnce(&Path) -> Result<usize, connect_desktop_lib::problem::Problem>,
 {
     attempt.require_current()?;
     // Preflight can fail while the previous run still owns live hosts. Retire that watcher only
@@ -1818,7 +1818,7 @@ where
     })
 }
 
-fn problem_detail(problem: openbot_desktop_lib::problem::Problem) -> String {
+fn problem_detail(problem: connect_desktop_lib::problem::Problem) -> String {
     match problem.detail {
         Some(detail) => format!("{}\n{}", problem.said, detail),
         None => problem.said,
@@ -1852,8 +1852,8 @@ fn known_safe_quit_cleanup_failure(line: &str) -> QuitCleanupFailure {
 
 fn quit_cleanup_failure_summary(failure: QuitCleanupFailure) -> &'static str {
     match failure {
-        QuitCleanupFailure::HostProcesses => "OpenBot could not confirm all app processes stopped.",
-        QuitCleanupFailure::Containers => "OpenBot could not confirm all containers stopped.",
+        QuitCleanupFailure::HostProcesses => "Connect could not confirm all app processes stopped.",
+        QuitCleanupFailure::Containers => "Connect could not confirm all containers stopped.",
     }
 }
 
@@ -1897,7 +1897,7 @@ fn read_quit_cleanup_notice(root: &Path) -> Result<Option<Problem>, Problem> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
             return Err(Problem::with(
-                "OpenBot could not read its previous shutdown notice.",
+                "Connect could not read its previous shutdown notice.",
                 format!("{}: {error}", path.display()),
             ))
         }
@@ -1906,14 +1906,14 @@ fn read_quit_cleanup_notice(root: &Path) -> Result<Option<Problem>, Problem> {
         .metadata()
         .map_err(|error| {
             Problem::with(
-                "OpenBot could not read its previous shutdown notice.",
+                "Connect could not read its previous shutdown notice.",
                 format!("{}: {error}", path.display()),
             )
         })?
         .len();
     if size > QUIT_CLEANUP_NOTICE_LIMIT as u64 {
         return Err(Problem::with(
-            "OpenBot could not read its previous shutdown notice.",
+            "Connect could not read its previous shutdown notice.",
             format!(
                 "{}: shutdown notice exceeded its size limit",
                 path.display()
@@ -1922,13 +1922,13 @@ fn read_quit_cleanup_notice(root: &Path) -> Result<Option<Problem>, Problem> {
     }
     let notice: QuitCleanupNotice = serde_json::from_reader(file).map_err(|error| {
         Problem::with(
-            "OpenBot could not read its previous shutdown notice.",
+            "Connect could not read its previous shutdown notice.",
             format!("{}: {error}", path.display()),
         )
     })?;
     std::fs::remove_file(&path).map_err(|error| {
         Problem::with(
-            "OpenBot could not clear its previous shutdown notice.",
+            "Connect could not clear its previous shutdown notice.",
             format!("{}: {error}", path.display()),
         )
     })?;
@@ -1942,7 +1942,7 @@ fn read_quit_cleanup_notice(root: &Path) -> Result<Option<Problem>, Problem> {
         return Ok(None);
     }
     Ok(Some(Problem::with(
-        "OpenBot had trouble shutting down last time.",
+        "Connect had trouble shutting down last time.",
         detail,
     )))
 }
@@ -1961,7 +1961,7 @@ fn recovery_required_or_pending_quit_notice(shell: &Shell, root: &Path) -> bool 
 
 fn exit_cleanup_with<C, D>(shell: &Shell, fallback_root: &Path, cleanup: C, down: D) -> Vec<String>
 where
-    C: FnOnce(&Path) -> Result<usize, openbot_desktop_lib::problem::Problem>,
+    C: FnOnce(&Path) -> Result<usize, connect_desktop_lib::problem::Problem>,
     D: FnOnce(&Path) -> Result<(), String>,
 {
     shell
@@ -2081,11 +2081,11 @@ where
     Ok(())
 }
 
-/// Show OpenBot itself in this window.
+/// Show Connect itself in this window.
 ///
 /// The point of a desktop application is that it is the application. A window that sets things up
 /// and then sends somebody to a browser tab is a launcher, and nobody wanted a launcher: they
-/// double-clicked OpenBot to get OpenBot.
+/// double-clicked Connect to get Connect.
 ///
 /// So the window navigates to the running app, and the tray keeps the controls that would otherwise
 /// have nowhere to live. The connection screen comes back if the stack is stopped.
@@ -2095,17 +2095,17 @@ where
 /// and naming one guesses wrong half the time. Never the word `localhost`: it does not resolve the
 /// same way on every operating system, which is the whole reason both are asked.
 #[tauri::command]
-async fn show_openbot<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), Problem> {
+async fn show_Connect<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), Problem> {
     tauri::async_runtime::spawn_blocking(move || {
-        show_openbot_on(app, &openbot_env::Ports::default())
+        show_Connect_on(app, &Connect_env::Ports::default())
     })
     .await
-    .map_err(|error| Problem::with("OpenBot could not open its window.", error.to_string()))?
+    .map_err(|error| Problem::with("Connect could not open its window.", error.to_string()))?
 }
 
-fn show_openbot_on<R: tauri::Runtime>(
+fn show_Connect_on<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-    ports: &openbot_env::Ports,
+    ports: &Connect_env::Ports,
 ) -> Result<(), Problem> {
     let port = ports.app;
     // Where it answered, not where it was asked to listen. A dev server binds whichever loopback
@@ -2123,44 +2123,44 @@ fn show_openbot_on<R: tauri::Runtime>(
             .is_some_and(|recovery| {
                 recovery.root == root
                     && recovery.connection
-                        == Some(openbot_desktop_lib::problem::Connection::Organization)
+                        == Some(connect_desktop_lib::problem::Connection::Organization)
             });
     if recovery_required_or_pending_quit_notice(&shell, &root) && !organization_recovery {
-        return Err("Part of OpenBot needs recovery. Try starting OpenBot once more.".into());
+        return Err("Part of Connect needs recovery. Try starting Connect once more.".into());
     }
     let url = owned_app_url(&root, ports).ok_or_else(|| {
-        format!("OpenBot could not verify its app on port {port} belongs to this installation. Try starting OpenBot again.")
+        format!("Connect could not verify its app on port {port} belongs to this installation. Try starting Connect again.")
     })?;
     let authority =
-        openbot_env::already_set(&root.join(".env"), &["OPENBOT_ORGANIZATION_AUTH_URL"])
-            .remove("OPENBOT_ORGANIZATION_AUTH_URL")
+        Connect_env::already_set(&root.join(".env"), &["Connect_ORGANIZATION_AUTH_URL"])
+            .remove("Connect_ORGANIZATION_AUTH_URL")
             .unwrap_or_default();
     let destination = if authority.is_empty() {
         if organization_recovery {
             return Err(Problem::plain(
-                "Restore this installation's organization OpenBot URL before signing in.",
+                "Restore this installation's organization Connect URL before signing in.",
             )
-            .connection(openbot_desktop_lib::problem::Connection::Organization));
+            .connection(connect_desktop_lib::problem::Connection::Organization));
         }
         url
     } else {
-        openbot_desktop_lib::organization_auth::session_destination(&root, &authority, &url)?
+        connect_desktop_lib::organization_auth::session_destination(&root, &authority, &url)?
     };
     if organization_recovery {
         clear_recovery_required(&shell, &root);
     }
     // Organization destinations can contain a one-use session ticket; never log them.
-    eprintln!("[show] navigating to the owned OpenBot app");
+    eprintln!("[show] navigating to the owned Connect app");
     let window = app
         .get_webview_window("main")
-        .ok_or("the OpenBot window is not there to show it in")?;
+        .ok_or("the Connect window is not there to show it in")?;
     let outcome = window
         .navigate(
             destination
                 .parse()
-                .map_err(|_| "OpenBot returned an invalid app destination.".to_string())?,
+                .map_err(|_| "Connect returned an invalid app destination.".to_string())?,
         )
-        .map_err(|_| Problem::plain("OpenBot could not navigate to its app."));
+        .map_err(|_| Problem::plain("Connect could not navigate to its app."));
     eprintln!("[show] navigate returned {outcome:?}");
     outcome
 }
@@ -2179,7 +2179,7 @@ fn configured_setup_url(
         .windows
         .iter()
         .find(|window| window.label == "main")
-        .ok_or("the OpenBot setup window is not configured")?;
+        .ok_or("the Connect setup window is not configured")?;
     match &window.url {
         tauri::WebviewUrl::External(url) | tauri::WebviewUrl::CustomProtocol(url) => {
             Ok(url.clone())
@@ -2218,7 +2218,7 @@ fn configured_setup_url(
                     .map_err(|error| format!("invalid setup page path: {error}"))
             }
         }
-        _ => Err("the OpenBot setup window URL is not supported".into()),
+        _ => Err("the Connect setup window URL is not supported".into()),
     }
 }
 
@@ -2247,7 +2247,7 @@ fn attach_connect_window<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<
 #[tauri::command]
 fn connect_window_status<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-) -> openbot_desktop_lib::connect_window::Status {
+) -> connect_desktop_lib::connect_window::Status {
     connect_product::current_status(&app)
 }
 
@@ -2256,7 +2256,7 @@ fn connect_window_status<R: tauri::Runtime>(
 fn show_setup<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
-        .ok_or("the OpenBot window is not there")?;
+        .ok_or("the Connect window is not there")?;
     window
         .navigate(setup_destination(&app)?)
         .map_err(|error| format!("could not go back to setup: {error}"))
@@ -2275,7 +2275,7 @@ fn show_setup_and_focus<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(
     show_setup(app.clone())?;
     let window = app
         .get_webview_window("main")
-        .ok_or("the OpenBot window is not there")?;
+        .ok_or("the Connect window is not there")?;
     window
         .show()
         .map_err(|error| format!("could not show setup: {error}"))?;
@@ -2291,7 +2291,7 @@ fn show_setup_and_focus<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(
 ///
 /// The shell keeps what it started in memory, so closing the window and opening it again forgets a
 /// stack that is still up. Without asking, the second launch offers to set up something already
-/// running, and the port check then reports OpenBot as a foreign process holding its own port.
+/// running, and the port check then reports Connect as a foreign process holding its own port.
 ///
 /// Asked of the deployment rather than of a file: a stamp says a deployment was installed, and only
 /// an answer on the port says one is running now.
@@ -2326,15 +2326,15 @@ fn already_running<R: tauri::Runtime>(app: tauri::AppHandle<R>, root: String) ->
     let shell = app.state::<Shell>();
     let _startup = shell.startup.lock().unwrap();
     !recovery_required_or_pending_quit_notice(&shell, &root)
-        && already_running_at(&root, &openbot_env::Ports::default())
+        && already_running_at(&root, &Connect_env::Ports::default())
 }
 
-fn already_running_at(root: &Path, ports: &openbot_env::Ports) -> bool {
+fn already_running_at(root: &Path, ports: &Connect_env::Ports) -> bool {
     owned_app_url(root, ports).is_some()
 }
 
 /// Neither an owned API nor an answering app port alone authorizes showing a deployment.
-fn owned_app_url(root: &Path, ports: &openbot_env::Ports) -> Option<String> {
+fn owned_app_url(root: &Path, ports: &Connect_env::Ports) -> Option<String> {
     if !already_running_on(root, ports.server, stack::recorded_server_owns_port)
         || !stack::recorded_process_owns_port(root, "app", ports.app).unwrap_or(false)
     {
@@ -2349,7 +2349,7 @@ fn owned_app_url(root: &Path, ports: &openbot_env::Ports) -> Option<String> {
 #[tauri::command]
 fn last_failure<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-) -> Option<openbot_desktop_lib::problem::Problem> {
+) -> Option<connect_desktop_lib::problem::Problem> {
     let shell = app.state::<Shell>();
     if let Some(problem) = shell.last_failure.lock().unwrap().take() {
         return Some(problem);
@@ -2396,7 +2396,7 @@ async fn ask_the_bot<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     root: String,
     question: String,
-) -> Result<String, openbot_desktop_lib::problem::Problem> {
+) -> Result<String, connect_desktop_lib::problem::Problem> {
     let result = ask_the_bot_inner(stack::root_from(&root), question).await;
     if result.is_ok() {
         desktop_telemetry::record(&app, telemetry::EventData::Activated);
@@ -2414,7 +2414,7 @@ async fn ask_the_bot_inner(root: PathBuf, question: String) -> Result<String, Pr
 }
 
 fn ask_saved_settings(root: &Path) -> Result<std::collections::BTreeMap<String, String>, Problem> {
-    openbot_desktop_lib::vault::already_given_no_ui(
+    connect_desktop_lib::vault::already_given_no_ui(
         root,
         &root.join(".env"),
         &[
@@ -2432,8 +2432,8 @@ async fn ask_the_bot_with_settings(
     root: PathBuf,
     question: String,
     settings: std::collections::BTreeMap<String, String>,
-) -> Result<String, openbot_desktop_lib::problem::Problem> {
-    // The picked harness if there is one, and the Bot that ships with OpenBot if there is not.
+) -> Result<String, connect_desktop_lib::problem::Problem> {
+    // The picked harness if there is one, and the Bot that ships with Connect if there is not.
     // Both speak AG-UI at the same address shape, so this screen does not care which it got.
     let picked_endpoint = settings
         .get("PICKED_HARNESS_URL")
@@ -2463,19 +2463,19 @@ async fn ask_the_bot_with_settings(
         .cloned()
         .unwrap_or_default();
     if endpoint.trim().is_empty() || token.trim().is_empty() {
-        return Err(openbot_desktop_lib::problem::Problem::plain(
-            "OpenBot cannot find the Bot it just set up. Stop OpenBot and start it again.",
+        return Err(connect_desktop_lib::problem::Problem::plain(
+            "Connect cannot find the Bot it just set up. Stop Connect and start it again.",
         ));
     }
 
     let question = if question.trim().is_empty() {
-        openbot_desktop_lib::ask::SUGGESTED.to_string()
+        connect_desktop_lib::ask::SUGGESTED.to_string()
     } else {
         question
     };
 
     let asked = tauri::async_runtime::spawn_blocking(move || {
-        match openbot_desktop_lib::ask::ask_harness(
+        match connect_desktop_lib::ask::ask_harness(
             &endpoint,
             &token,
             &question,
@@ -2497,7 +2497,7 @@ async fn ask_the_bot_with_settings(
     })
     .await
     .map_err(|error| {
-        openbot_desktop_lib::problem::Problem::plain(format!(
+        connect_desktop_lib::problem::Problem::plain(format!(
             "The question could not be asked: {error}"
         ))
     })?;
@@ -2513,7 +2513,7 @@ async fn ask_the_bot_with_settings(
                         .map(|found| stack::service_log(&found, &root, service, 40))
                 })
                 .unwrap_or_default();
-            Err(openbot_desktop_lib::ask::why_nothing_came_back(&log))
+            Err(connect_desktop_lib::ask::why_nothing_came_back(&log))
         }
     }
 }
@@ -2541,13 +2541,13 @@ fn already_configured<R: tauri::Runtime>(
 fn already_configured_for_root(root: String) -> AlreadyConfigured {
     let root = stack::root_from(&root);
     let env_file = root.join(".env");
-    let mut values = openbot_desktop_lib::vault::already_given_file_only(
+    let mut values = connect_desktop_lib::vault::already_given_file_only(
         &env_file,
         &[
             "INTELLIGENCE_API_KEY",
             "INTELLIGENCE_API_URL",
             "INTELLIGENCE_GATEWAY_WS_URL",
-            "OPENBOT_ORGANIZATION_AUTH_URL",
+            "Connect_ORGANIZATION_AUTH_URL",
             /*
              * The model credentials too, so the wizard never asks twice for one of these either.
              *
@@ -2565,7 +2565,7 @@ fn already_configured_for_root(root: String) -> AlreadyConfigured {
         ],
     );
 
-    use openbot_desktop_lib::saved_intent::{Category, SavedIntent};
+    use connect_desktop_lib::saved_intent::{Category, SavedIntent};
     let intent = SavedIntent::read(&root);
     let hint = |category, file_present| {
         (file_present || intent.categories.contains(&category)).then_some(true)
@@ -2597,7 +2597,7 @@ fn already_configured_for_root(root: String) -> AlreadyConfigured {
             model_sessions: SavedModelSessions {
                 openai: hint(
                     Category::ChatGptPlan,
-                    openbot_env::saved_chatgpt_plan_store(&root),
+                    Connect_env::saved_chatgpt_plan_store(&root),
                 ),
                 anthropic: hint(Category::ClaudePlan, claude_plan),
             },
@@ -2630,14 +2630,14 @@ async fn begin_claude_sign_in(app: tauri::AppHandle, root: String) -> Result<Str
     #[cfg(target_os = "linux")]
     let service_app = app.clone();
     let (signing, url) = tauri::async_runtime::spawn_blocking(move || {
-        let (address, image) = prepared_sign_in(&root, openbot_desktop_lib::plan::SIGN_IN_IMAGE)?;
+        let (address, image) = prepared_sign_in(&root, connect_desktop_lib::plan::SIGN_IN_IMAGE)?;
         #[cfg(target_os = "linux")]
         {
             let shell = service_app.state::<Shell>();
             let _startup = shell.startup.lock().unwrap();
             ensure_linux_podman_api(&shell, &address)?;
         }
-        openbot_desktop_lib::plan::SigningIn::begin(&address, &image).map_err(Problem::from)
+        connect_desktop_lib::plan::SigningIn::begin(&address, &image).map_err(Problem::from)
     })
     .await
     .map_err(|error| {
@@ -2686,21 +2686,21 @@ async fn finish_claude_sign_in(app: tauri::AppHandle, code: String) -> Result<St
 async fn begin_chatgpt_sign_in(
     app: tauri::AppHandle,
     root: String,
-) -> Result<String, openbot_desktop_lib::problem::Problem> {
+) -> Result<String, connect_desktop_lib::problem::Problem> {
     let root = stack::root_from(&root);
     remember_selected_root(&app.state::<Shell>(), &root);
     #[cfg(target_os = "linux")]
     let service_app = app.clone();
     let (signing, url) = tauri::async_runtime::spawn_blocking(move || {
         let (address, image) =
-            prepared_sign_in(&root, openbot_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE)?;
+            prepared_sign_in(&root, connect_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE)?;
         #[cfg(target_os = "linux")]
         {
             let shell = service_app.state::<Shell>();
             let _startup = shell.startup.lock().unwrap();
             ensure_linux_podman_api(&shell, &address)?;
         }
-        openbot_desktop_lib::plan::SigningInToChatGpt::begin(&address, &image)
+        connect_desktop_lib::plan::SigningInToChatGpt::begin(&address, &image)
     })
     .await
     .map_err(|error| {
@@ -2737,7 +2737,7 @@ async fn finish_chatgpt_sign_in(app: tauri::AppHandle) -> Result<String, String>
 /// Start signing in to Intelligence and return the address a browser has to open.
 #[tauri::command]
 async fn begin_intelligence_sign_in(app: tauri::AppHandle) -> Result<String, String> {
-    let (signing, url) = openbot_desktop_lib::intelligence::SigningInToIntelligence::begin()?;
+    let (signing, url) = connect_desktop_lib::intelligence::SigningInToIntelligence::begin()?;
     *app.state::<Shell>()
         .signing_in_to_intelligence
         .lock()
@@ -2753,7 +2753,7 @@ async fn begin_intelligence_sign_in(app: tauri::AppHandle) -> Result<String, Str
 #[tauri::command]
 async fn finish_intelligence_sign_in(
     app: tauri::AppHandle,
-) -> Result<Vec<openbot_desktop_lib::intelligence::Project>, openbot_desktop_lib::problem::Problem>
+) -> Result<Vec<connect_desktop_lib::intelligence::Project>, connect_desktop_lib::problem::Problem>
 {
     let signing = app
         .state::<Shell>()
@@ -2762,14 +2762,14 @@ async fn finish_intelligence_sign_in(
         .unwrap()
         .take()
         .ok_or_else(|| {
-            openbot_desktop_lib::problem::Problem::plain(
+            connect_desktop_lib::problem::Problem::plain(
                 "That sign-in is no longer running. Start it again.",
             )
         })?;
     let (credential, projects) = tauri::async_runtime::spawn_blocking(move || signing.finish())
         .await
         .map_err(|error| {
-            openbot_desktop_lib::problem::Problem::plain(format!(
+            connect_desktop_lib::problem::Problem::plain(format!(
                 "The sign-in did not finish: {error}"
             ))
         })??;
@@ -2782,7 +2782,7 @@ async fn finish_intelligence_sign_in(
 async fn intelligence_key_for(
     app: tauri::AppHandle,
     project: String,
-) -> Result<String, openbot_desktop_lib::problem::Problem> {
+) -> Result<String, connect_desktop_lib::problem::Problem> {
     let credential = app
         .state::<Shell>()
         .intelligence_credential
@@ -2790,14 +2790,14 @@ async fn intelligence_key_for(
         .unwrap()
         .clone()
         .ok_or_else(|| {
-            openbot_desktop_lib::problem::Problem::plain("Sign in to CopilotKit first.")
+            connect_desktop_lib::problem::Problem::plain("Sign in to CopilotKit first.")
         })?;
     tauri::async_runtime::spawn_blocking(move || {
-        openbot_desktop_lib::intelligence::provision_key(&credential, &project)
+        connect_desktop_lib::intelligence::provision_key(&credential, &project)
     })
     .await
     .map_err(|error| {
-        openbot_desktop_lib::problem::Problem::plain(format!("A key could not be created: {error}"))
+        connect_desktop_lib::problem::Problem::plain(format!("A key could not be created: {error}"))
     })?
 }
 
@@ -2815,19 +2815,19 @@ async fn begin_organization_sign_in(
         let _startup = shell.startup.lock().unwrap();
         if shell.root.lock().unwrap().as_deref() != Some(root.as_path()) {
             return Err(Problem::plain(
-                "Start this OpenBot installation before signing in to its organization.",
+                "Start this Connect installation before signing in to its organization.",
             ));
         }
         let configured =
-            openbot_env::already_set(&root.join(".env"), &["OPENBOT_ORGANIZATION_AUTH_URL"])
-                .remove("OPENBOT_ORGANIZATION_AUTH_URL")
+            Connect_env::already_set(&root.join(".env"), &["Connect_ORGANIZATION_AUTH_URL"])
+                .remove("Connect_ORGANIZATION_AUTH_URL")
                 .unwrap_or_default();
         if configured.trim() != authority_url.trim() {
             return Err(Problem::plain(
-                "Save this organization's OpenBot URL before signing in.",
+                "Save this organization's Connect URL before signing in.",
             ));
         }
-        openbot_desktop_lib::organization_auth::begin(&root, &authority_url, &provider)
+        connect_desktop_lib::organization_auth::begin(&root, &authority_url, &provider)
     })
     .await
     .map_err(|_| Problem::plain("Organization sign-in could not start."))??;
@@ -2846,18 +2846,18 @@ async fn begin_organization_sign_in(
 async fn finish_organization_sign_in(
     app: tauri::AppHandle,
     root: String,
-) -> Result<openbot_desktop_lib::organization_auth::OrganizationUser, Problem> {
+) -> Result<connect_desktop_lib::organization_auth::OrganizationUser, Problem> {
     let root = stack::root_from(&root);
     tauri::async_runtime::spawn_blocking(move || {
         let shell = app.state::<Shell>();
         let generation = shell.generation.load(std::sync::atomic::Ordering::SeqCst);
-        let user = openbot_desktop_lib::organization_auth::finish(&root)?;
+        let user = connect_desktop_lib::organization_auth::finish(&root)?;
         let _startup = shell.startup.lock().unwrap();
         if shell.generation.load(std::sync::atomic::Ordering::SeqCst) != generation
             || shell.root.lock().unwrap().as_deref() != Some(root.as_path())
         {
             return Err(Problem::plain(
-                "That sign-in belongs to a previous OpenBot run. Open this installation again.",
+                "That sign-in belongs to a previous Connect run. Open this installation again.",
             ));
         }
         Ok(user)
@@ -2868,7 +2868,7 @@ async fn finish_organization_sign_in(
 
 #[tauri::command]
 fn cancel_organization_sign_in(root: String) {
-    openbot_desktop_lib::organization_auth::cancel(&stack::root_from(&root));
+    connect_desktop_lib::organization_auth::cancel(&stack::root_from(&root));
 }
 
 /// The model screen's rows. Independent of the picker above, and required to stay that way: no
@@ -2912,7 +2912,7 @@ fn publish_connection_failure<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     root: &Path,
     generation: u64,
-    connection: openbot_desktop_lib::problem::Connection,
+    connection: connect_desktop_lib::problem::Connection,
 ) -> Result<bool, String> {
     let shell = app.state::<Shell>();
     let _startup = shell.startup.lock().unwrap();
@@ -2925,9 +2925,9 @@ fn publish_connection_failure<R: tauri::Runtime>(
         return Ok(true);
     }
     let said = match connection {
-        openbot_desktop_lib::problem::Connection::Model => "Your AI connection was refused. Refresh it to continue using your existing OpenBot.",
-        openbot_desktop_lib::problem::Connection::Intelligence => "Your CopilotKit connection was refused. Refresh it to continue using your existing OpenBot.",
-        openbot_desktop_lib::problem::Connection::Organization => "Your organization sign-in needs to be refreshed to continue using your existing OpenBot.",
+        connect_desktop_lib::problem::Connection::Model => "Your AI connection was refused. Refresh it to continue using your existing Connect.",
+        connect_desktop_lib::problem::Connection::Intelligence => "Your CopilotKit connection was refused. Refresh it to continue using your existing Connect.",
+        connect_desktop_lib::problem::Connection::Organization => "Your organization sign-in needs to be refreshed to continue using your existing Connect.",
     };
     mark_recovery_required(&shell, root, generation);
     if let Some(recovery) = shell.recovery_required.lock().unwrap().as_mut() {
@@ -2981,11 +2981,11 @@ fn supervise_host_processes<R: tauri::Runtime>(
             if !connection_notice_sent {
                 if let (Some(client), Some(token)) = (
                     &connection_client,
-                    secrets.get("OPENBOT_DESKTOP_HOST_TOKEN"),
+                    secrets.get("Connect_DESKTOP_HOST_TOKEN"),
                 ) {
                     match desktop_connection::poll(
                         client,
-                        openbot_env::Ports::default().server,
+                        Connect_env::Ports::default().server,
                         token,
                     ) {
                         Ok(Some(connection)) => {
@@ -3052,17 +3052,17 @@ fn supervise_host_processes<R: tauri::Runtime>(
                     /*
                      * Both registers here too. `gave_up` names the process and quotes the tail of
                      * its log, which is the developer half; the person needs to know a piece of
-                     * OpenBot stopped and that starting again is the thing to try.
+                     * Connect stopped and that starting again is the thing to try.
                      */
                     *shell.last_failure.lock().unwrap() =
-                        Some(openbot_desktop_lib::problem::Problem::with(
+                        Some(connect_desktop_lib::problem::Problem::with(
                             format!(
-                                "Part of OpenBot ({name}) stopped and could not be started again. \
-                                 Try starting OpenBot once more."
+                                "Part of Connect ({name}) stopped and could not be started again. \
+                                 Try starting Connect once more."
                             ),
                             reason,
                         ));
-                    // Back to the setup screen. By now the window is showing OpenBot, and OpenBot
+                    // Back to the setup screen. By now the window is showing Connect, and Connect
                     // is not running: leaving it there is a window that lies.
                     let _ = show_setup(app.clone());
                     continue;
@@ -3123,7 +3123,7 @@ where
     }
     let child = spawn().map_err(|error| {
         Problem::with(
-            format!("OpenBot could not restart {name}."),
+            format!("Connect could not restart {name}."),
             error.to_string(),
         )
     })?;
@@ -3140,15 +3140,15 @@ where
     Ok(shell.generation.load(std::sync::atomic::Ordering::SeqCst) == generation)
 }
 
-/// Point the window at OpenBot if it is up, and at the setup screen if it is not.
+/// Point the window at Connect if it is up, and at the setup screen if it is not.
 ///
 /// Used by the tray and by a second launch, both of which happen at moments when the caller has no
 /// idea which of the two the person should be looking at.
 fn show_whichever_applies(app: &tauri::AppHandle) {
-    restore_window_on(app, &openbot_env::Ports::default());
+    restore_window_on(app, &Connect_env::Ports::default());
 }
 
-fn restore_window_on<R: tauri::Runtime>(app: &tauri::AppHandle<R>, ports: &openbot_env::Ports) {
+fn restore_window_on<R: tauri::Runtime>(app: &tauri::AppHandle<R>, ports: &Connect_env::Ports) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
@@ -3187,7 +3187,7 @@ where
     F: FnOnce(T) + Send + 'static,
 {
     std::thread::Builder::new()
-        .name("openbot-second-instance-restore".into())
+        .name("Connect-second-instance-restore".into())
         .spawn(move || restore(context))
 }
 
@@ -3202,13 +3202,13 @@ fn restore_after_second_instance(app: &tauri::AppHandle) {
             &reporting_app,
             "open",
             false,
-            format!("OpenBot could not show the existing window: {error}"),
+            format!("Connect could not show the existing window: {error}"),
         );
     }
 }
 
 fn publish_quit_notice_failure<R: tauri::Runtime>(app: tauri::AppHandle<R>, error: String) {
-    let problem = Problem::with("OpenBot could not record a shutdown problem.", error);
+    let problem = Problem::with("Connect could not record a shutdown problem.", error);
     let shell = app.state::<Shell>();
     {
         let _startup = shell.startup.lock().unwrap();
@@ -3228,14 +3228,14 @@ fn stop_from_menu<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
         match stop_everything(&app, &root_path) {
             Ok(()) => {
                 eprintln!("[menu] stopped");
-                report(&app, "stopped", true, "OpenBot has been stopped");
+                report(&app, "stopped", true, "Connect has been stopped");
             }
             // Said rather than swallowed. A menu item that fails silently is worse than one
             // that is not there: the person believes the stack is down and it is not.
             Err(detail) => {
                 eprintln!("[menu] stop failed: {detail}");
                 let problem = Problem::with(
-                    "OpenBot could not finish stopping. Try Stop OpenBot again.",
+                    "Connect could not finish stopping. Try Stop Connect again.",
                     detail,
                 );
                 let shell = app.state::<Shell>();
@@ -3315,7 +3315,7 @@ fn main() {
             prepare_installation,
             start_stack,
             stop_stack,
-            show_openbot,
+            show_Connect,
             show_setup,
             attach_connect_window,
             connect_window_status,
@@ -3339,11 +3339,11 @@ fn main() {
             ask_the_bot,
         ])
         // A packaged application is not a browser tab. Left alone, WebView2 answers a right-click
-        // with Back, Refresh, Save as and Print: Back walks the window out of OpenBot with nothing
+        // with Back, Refresh, Save as and Print: Back walks the window out of Connect with nothing
         // to walk it home, and Save as offers to write the page to disk as `Webpage, complete`.
         // macOS never showed this because Tauri suppresses it there in release builds; Windows has
         // no such setting, and Tauri has no configuration option for it either, so the page is
-        // asked to refuse. Every navigation, because the window navigates to OpenBot and back.
+        // asked to refuse. Every navigation, because the window navigates to Connect and back.
         .on_page_load(|webview, _| {
             let _ = webview
                 .eval("document.addEventListener('contextmenu', e => e.preventDefault(), true)");
@@ -3384,7 +3384,7 @@ fn main() {
             {
                 remember_selected_root(&app.state::<Shell>(), &root);
             }
-            // Where the Compose provider OpenBot installs itself lives, told once so every engine
+            // Where the Compose provider Connect installs itself lives, told once so every engine
             // command can put it on the child's PATH. Before anything asks for an engine.
             engine::tools_live_in(engine::tools_dir_under(&acquire::download_dir(
                 &stack::default_root(),
@@ -3400,11 +3400,11 @@ fn main() {
             let open_label = if product {
                 "Open Connect"
             } else {
-                "Open OpenBot"
+                "Open Connect"
             };
-            let menu_label = if product { "Connect" } else { "OpenBot" };
+            let menu_label = if product { "Connect" } else { "Connect" };
             let open = MenuItem::with_id(app, "open", open_label, true, None::<&str>)?;
-            let stop = MenuItem::with_id(app, "stop", "Stop OpenBot", true, None::<&str>)?;
+            let stop = MenuItem::with_id(app, "stop", "Stop Connect", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, quit_menu_accelerator())?;
             let menu = if product {
                 Menu::with_items(app, &[&open, &quit])?
@@ -3412,7 +3412,7 @@ fn main() {
                 Menu::with_items(app, &[&open, &stop, &quit])?
             };
 
-            TrayIconBuilder::with_id("openbot")
+            TrayIconBuilder::with_id("Connect")
                 .icon(tray::icon())
                 .icon_as_template(false)
                 .tooltip(menu_label)
@@ -3429,11 +3429,11 @@ fn main() {
             // outlive each other. The ids match so both arrive at the same function.
             use tauri::menu::Submenu;
             let window_open = MenuItem::with_id(app, "open", open_label, true, None::<&str>)?;
-            let window_stop = MenuItem::with_id(app, "stop", "Stop OpenBot", true, None::<&str>)?;
+            let window_stop = MenuItem::with_id(app, "stop", "Stop Connect", true, None::<&str>)?;
             let window_quit =
                 MenuItem::with_id(app, "quit", "Quit", true, quit_menu_accelerator())?;
             // A submenu, because a top-level entry in a menu bar has to be one to open at all.
-            let openbot = if product {
+            let Connect = if product {
                 Submenu::with_items(app, menu_label, true, &[&window_open, &window_quit])?
             } else {
                 Submenu::with_items(
@@ -3471,7 +3471,7 @@ fn main() {
                     &PredefinedMenuItem::select_all(app, None)?,
                 ],
             )?;
-            app.set_menu(Menu::with_items(app, &[&openbot, &edit])?)?;
+            app.set_menu(Menu::with_items(app, &[&Connect, &edit])?)?;
             app.on_menu_event(|app, event| chose(app, event.id().as_ref()));
             if connect_product::enabled() {
                 let _ = connect_product::attach(app.handle().clone());
@@ -3479,7 +3479,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("the OpenBot window could not be created")
+        .expect("the Connect window could not be created")
         .run(|app, event| {
             match event {
                 #[cfg(target_os = "macos")]
@@ -3533,7 +3533,7 @@ fn main() {
                         move |code| exiting_app.exit(code),
                         |work| {
                             std::thread::Builder::new()
-                                .name("openbot-quit-cleanup".into())
+                                .name("Connect-quit-cleanup".into())
                                 .spawn(work)
                                 .map(|_| ())
                         },
@@ -3543,7 +3543,7 @@ fn main() {
                             app,
                             "quit",
                             false,
-                            "OpenBot could not start shutting down. Try Quit again.",
+                            "Connect could not start shutting down. Try Quit again.",
                         );
                     }
                 }
@@ -3803,10 +3803,10 @@ mod tests {
 
     #[test]
     fn quit_cleanup_notice_is_known_safe_bounded_and_consumed_once() {
-        let root = temp_root("openbot-quit-cleanup-notice");
+        let root = temp_root("Connect-quit-cleanup-notice");
         let lines = vec![
-            "[exit] cleanup failed: Compose down failed: /Users/alice/OpenBot/docker-compose.yml refused token=secret".to_string(),
-            "[exit] cleanup failed: C:\\Users\\alice\\OpenBot\\owned.exe OAuth password".to_string(),
+            "[exit] cleanup failed: Compose down failed: /Users/alice/Connect/docker-compose.yml refused token=secret".to_string(),
+            "[exit] cleanup failed: C:\\Users\\alice\\Connect\\owned.exe OAuth password".to_string(),
         ];
 
         write_quit_cleanup_notice(&root, &lines).unwrap();
@@ -3814,7 +3814,7 @@ mod tests {
             .unwrap()
             .expect("notice should be present");
         let detail = first.detail.unwrap();
-        assert_eq!(first.said, "OpenBot had trouble shutting down last time.");
+        assert_eq!(first.said, "Connect had trouble shutting down last time.");
         assert!(detail.contains("containers stopped"), "{detail}");
         assert!(detail.contains("app processes stopped"), "{detail}");
         assert!(!detail.contains("Compose down failed"), "{detail}");
@@ -3929,7 +3929,7 @@ mod tests {
         window
             .navigate("http://127.0.0.1:3010/channel/existing".parse().unwrap())
             .unwrap();
-        let connection = openbot_desktop_lib::problem::Connection::Model;
+        let connection = connect_desktop_lib::problem::Connection::Model;
         assert!(!publish_connection_failure(app.handle(), &root, 6, connection.clone()).unwrap());
         assert!(!publish_connection_failure(
             app.handle(),
@@ -3950,13 +3950,13 @@ mod tests {
         );
         assert_eq!(
             last_failure(app.handle().clone()).unwrap().connection,
-            Some(openbot_desktop_lib::problem::Connection::Model)
+            Some(connect_desktop_lib::problem::Connection::Model)
         );
         assert!(publish_connection_failure(
             app.handle(),
             &root,
             7,
-            openbot_desktop_lib::problem::Connection::Intelligence
+            connect_desktop_lib::problem::Connection::Intelligence
         )
         .unwrap());
         assert!(
@@ -4013,7 +4013,7 @@ mod tests {
             ),
         ] {
             if let Some(metadata) = metadata {
-                std::fs::write(root.join(openbot_desktop_lib::saved_intent::FILE), metadata)
+                std::fs::write(root.join(connect_desktop_lib::saved_intent::FILE), metadata)
                     .unwrap();
             }
             for legacy in ["", "INTELLIGENCE_API_KEY=synthetic-cpk\nOPENAI_API_KEY=synthetic-openai\nANTHROPIC_API_KEY=synthetic-anthropic\nCLAUDE_CODE_OAUTH_TOKEN=synthetic-claude\n"] {
@@ -4074,7 +4074,7 @@ mod tests {
 
         let image = sign_in_reference(
             &selected,
-            openbot_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE,
+            connect_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE,
             |root, published| {
                 *reference_root.borrow_mut() = Some((root.to_path_buf(), published.to_string()));
                 Ok(format!("{}@{}", published, root.display()))
@@ -4086,7 +4086,7 @@ mod tests {
             reference_root.into_inner(),
             Some((
                 selected.clone(),
-                openbot_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE.to_string()
+                connect_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE.to_string()
             ))
         );
         assert!(image.contains(&selected.to_string_lossy().to_string()));
@@ -4101,7 +4101,7 @@ mod tests {
 
     #[test]
     fn command_roots_trim_paste_padding_and_preserve_interior_spaces() {
-        let root = temp_root("openbot-command-root My Files");
+        let root = temp_root("Connect-command-root My Files");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("settings-marker"), "this deployment").unwrap();
         for typed in [
@@ -4140,7 +4140,7 @@ mod tests {
 
     #[test]
     fn already_configured_trims_pasted_root_and_preserves_interior_spaces() {
-        let root = temp_root("openbot-pasted-root My Files");
+        let root = temp_root("Connect-pasted-root My Files");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join(".env"),
@@ -4160,7 +4160,7 @@ mod tests {
 
     #[test]
     fn already_configured_returns_file_values_and_saved_indicators() {
-        let root = temp_root("openbot-already-configured");
+        let root = temp_root("Connect-already-configured");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join(".env"),
@@ -4169,7 +4169,7 @@ mod tests {
         .unwrap();
         std::fs::create_dir_all(root.join(".langchain")).unwrap();
         std::fs::write(
-            root.join(openbot_env::CHATGPT_STORE_FILE),
+            root.join(Connect_env::CHATGPT_STORE_FILE),
             "{\"refresh_token\":\"stored\"}\n",
         )
         .unwrap();
@@ -4193,7 +4193,7 @@ mod tests {
 
     #[test]
     fn already_configured_reports_legacy_anthropic_plan_without_returning_token() {
-        let root = temp_root("openbot-already-configured-anthropic-session");
+        let root = temp_root("Connect-already-configured-anthropic-session");
         std::fs::create_dir_all(&root).unwrap();
 
         std::fs::write(
@@ -4252,14 +4252,14 @@ mod tests {
             Some(r#"{"version":42,"categories":["intelligence"],"model":null}"#),
         ] {
             if let Some(input) = input {
-                std::fs::write(root.join(openbot_desktop_lib::saved_intent::FILE), input).unwrap();
+                std::fs::write(root.join(connect_desktop_lib::saved_intent::FILE), input).unwrap();
             }
             let unknown = already_configured_for_root(root.to_string_lossy().into_owned());
             assert_eq!(unknown.saved.intelligence_api_key, None);
             assert_eq!(unknown.saved.model_sessions.anthropic, None);
         }
         std::fs::write(
-            root.join(openbot_desktop_lib::saved_intent::FILE),
+            root.join(connect_desktop_lib::saved_intent::FILE),
             r#"{"version":1,"categories":["intelligence","claude-plan"],"model":"claude-plan"}"#,
         )
         .unwrap();
@@ -4317,7 +4317,7 @@ mod tests {
                 assert!(!problem.said.is_empty());
                 assert_eq!(
                     problem.connection,
-                    Some(openbot_desktop_lib::problem::Connection::Model)
+                    Some(connect_desktop_lib::problem::Connection::Model)
                 );
                 if denied {
                     assert_eq!(problem.said, "synthetic access denied");
@@ -4336,14 +4336,14 @@ mod tests {
             });
             assert_eq!(
                 result.unwrap_err().connection,
-                Some(openbot_desktop_lib::problem::Connection::Intelligence)
+                Some(connect_desktop_lib::problem::Connection::Intelligence)
             );
         }
         // A missing or unreadable ChatGPT file is an action error; no API-key resolver is called.
         std::fs::create_dir_all(&root).unwrap();
         for unreadable in [false, true] {
             if unreadable {
-                std::fs::create_dir_all(root.join(openbot_env::CHATGPT_STORE_FILE)).unwrap();
+                std::fs::create_dir_all(root.join(Connect_env::CHATGPT_STORE_FILE)).unwrap();
             }
             let choice = ChosenModel {
                 provider: "openai".into(),
@@ -4374,13 +4374,13 @@ mod tests {
                 format!("MANAGED_AGENT_AG_UI_URL=https://agent-{label}.example\n"),
             )
             .unwrap();
-            openbot_desktop_lib::vault::remember(
+            connect_desktop_lib::vault::remember(
                 root,
                 "OPENAI_API_KEY",
                 &format!("openai-{label}"),
             )
             .unwrap();
-            openbot_desktop_lib::vault::remember(
+            connect_desktop_lib::vault::remember(
                 root,
                 "MANAGED_AGENT_TOKEN",
                 &format!("agent-{label}"),
@@ -4405,7 +4405,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             credential,
-            openbot_env::ModelCredential::OpenAi {
+            Connect_env::ModelCredential::OpenAi {
                 api_key: "openai-b".into()
             }
         );
@@ -4444,7 +4444,7 @@ mod tests {
         )
         .expect_err("unreadable .env must stop saved-key resolution");
 
-        assert_eq!(problem.said, "OpenBot could not read its settings.");
+        assert_eq!(problem.said, "Connect could not read its settings.");
         assert!(
             problem
                 .detail
@@ -4465,7 +4465,7 @@ mod tests {
             tauri::async_runtime::block_on(ask_the_bot_inner(root.clone(), "hello".into()))
                 .expect_err("unreadable .env must stop Ask before transport");
 
-        assert_eq!(problem.said, "OpenBot could not read its settings.");
+        assert_eq!(problem.said, "Connect could not read its settings.");
         assert!(
             problem
                 .detail
@@ -4490,11 +4490,11 @@ mod tests {
                 .unwrap();
             } else {
                 std::fs::write(
-                    root.join(openbot_desktop_lib::saved_intent::FILE),
+                    root.join(connect_desktop_lib::saved_intent::FILE),
                     r#"{"version":1,"categories":[],"model":"open-ai-api-key"}"#,
                 )
                 .unwrap();
-                assert!(openbot_desktop_lib::saved_intent::SavedIntent::read(&root)
+                assert!(connect_desktop_lib::saved_intent::SavedIntent::read(&root)
                     .model
                     .is_some());
             }
@@ -4571,7 +4571,7 @@ mod tests {
         let root = temp_root("encryption-key-volume-reinstall");
         std::fs::create_dir_all(&root).unwrap();
         let volume = format!(
-            "openbot-key-reinstall-fixture-{}-{}",
+            "Connect-key-reinstall-fixture-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -4594,7 +4594,7 @@ mod tests {
                 "volume",
                 "create",
                 "--label",
-                "ai.copilotkit.openbot.fixture=key-reinstall",
+                "ai.copilotkit.Connect.fixture=key-reinstall",
                 &volume,
             ])
             .output()
@@ -4656,7 +4656,7 @@ mod tests {
                 "That saved Anthropic API key is no longer available.",
             ),
         ] {
-            let root = temp_root(&format!("openbot-missing-saved-{provider}"));
+            let root = temp_root(&format!("Connect-missing-saved-{provider}"));
             std::fs::create_dir_all(&root).unwrap();
             let mut trace = Vec::new();
 
@@ -4698,7 +4698,7 @@ mod tests {
             ("openai", "sk-openai-still-saved"),
             ("anthropic", "sk-ant-still-saved"),
         ] {
-            let root = temp_root(&format!("openbot-present-saved-{provider}"));
+            let root = temp_root(&format!("Connect-present-saved-{provider}"));
             std::fs::create_dir_all(&root).unwrap();
 
             let credential = start_stack_credential_with(
@@ -4721,8 +4721,8 @@ mod tests {
             .expect("saved key should be accepted");
 
             match credential {
-                openbot_env::ModelCredential::OpenAi { api_key }
-                | openbot_env::ModelCredential::Anthropic { api_key } => {
+                Connect_env::ModelCredential::OpenAi { api_key }
+                | Connect_env::ModelCredential::Anthropic { api_key } => {
                     assert_eq!(api_key, expected_key);
                     println!(
                         "DTA-004 present provider={provider} saved_key_len={}",
@@ -4756,14 +4756,14 @@ mod tests {
         }
     }
 
-    fn persist_endpoint_fixture(root: &Path, credential: &openbot_env::ModelCredential) {
-        let settings = openbot_env::compose(
-            &openbot_env::Intelligence {
+    fn persist_endpoint_fixture(root: &Path, credential: &Connect_env::ModelCredential) {
+        let settings = Connect_env::compose(
+            &Connect_env::Intelligence {
                 api_url: "https://api.example.test".into(),
                 gateway_ws_url: "wss://api.example.test".into(),
                 api_key: "synthetic-intelligence".into(),
             },
-            &openbot_env::Model {
+            &Connect_env::Model {
                 credential: credential.clone(),
             },
             &engine::EngineStatus {
@@ -4773,13 +4773,13 @@ mod tests {
                 engine_socket: None,
                 detail: "synthetic".into(),
             },
-            &openbot_env::Ports::default(),
+            &Connect_env::Ports::default(),
             &[],
             None,
             &Default::default(),
         );
-        let (public, secrets) = openbot_desktop_lib::vault::split(settings);
-        openbot_desktop_lib::saved_intent::persist_configuration(
+        let (public, secrets) = connect_desktop_lib::vault::split(settings);
+        connect_desktop_lib::saved_intent::persist_configuration(
             root, &public, &secrets, &secrets, credential,
         )
         .unwrap();
@@ -4839,7 +4839,7 @@ mod tests {
     fn stale_endpoint_hint_cannot_relabel_another_endpoints_stored_key() {
         let root = temp_root("compatible-stale-record");
         std::fs::create_dir_all(&root).unwrap();
-        let credential = openbot_env::ModelCredential::Compatible {
+        let credential = Connect_env::ModelCredential::Compatible {
             base_url: "https://models.example/v1".into(),
             container_base_url: None,
             api_key: "synthetic-old-key".into(),
@@ -4854,7 +4854,7 @@ mod tests {
                 reads += 1;
                 assert_eq!(
                     key,
-                    openbot_desktop_lib::saved_intent::COMPATIBLE_CREDENTIAL
+                    connect_desktop_lib::saved_intent::COMPATIBLE_CREDENTIAL
                 );
                 Ok(
                     r#"{"base_url":"https://other.example/v1","api_key":"synthetic-other-key"}"#
@@ -4875,7 +4875,7 @@ mod tests {
         let credential =
             start_stack_credential(Path::new("synthetic-unused-compatible-root"), choice)
                 .expect("a valid container endpoint may be stored with the compatible credential");
-        let openbot_env::ModelCredential::Compatible {
+        let Connect_env::ModelCredential::Compatible {
             base_url,
             container_base_url,
             model,
@@ -4953,7 +4953,7 @@ mod tests {
                 let credential =
                     start_stack_credential(Path::new("synthetic-unused-compatible-root"), choice)
                         .expect("a valid endpoint may run without an API key");
-                let openbot_env::ModelCredential::Compatible {
+                let Connect_env::ModelCredential::Compatible {
                     base_url: actual_url,
                     api_key: actual_key,
                     model,
@@ -5047,11 +5047,11 @@ mod tests {
             engine: Some(engine::Engine::Podman),
             address: Some(engine::Address::new(
                 engine::Engine::Podman,
-                Some("openbot".into()),
+                Some("Connect".into()),
             )),
             responding: true,
             engine_socket: None,
-            detail: "podman is answering on openbot.".into(),
+            detail: "podman is answering on Connect.".into(),
         };
         let trace = std::cell::RefCell::new(Vec::new());
         let mut compose_checks = 0;
@@ -5077,7 +5077,7 @@ mod tests {
 
         assert_eq!(&*trace.borrow(), &["install-engine", "re-detect"]);
         assert_eq!(ready.installed.as_deref(), Some("Compose installed."));
-        assert_eq!(ready.address.connection.as_deref(), Some("openbot"));
+        assert_eq!(ready.address.connection.as_deref(), Some("Connect"));
     }
 
     #[test]
@@ -5147,8 +5147,8 @@ mod tests {
             return;
         }
         let _path = SerializedPath::set();
-        let active = temp_root("openbot-active-stop-root");
-        let fallback = temp_root("openbot-default-stop-root");
+        let active = temp_root("Connect-active-stop-root");
+        let fallback = temp_root("Connect-default-stop-root");
         std::fs::create_dir_all(&active).unwrap();
         std::fs::write(active.join("docker-compose.yml"), "services: {}\n").unwrap();
         std::fs::create_dir_all(&fallback).unwrap();
@@ -5156,7 +5156,7 @@ mod tests {
         *shell.root.lock().unwrap() = Some(active.clone());
         let selected = shutdown_root(&shell, &fallback);
 
-        let record = temp_root("openbot-stop-record").join("commands.log");
+        let record = temp_root("Connect-stop-record").join("commands.log");
         let engine = fake_engine(&record);
         stack::down(&engine, &selected).expect("fake compose down");
 
@@ -5174,8 +5174,8 @@ mod tests {
             return;
         }
         let _path = SerializedPath::set();
-        let active = temp_root("openbot-active-quit-root");
-        let fallback = temp_root("openbot-default-quit-root");
+        let active = temp_root("Connect-active-quit-root");
+        let fallback = temp_root("Connect-default-quit-root");
         std::fs::create_dir_all(&active).unwrap();
         std::fs::write(active.join("docker-compose.yml"), "services: {}\n").unwrap();
         std::fs::create_dir_all(&fallback).unwrap();
@@ -5183,7 +5183,7 @@ mod tests {
         *shell.root.lock().unwrap() = Some(active.clone());
         let selected = shutdown_root(&shell, &fallback);
 
-        let record = temp_root("openbot-quit-record").join("commands.log");
+        let record = temp_root("Connect-quit-record").join("commands.log");
         let engine = fake_engine(&record);
         stack::down(&engine, &selected).expect("fake compose down");
 
@@ -5195,8 +5195,8 @@ mod tests {
 
     #[test]
     fn stop_reports_cleanup_and_down_failures_after_using_the_active_root() {
-        let active = temp_root("openbot-active-stop-failures");
-        let fallback = temp_root("openbot-default-stop-failures");
+        let active = temp_root("Connect-active-stop-failures");
+        let fallback = temp_root("Connect-default-stop-failures");
         std::fs::create_dir_all(&active).unwrap();
         std::fs::write(active.join("docker-compose.yml"), "services: {}\n").unwrap();
         std::fs::create_dir_all(&fallback).unwrap();
@@ -5212,7 +5212,7 @@ mod tests {
                     .borrow_mut()
                     .push(format!("cleanup:{}", root.display()));
                 Err(Problem::with(
-                    "OpenBot could not inspect or stop its host processes.",
+                    "Connect could not inspect or stop its host processes.",
                     "lsof exited with status 2",
                 ))
             },
@@ -5231,7 +5231,7 @@ mod tests {
             ]
         );
         assert!(
-            problem.contains("OpenBot could not inspect or stop its host processes."),
+            problem.contains("Connect could not inspect or stop its host processes."),
             "{problem}"
         );
         assert!(problem.contains("lsof exited with status 2"), "{problem}");
@@ -5246,8 +5246,8 @@ mod tests {
 
     #[test]
     fn exit_cleanup_body_records_cleanup_and_down_failures_after_using_the_active_root() {
-        let active = temp_root("openbot-active-exit-failures");
-        let fallback = temp_root("openbot-default-exit-failures");
+        let active = temp_root("Connect-active-exit-failures");
+        let fallback = temp_root("Connect-default-exit-failures");
         std::fs::create_dir_all(&active).unwrap();
         std::fs::write(active.join("docker-compose.yml"), "services: {}\n").unwrap();
         std::fs::create_dir_all(&fallback).unwrap();
@@ -5263,7 +5263,7 @@ mod tests {
                     .borrow_mut()
                     .push(format!("cleanup:{}", root.display()));
                 Err(Problem::with(
-                    "OpenBot could not inspect or stop its host processes.",
+                    "Connect could not inspect or stop its host processes.",
                     "taskkill exited with status 5",
                 ))
             },
@@ -5296,8 +5296,8 @@ mod tests {
 
     #[test]
     fn production_stop_root_selection_retains_resolved_root_not_menu_fallback() {
-        let selected = temp_root("openbot-production-stop-selected-root");
-        let fallback = temp_root("openbot-production-stop-default-root");
+        let selected = temp_root("Connect-production-stop-selected-root");
+        let fallback = temp_root("Connect-production-stop-default-root");
         let shell = Shell::default();
         *shell.root.lock().unwrap() = Some(selected.clone());
         remember_selected_root(&shell, &fallback);
@@ -5315,8 +5315,8 @@ mod tests {
 
     #[test]
     fn production_stop_root_selection_retains_stopped_selected_root_not_menu_fallback() {
-        let selected = temp_root("openbot-production-stop-stopped-selected-root");
-        let fallback = temp_root("openbot-production-stop-stopped-default-root");
+        let selected = temp_root("Connect-production-stop-stopped-selected-root");
+        let fallback = temp_root("Connect-production-stop-stopped-default-root");
         let shell = Shell::default();
         remember_selected_root(&shell, &selected);
 
@@ -5333,7 +5333,7 @@ mod tests {
 
     #[test]
     fn production_stop_root_selection_uses_menu_fallback_when_no_root_is_known() {
-        let fallback = temp_root("openbot-production-stop-only-default-root");
+        let fallback = temp_root("Connect-production-stop-only-default-root");
         let shell = Shell::default();
 
         let stop_root = root_for_stop(&shell, &fallback);
@@ -5348,8 +5348,8 @@ mod tests {
 
     #[test]
     fn successful_stop_then_exit_uses_the_retained_selected_root_not_default() {
-        let selected = temp_root("openbot-selected-stop-exit");
-        let fallback = temp_root("openbot-default-stop-exit");
+        let selected = temp_root("Connect-selected-stop-exit");
+        let fallback = temp_root("Connect-default-stop-exit");
         std::fs::create_dir_all(&selected).unwrap();
         std::fs::create_dir_all(&fallback).unwrap();
         std::fs::write(fallback.join("sentinel"), "default-root-untouched").unwrap();
@@ -5453,7 +5453,7 @@ fn main() {
     let original:Vec<String>=env::args().skip(1).collect();
     let mut args=original.clone();
     let cwd=env::current_dir().unwrap();
-    let record=PathBuf::from(env::var_os("OPENBOT_TEST_ENGINE_RECORD").unwrap());
+    let record=PathBuf::from(env::var_os("Connect_TEST_ENGINE_RECORD").unwrap());
     let base=record.parent().unwrap();
     let engine=PathBuf::from(env::args().next().unwrap()).file_name().unwrap().to_string_lossy().into_owned();
     let default=if engine=="docker" {"docker-context"} else {"podman-connection"};
@@ -5555,7 +5555,7 @@ fn main() {
                 std::fs::write(base.join("podman-connection"), "alpha").unwrap();
                 crate::test_support::compile_fixture(&source, &path.bin().join("docker"));
                 std::fs::copy(path.bin().join("docker"), path.bin().join("podman")).unwrap();
-                std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", base.join("commands.log"));
+                std::env::set_var("Connect_TEST_ENGINE_RECORD", base.join("commands.log"));
                 let app = tauri::test::mock_builder()
                     .manage(Shell::default())
                     .invoke_handler(tauri::generate_handler![
@@ -6421,7 +6421,7 @@ fn main() {
                 }
             }
         }
-        let root = temp_root("openbot-harness-start-ipc");
+        let root = temp_root("Connect-harness-start-ipc");
         write_installed_deployment(&root);
         let mut images: deployment::Images =
             serde_json::from_str(&std::fs::read_to_string(deployment::images_path(&root)).unwrap())
@@ -6442,7 +6442,7 @@ fn main() {
         let _path = SerializedPath::set_only_with("docker", "harness");
         let _cleanup = Cleanup(vec![root.clone(), _path.bin().to_path_buf()]);
         let record = root.join("commands.log");
-        std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", &record);
+        std::env::set_var("Connect_TEST_ENGINE_RECORD", &record);
         // Reserve only an owned ephemeral loopback endpoint; no service thread until Start returns.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let remote = format!("http://{}/ag-ui", listener.local_addr().unwrap());
@@ -6559,7 +6559,7 @@ fn main() {
         );
         assert!(commands.contains("\tcompose run --rm --pull never migrate\n"));
         assert!(!root.join(".logs").exists(), "no host runtime was launched");
-        let settings = openbot_env::read_already_set(
+        let settings = Connect_env::read_already_set(
             &root.join(".env"),
             &[
                 "TENANT_PACKAGE_DIR",
@@ -6609,7 +6609,7 @@ fn main() {
             assert!(request
                 .headers
                 .iter()
-                .any(|line| line.starts_with("x-openbot-agent-token: ")));
+                .any(|line| line.starts_with("x-Connect-agent-token: ")));
             asked = true;
         } else if let Some(image) = expected_image {
             assert_eq!(
@@ -6719,12 +6719,12 @@ fn main() {
         ) {
             return;
         }
-        let root = temp_root("openbot-dead-compose-start");
+        let root = temp_root("Connect-dead-compose-start");
         write_installed_deployment(&root);
-        let record = temp_root("openbot-dead-compose-record").join("commands.log");
+        let record = temp_root("Connect-dead-compose-record").join("commands.log");
         std::fs::create_dir_all(record.parent().expect("record parent")).unwrap();
         let _path = SerializedPath::set_only_with("docker", "dead-service");
-        std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", &record);
+        std::env::set_var("Connect_TEST_ENGINE_RECORD", &record);
         let app = tauri::test::mock_builder()
             .manage(Shell::default())
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -6753,7 +6753,7 @@ fn main() {
 
         let commands = std::fs::read_to_string(&record).expect("command record");
         assert_eq!(
-            problem.said, "Part of OpenBot stopped during startup.",
+            problem.said, "Part of Connect stopped during startup.",
             "problem={problem:?} commands={commands}"
         );
         assert_eq!(
@@ -6798,12 +6798,12 @@ fn main() {
         ) {
             return;
         }
-        let root = temp_root("openbot-anthropic-bot-selection-start");
+        let root = temp_root("Connect-anthropic-bot-selection-start");
         write_installed_deployment(&root);
-        let record = temp_root("openbot-anthropic-bot-selection-record").join("commands.log");
+        let record = temp_root("Connect-anthropic-bot-selection-record").join("commands.log");
         std::fs::create_dir_all(record.parent().expect("record parent")).unwrap();
         let _path = SerializedPath::set_only_with("docker", "anthropic");
-        std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", &record);
+        std::env::set_var("Connect_TEST_ENGINE_RECORD", &record);
         let app = tauri::test::mock_builder()
             .manage(Shell::default())
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -6842,7 +6842,7 @@ fn main() {
                 .contains("compose up -d --no-build --pull never postgres supervisor agent-computer agent-bot"),
             "Anthropic Start must not target the OpenAI-only agent-bot: {commands}"
         );
-        assert_eq!(problem.said, "Part of OpenBot stopped during startup.");
+        assert_eq!(problem.said, "Part of Connect stopped during startup.");
         let detail = problem.detail.as_deref().unwrap_or_default();
         assert!(
             detail.contains("agent-langgraph stopped: langgraph died after boot"),
@@ -6871,7 +6871,7 @@ fn main() {
              data: {\"type\":\"text-delta\",\"payload\":{\"text\":\"391\"}}\n\n\
              data: {\"type\":\"finish\",\"payload\":{\"stepResult\":{\"reason\":\"stop\"}}}\n\n",
         );
-        let root = temp_root("openbot-mastra-ask");
+        let root = temp_root("Connect-mastra-ask");
         let answer = tauri::async_runtime::block_on(ask_the_bot_with_settings(
             root.clone(),
             "What is 17 times 23?".to_string(),
@@ -6881,7 +6881,7 @@ fn main() {
                     "PICKED_HARNESS_KIND".to_string(),
                     "remote-mastra".to_string(),
                 ),
-                ("PICKED_HARNESS_AGENT_ID".to_string(), "openbot".to_string()),
+                ("PICKED_HARNESS_AGENT_ID".to_string(), "Connect".to_string()),
                 (
                     "MANAGED_AGENT_TOKEN".to_string(),
                     "managed-token".to_string(),
@@ -6892,12 +6892,12 @@ fn main() {
 
         let request = server.request();
         assert_eq!(answer, "391");
-        assert_eq!(request.path, "/api/agents/openbot/stream");
+        assert_eq!(request.path, "/api/agents/Connect/stream");
         assert!(
             request
                 .headers
                 .iter()
-                .any(|line| line == "x-openbot-agent-token: managed-token"),
+                .any(|line| line == "x-Connect-agent-token: managed-token"),
             "{:?}",
             request.headers
         );
@@ -6916,7 +6916,7 @@ fn main() {
              data: {\"type\":\"TEXT_MESSAGE_CONTENT\",\"messageId\":\"m1\",\"delta\":\"391\"}\n\n\
              data: {\"type\":\"RUN_FINISHED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n",
         );
-        let root = temp_root("openbot-byo-ask");
+        let root = temp_root("Connect-byo-ask");
         let answer = tauri::async_runtime::block_on(ask_the_bot_with_settings(
             root.clone(),
             "What is 17 times 23?".to_string(),
@@ -6945,7 +6945,7 @@ fn main() {
             request
                 .headers
                 .iter()
-                .any(|line| line == "x-openbot-agent-token: managed-token"),
+                .any(|line| line == "x-Connect-agent-token: managed-token"),
             "{:?}",
             request.headers
         );
@@ -6960,7 +6960,7 @@ fn main() {
             body.len() + 64
         );
         let server = TestServer::new(response);
-        let root = temp_root("openbot-body-read-ask");
+        let root = temp_root("Connect-body-read-ask");
 
         let problem = tauri::async_runtime::block_on(ask_the_bot_with_settings(
             root.clone(),
@@ -7028,14 +7028,14 @@ fn main() {
             std::fs::create_dir_all(&root).unwrap();
             let record = root.join("commands.log");
             std::fs::write(&record, "").unwrap();
-            std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", &record);
+            std::env::set_var("Connect_TEST_ENGINE_RECORD", &record);
             let server = TestServer::new(
                 "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n\
                  data: {\"type\":\"RUN_STARTED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n\
                  data: {\"type\":\"RUN_FINISHED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n",
             );
             let endpoint = format!("{}/ag-ui", server.url);
-            let installed = openbot_env::PickedHarness::Installed {
+            let installed = Connect_env::PickedHarness::Installed {
                 image: "localhost/synthetic-old-harness@sha256:00".into(),
                 port: test_server_port(&server),
                 name: "Installed fixture".into(),
@@ -7043,24 +7043,24 @@ fn main() {
                 run_path: "/ag-ui".into(),
                 remote_agent_id: "fixture-agent".into(),
             };
-            let byo = openbot_env::PickedHarness::RemoteAgUi {
+            let byo = Connect_env::PickedHarness::RemoteAgUi {
                 url: format!("  {endpoint}  "),
                 name: "An agent you already run".into(),
                 remote_agent_id: String::new(),
             };
-            let ports = openbot_env::Ports {
+            let ports = Connect_env::Ports {
                 langgraph: test_server_port(&server),
                 ..Default::default()
             };
             let compose = |harness| {
-                openbot_env::compose(
-                    &openbot_env::Intelligence {
+                Connect_env::compose(
+                    &Connect_env::Intelligence {
                         api_url: "https://intelligence.example.test".into(),
                         gateway_ws_url: "wss://gateway.example.test".into(),
                         api_key: String::new(),
                     },
-                    &openbot_env::Model {
-                        credential: openbot_env::ModelCredential::OpenAi {
+                    &Connect_env::Model {
+                        credential: Connect_env::ModelCredential::OpenAi {
                             api_key: "synthetic-provider-key".into(),
                         },
                     },
@@ -7082,7 +7082,7 @@ fn main() {
             };
             let file = root.join(".env");
             let write_settings = |values: &std::collections::BTreeMap<String, String>| {
-                openbot_env::write(&file, values, &Default::default()).unwrap();
+                Connect_env::write(&file, values, &Default::default()).unwrap();
             };
             if ["installed-to-byo", "legacy", "unknown"].contains(&case) {
                 write_settings(&compose(Some(&installed)));
@@ -7110,7 +7110,7 @@ fn main() {
                     "future-source".into(),
                 )]));
             }
-            let public_settings = openbot_env::read_already_set(
+            let public_settings = Connect_env::read_already_set(
                 &file,
                 &[
                     "PICKED_HARNESS_URL",
@@ -7181,7 +7181,7 @@ fn main() {
                 && request
                     .headers
                     .iter()
-                    .any(|header| header == "x-openbot-agent-token: synthetic-ask-token");
+                    .any(|header| header == "x-Connect-agent-token: synthetic-ask-token");
             std::fs::remove_dir_all(&root).unwrap();
             println!(
                 "F5499_ASK_IPC={}",
@@ -7210,15 +7210,15 @@ fn main() {
             return;
         }
         let _path = SerializedPath::set_with("docker", "empty-answer");
-        let record = temp_root("openbot-managed-empty-answer-record").join("commands.log");
+        let record = temp_root("Connect-managed-empty-answer-record").join("commands.log");
         std::fs::create_dir_all(record.parent().expect("record parent")).unwrap();
-        std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", &record);
+        std::env::set_var("Connect_TEST_ENGINE_RECORD", &record);
         let server = TestServer::new(
             "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n\
              data: {\"type\":\"RUN_STARTED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n\
              data: {\"type\":\"RUN_FINISHED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n",
         );
-        let root = temp_root("openbot-managed-empty-answer");
+        let root = temp_root("Connect-managed-empty-answer");
         std::fs::create_dir_all(&root).unwrap();
 
         let problem = tauri::async_runtime::block_on(ask_the_bot_with_settings(
@@ -7271,15 +7271,15 @@ fn main() {
             return;
         }
         let _path = SerializedPath::set_with("docker", "empty-answer");
-        let record = temp_root("openbot-picked-empty-answer-record").join("commands.log");
+        let record = temp_root("Connect-picked-empty-answer-record").join("commands.log");
         std::fs::create_dir_all(record.parent().expect("record parent")).unwrap();
-        std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", &record);
+        std::env::set_var("Connect_TEST_ENGINE_RECORD", &record);
         let server = TestServer::new(
             "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n\
              data: {\"type\":\"RUN_STARTED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n\
              data: {\"type\":\"RUN_FINISHED\",\"threadId\":\"t1\",\"runId\":\"r1\"}\n\n",
         );
-        let root = temp_root("openbot-picked-empty-answer");
+        let root = temp_root("Connect-picked-empty-answer");
         std::fs::create_dir_all(&root).unwrap();
 
         let problem = tauri::async_runtime::block_on(ask_the_bot_with_settings(
@@ -7347,31 +7347,31 @@ fn main() {
                 (
                     "server".into(),
                     deployment::Image {
-                        reference: "localhost/openbot-server@sha256:00".into(),
+                        reference: "localhost/Connect-server@sha256:00".into(),
                     },
                 ),
                 (
                     "supervisor".into(),
                     deployment::Image {
-                        reference: "localhost/openbot-supervisor@sha256:00".into(),
+                        reference: "localhost/Connect-supervisor@sha256:00".into(),
                     },
                 ),
                 (
                     "agent-computer".into(),
                     deployment::Image {
-                        reference: "localhost/openbot-agent-computer@sha256:00".into(),
+                        reference: "localhost/Connect-agent-computer@sha256:00".into(),
                     },
                 ),
                 (
                     "agent-bot".into(),
                     deployment::Image {
-                        reference: "localhost/openbot-agent-bot@sha256:00".into(),
+                        reference: "localhost/Connect-agent-bot@sha256:00".into(),
                     },
                 ),
                 (
                     "agent-langgraph".into(),
                     deployment::Image {
-                        reference: "localhost/openbot-agent-langgraph@sha256:00".into(),
+                        reference: "localhost/Connect-agent-langgraph@sha256:00".into(),
                     },
                 ),
             ]),
@@ -7849,7 +7849,7 @@ fn main() {
             .manage(Shell::default())
             .invoke_handler(tauri::generate_handler![
                 already_running,
-                show_openbot,
+                show_Connect,
                 last_failure
             ])
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -7970,12 +7970,12 @@ fn main() {
             .unwrap()
             .is_null());
         assert!(recovery_required(&shell, &fixture.host.root));
-        let show_error = invoke("show_openbot", serde_json::json!({})).unwrap_err();
+        let show_error = invoke("show_Connect", serde_json::json!({})).unwrap_err();
         assert!(show_error["said"]
             .as_str()
             .unwrap()
             .contains("needs recovery"));
-        restore_window_on(fixture.app.handle(), &openbot_env::Ports::default());
+        restore_window_on(fixture.app.handle(), &Connect_env::Ports::default());
         assert_eq!(window.url().unwrap().as_str(), setup);
         println!(
             "WORKER_RECOVERY_COMMANDS={}",
@@ -8119,7 +8119,7 @@ fn main() {
         )
         .unwrap();
         let notice = last_failure(app.handle().clone()).expect("persisted Quit notice");
-        assert_eq!(notice.said, "OpenBot had trouble shutting down last time.");
+        assert_eq!(notice.said, "Connect had trouble shutting down last time.");
         assert!(notice
             .detail
             .as_ref()
@@ -8154,7 +8154,7 @@ fn main() {
             owned_app_url(&f.owned, &f.ports).is_some(),
             "survivors must still answer"
         );
-        assert!(show_openbot_on(app.handle().clone(), &f.ports).is_err());
+        assert!(show_Connect_on(app.handle().clone(), &f.ports).is_err());
         restore_window_on(app.handle(), &f.ports);
         assert_eq!(window.url().unwrap().as_str(), setup);
         // Reclaim may advance the active generation before a later Start failure. It still
@@ -8195,7 +8195,7 @@ fn main() {
             "restore must not consume the persisted notice before React asks for it"
         );
         let notice = last_failure(app.handle().clone()).expect("persisted Quit notice");
-        assert_eq!(notice.said, "OpenBot had trouble shutting down last time.");
+        assert_eq!(notice.said, "Connect had trouble shutting down last time.");
         assert!(notice
             .detail
             .as_ref()
@@ -8226,7 +8226,7 @@ fn main() {
 
         assert!(recovery_required(&shell, &f.owned));
         let failure = last_failure(app.handle().clone()).expect("volatile sink failure");
-        assert_eq!(failure.said, "OpenBot could not record a shutdown problem.");
+        assert_eq!(failure.said, "Connect could not record a shutdown problem.");
         assert!(failure
             .detail
             .as_ref()
@@ -8242,7 +8242,7 @@ fn main() {
         let app = f.app(&f.owned, "tauri://localhost/recovery");
         std::fs::write(f.owned.join("pause-response"), "").unwrap();
         let restoring = app.handle().clone();
-        let ports = openbot_env::Ports {
+        let ports = Connect_env::Ports {
             server: f.ports.server,
             app: f.ports.app,
             ..Default::default()
@@ -8589,7 +8589,7 @@ fn main() {
         let result = finish_host_start(&attempt, &root, children, Ok(())).unwrap_err();
         assert_eq!(
             result.said,
-            "OpenBot could not verify its host process ownership."
+            "Connect could not verify its host process ownership."
         );
         assert!(
             result
@@ -8897,8 +8897,8 @@ fn main() {
             static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
             let guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             let previous = std::env::var_os("PATH");
-            let previous_record = std::env::var_os("OPENBOT_TEST_ENGINE_RECORD");
-            let bin = temp_root("openbot-fake-engine-bin");
+            let previous_record = std::env::var_os("Connect_TEST_ENGINE_RECORD");
+            let bin = temp_root("Connect-fake-engine-bin");
             std::fs::create_dir_all(&bin).unwrap();
             Self::write_binary_under(&bin, binary, scenario);
             Self::write_binary_under(&bin, "bun", "runtime");
@@ -8968,16 +8968,16 @@ fn main() {
                 std::env::remove_var("PATH");
             }
             if let Some(previous) = &self.previous_record {
-                std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", previous);
+                std::env::set_var("Connect_TEST_ENGINE_RECORD", previous);
             } else {
-                std::env::remove_var("OPENBOT_TEST_ENGINE_RECORD");
+                std::env::remove_var("Connect_TEST_ENGINE_RECORD");
             }
         }
     }
 
     fn fake_engine(record: &Path) -> engine::Address {
         std::fs::create_dir_all(record.parent().expect("record parent")).unwrap();
-        std::env::set_var("OPENBOT_TEST_ENGINE_RECORD", record);
+        std::env::set_var("Connect_TEST_ENGINE_RECORD", record);
         engine::Address::new(engine::Engine::Docker, None)
     }
 
@@ -9002,7 +9002,7 @@ fn main() {
         child: std::process::Child,
         app_child: std::process::Child,
         app_descendant_pid: Option<u32>,
-        ports: openbot_env::Ports,
+        ports: Connect_env::Ports,
     }
 
     impl RestoreFixture {
@@ -9113,7 +9113,7 @@ fn main() {
                 child,
                 app_child,
                 app_descendant_pid,
-                ports: openbot_env::Ports {
+                ports: Connect_env::Ports {
                     server: numbers[0],
                     app: app_numbers[1],
                     ..Default::default()
@@ -9173,9 +9173,9 @@ fn main() {
             return;
         }
         let path = SerializedPath::set_only_with("docker", "shutdown");
-        let root = temp_root("openbot-restricted-path-credential-store");
+        let root = temp_root("Connect-restricted-path-credential-store");
         std::fs::create_dir_all(&root).unwrap();
-        let saved = openbot_desktop_lib::vault::remember(
+        let saved = connect_desktop_lib::vault::remember(
             &root,
             "OPENAI_API_KEY",
             "synthetic-path-regression-key",
@@ -9261,7 +9261,7 @@ fn main() {
         config.app.windows[0].label = "another-window".into();
         assert_eq!(
             configured_setup_url(&config, true, true).unwrap_err(),
-            "the OpenBot setup window is not configured",
+            "the Connect setup window is not configured",
         );
     }
 
@@ -9399,16 +9399,16 @@ fn main() {
         let f = RestoreFixture::new();
         std::fs::write(
             f.owned.join(".env"),
-            "OPENBOT_ORGANIZATION_AUTH_URL=https://company.example\n",
+            "Connect_ORGANIZATION_AUTH_URL=https://company.example\n",
         )
         .unwrap();
         let app = f.app(&f.owned, "tauri://localhost/");
         let window = app.get_webview_window("main").unwrap();
         let before = window.url().unwrap();
-        let failure = show_openbot_on(app.handle().clone(), &f.ports).unwrap_err();
+        let failure = show_Connect_on(app.handle().clone(), &f.ports).unwrap_err();
         assert_eq!(
             failure.connection,
-            Some(openbot_desktop_lib::problem::Connection::Organization)
+            Some(connect_desktop_lib::problem::Connection::Organization)
         );
         assert_eq!(
             window.url().unwrap(),
@@ -9498,7 +9498,7 @@ fn main() {
         assert!(stack::app_url(f.ports.app).is_some());
         let initial_adoption = already_running_at(&f.owned, &f.ports);
         let app = f.app(&f.owned, "tauri://localhost/");
-        let shown = show_openbot_on(app.handle().clone(), &f.ports);
+        let shown = show_Connect_on(app.handle().clone(), &f.ports);
         restore_window_on(app.handle(), &f.ports);
         let destination = app.get_webview_window("main").unwrap().url().unwrap();
         assert!(!initial_adoption && shown.is_err() && destination.as_str() == "tauri://localhost/",
@@ -9515,7 +9515,7 @@ fn main() {
             }
             assert!(already_running_at(&f.owned, &f.ports));
             let app = f.app(&f.owned, "tauri://localhost/");
-            show_openbot_on(app.handle().clone(), &f.ports).unwrap();
+            show_Connect_on(app.handle().clone(), &f.ports).unwrap();
             restore_window_on(app.handle(), &f.ports);
             assert_eq!(
                 app.get_webview_window("main")

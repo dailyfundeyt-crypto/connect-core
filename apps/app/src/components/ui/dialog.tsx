@@ -53,9 +53,12 @@ function DialogContent({
   overlayClassName,
   children,
   showCloseButton = true,
+  closeLabel = "Close",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
+  /** Screenreader-Text des X-Buttons (Standard: "Close"). */
+  closeLabel?: string;
   /**
    * Restyles the backdrop behind this popup. A dialog stacked over another passes a heavier one
    * here, so the dialog underneath reads as background rather than as a competing surface.
@@ -97,7 +100,7 @@ function DialogContent({
             }
           >
             <IconX />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{closeLabel}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>

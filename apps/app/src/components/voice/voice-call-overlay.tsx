@@ -35,6 +35,13 @@ import {
   transcribeWithWhisper,
 } from "@/lib/voice/whisper";
 import { cn } from "@/lib/utils";
+import { speakableText, splitSentences } from "@/lib/voice/agent-reply";
+import {
+  localVoiceStatus,
+  speakLocal,
+  stopLocalSpeech,
+  transcribeLocal,
+} from "@/lib/voice/local-voice";
 
 type CallPhase = "idle" | "listening" | "thinking" | "speaking";
 
@@ -61,8 +68,14 @@ export function VoiceCallOverlay({
   onClose: () => void;
   agentName: string;
   agentId?: string;
-  /** Return the agent's reply text for TTS. */
-  onUserUtterance: (text: string) => Promise<string>;
+  /**
+   * Send what was said and resolve with the agent's REAL reply (spoken back). `onText` receives the
+   * reply so far while it streams, for the caption.
+   */
+  onUserUtterance: (
+    text: string,
+    onText?: (partial: string) => void,
+  ) => Promise<string>;
 }) {
   const [phase, setPhase] = useState<CallPhase>("idle");
   const [transcript, setTranscript] = useState("");
@@ -121,6 +134,7 @@ export function VoiceCallOverlay({
   }, [open]);
 
   function teardown() {
+    stopLocalSpeech();
     liveStopRef.current?.();
     liveStopRef.current = null;
     if (recorderStopRef.current) {
@@ -200,9 +214,15 @@ export function VoiceCallOverlay({
     if (!stop) return;
     try {
       const blob = await stop();
-      const text = await transcribeWithWhisper(blob, {
-        language: settingsRef.current.language,
-      });
+      // whisper-local (model "small", preferred words) when it runs on this PC, else in-browser.
+      const language = settingsRef.current.language;
+      let text: string;
+      try {
+        if (!(await localVoiceStatus()).stt) throw new Error("no local stt");
+        text = await transcribeLocal(blob, { language: language === "auto" ? "de" : language });
+      } catch {
+        text = await transcribeWithWhisper(blob, { language });
+      }
       await handleFinal(text);
     } catch (caught) {
       if (phaseRef.current === "listening") {
@@ -228,22 +248,34 @@ export function VoiceCallOverlay({
     setPhase("thinking");
     setTranscript(text);
     try {
-      const answer = await onUserUtterance(text.trim());
-      setReply(answer);
+      const answer = await onUserUtterance(text.trim(), (partial) =>
+        setReply(partial),
+      );
+      const spoken =
+        speakableText(answer) ||
+        "Ich habe keine Textantwort bekommen. Schau bitte in den Chat.";
+      setReply(answer || spoken);
       setPhase("speaking");
       playCallTone("speak");
       const voice = settingsRef.current;
+      // ElevenLabs when a key is set (opt-in), else the local Kokoro voice, else the browser voice.
       if (
         takeActiveKey({ voiceId: voice.voiceId }) ||
         (agentId && getAgentApiKeys(agentId).elevenLabs.trim())
       ) {
-        const buffer = await speakWithElevenLabs(answer, {
+        const buffer = await speakWithElevenLabs(spoken, {
           voiceId: voice.voiceId,
           agentId,
         });
         await playElevenLabsAudio(buffer, { speed: voice.speed });
+      } else if ((await localVoiceStatus()).tts) {
+        try {
+          await speakLocal(splitSentences(spoken), { speed: voice.speed });
+        } catch {
+          await speakBrowser(spoken, voice.language, voice.speed);
+        }
       } else {
-        await speakBrowser(answer, voice.language, voice.speed);
+        await speakBrowser(spoken, voice.language, voice.speed);
       }
       handlingRef.current = false;
       if (!muted) void beginListening();

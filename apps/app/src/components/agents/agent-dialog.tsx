@@ -1,7 +1,10 @@
 import {
   IconAdjustments,
   IconArrowsExchange,
+  IconBrain,
   IconBrandChrome,
+  IconCpu,
+  IconPlug,
   IconClock,
   IconKey,
   IconMicrophone,
@@ -15,6 +18,10 @@ import { useEffect, useRef, useState } from "react";
 import type { ZodType } from "zod";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AgentApiKeysPanel } from "@/components/agents/agent-api-keys-panel";
+import { AgentBrainPanel } from "@/components/agents/agent-brain-panel";
+import { AgentBrowserPanel } from "@/components/agent-hub/agent-browser-panel";
+import { AgentMcpPanel } from "@/components/agent-hub/agent-mcp-panel";
+import { AgentModelPanel } from "@/components/agent-hub/agent-model-panel";
 import { AgentAutomationsPanel } from "@/components/agents/agent-automations-panel";
 import { AgentBrowserModeSelect } from "@/components/agents/agent-browser-mode";
 import { AgentIdentitySettings } from "@/components/agents/agent-identity-settings";
@@ -143,6 +150,9 @@ const SECTIONS = [
   { id: "voice", name: "Stimme", icon: IconMicrophone },
   { id: "keys", name: "API-Keys", icon: IconKey },
   { id: "access", name: "Access", icon: IconPuzzle },
+  { id: "brain", name: "Brain", icon: IconBrain },
+  { id: "model", name: "Modell", icon: IconCpu },
+  { id: "mcp", name: "MCP", icon: IconPlug },
   { id: "handoff", name: "Handoff", icon: IconArrowsExchange },
   { id: "routines", name: "Routines", icon: IconClock },
   { id: "manage", name: "Manage", icon: IconAdjustments },
@@ -264,6 +274,12 @@ function AgentDialogBody({ agentId }: { agentId: string }) {
               <KeysSection agentId={agentId} agentName={profile.name} />
             ) : section === "access" ? (
               <AccessSection agentId={agentId} />
+            ) : section === "brain" ? (
+              <AgentBrainPanel agentId={agentId} agentName={profile.name} />
+            ) : section === "model" ? (
+              <AgentModelPanel agentId={agentId} />
+            ) : section === "mcp" ? (
+              <AgentMcpPanel agentId={agentId} />
             ) : section === "handoff" ? (
               <HandoffPanel agentId={agentId} />
             ) : section === "routines" ? (
@@ -436,6 +452,7 @@ function GeneralSection({
 function BrowserSection({ agentId }: { agentId: string }) {
   return (
     <>
+      <AgentBrowserPanel agentId={agentId} />
       <Item size="sm" variant="muted">
         <ItemContent>
           <ItemTitle>Browser & Sandbox</ItemTitle>

@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "Connect Shell (Arc-Sidebar)",
+  "short_name": "Connect Shell",
+  "version": "0.4.19",
+  "description": "Arc-artige Sidebar für Helium/Chromium: Helium+Connect (localhost:3101) als App-Fenster ohne Adressleiste, Modus-Leiste wie Connect, Apps/Links als neue Helium-Tabs, Split-Links, Tab-Sitzungen.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "storage",
+    "scripting",
+    "system.display"
+  ],
+  "host_permissions": [
+    "http://localhost:3010/*",
+    "http://127.0.0.1:3010/*",
+    "http://localhost:3101/*"
+  ],
+  "background": {
+    "service_worker": "sw-0.4.19.js"
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "chrome_settings_overrides": {
+    "homepage": "http://localhost:3101/",
+    "startup_pages": [
+      "http://localhost:3101/"
+    ]
+  },
+  "action": {
+    "default_title": "Connect-Sidebar öffnen"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Connect-Sidebar öffnen/schließen"
+    },
+    "open-floating-bar": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Helium + Connect öffnen (war: Floating Bar)"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3010/*",
+        "http://127.0.0.1:3010/*",
+        "http://localhost:3101/*"
+      ],
+      "js": [
+        "connect-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

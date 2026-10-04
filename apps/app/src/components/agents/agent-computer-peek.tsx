@@ -8,11 +8,13 @@ import {
 } from "@tabler/icons-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { AgentChromeLive } from "@/components/agents/agent-chrome-live";
 import { ComputerView } from "@/components/computer/computer-view";
 import {
   type AgentBrowserSession,
   ensureAgentBrowserStarted,
   getAgentBrowserSession,
+  stopAgentBrowser,
   subscribeAgentBrowser,
 } from "@/lib/agents/agent-browser";
 import {
@@ -133,6 +135,21 @@ export function AgentComputerPeek({
             </span>
           </div>
         )
+      ) : prefs.runtime === "chrome" && session.status === "running" ? (
+        <AgentChromeLive
+          agentId={agentId}
+          fallback={(error) => (
+            <ChromeFramePlaceholder
+              message={error ?? "Vorschau lädt…"}
+              subtle
+            />
+          )}
+          intervalMs={2000}
+          onUnavailable={() => {
+            // Agent window was closed / server restarted — relaunch its own profile.
+            stopAgentBrowser(agentId);
+          }}
+        />
       ) : prefs.runtime === "chrome" ? (
         <ChromeFramePlaceholder
           message={

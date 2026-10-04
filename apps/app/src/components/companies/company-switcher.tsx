@@ -34,9 +34,56 @@ function writeActiveId(id: string) {
   window.dispatchEvent(new Event("connect-active-company"));
 }
 
+/*
+ * Brand mark in the rail (helium-companylogo): shows the company the user
+ * actually picked. "Home" (or no stored pick) shows the Connect logo again.
+ * The Home flag is a UI-only key, so it never changes which company the rest
+ * of the app works in.
+ */
+const BRAND_HOME_KEY = "connect.companySwitcher.home";
+const BRAND_EVENT = "connect-company-brand";
+
+function readBrandCompanyId(companies: ConnectCompany[]): string | null {
+  if (typeof window === "undefined") return null;
+  if (window.localStorage.getItem(BRAND_HOME_KEY) === "1") return null;
+  const stored = window.localStorage.getItem(ACTIVE_KEY);
+  return stored && companies.some((c) => c.id === stored) ? stored : null;
+}
+
+function setBrandHome(home: boolean) {
+  if (typeof window === "undefined") return;
+  const current = window.localStorage.getItem(BRAND_HOME_KEY) === "1";
+  if (current === home) return;
+  if (home) window.localStorage.setItem(BRAND_HOME_KEY, "1");
+  else window.localStorage.removeItem(BRAND_HOME_KEY);
+  window.dispatchEvent(new Event(BRAND_EVENT));
+}
+
+const DEFAULT_ICON_ATTR = "data-connect-default-href";
+
+/** Browser tab: "Connect · <Firma>" + company logo as favicon. */
+function applyDocumentBrand(company: ConnectCompany | null) {
+  if (typeof document === "undefined") return;
+  const product = appConfig.brand.productName;
+  // Title must keep starting with "Connect" (Start-Connect.ps1 / Notch find the window by it).
+  document.title = company ? `${product} · ${company.name}` : product;
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!link) return;
+  if (!link.hasAttribute(DEFAULT_ICON_ATTR)) {
+    link.setAttribute(DEFAULT_ICON_ATTR, link.getAttribute("href") ?? "");
+  }
+  const fallback = link.getAttribute(DEFAULT_ICON_ATTR) || CONNECT_BRAND_LOGO;
+  const href = company?.logo || fallback;
+  if (link.getAttribute("href") === href) return;
+  if (company?.logo) link.removeAttribute("type");
+  else link.setAttribute("type", "image/png");
+  link.setAttribute("href", href);
+}
+
 /**
- * Company switcher — Connect brand mark in the mode icon rail.
- * Always shows the Connect logo; open the menu to pick a company.
+ * Company switcher — brand mark in the mode icon rail.
+ * Shows the picked company's logo (Connect logo on Home / no pick);
+ * open the menu to pick a company.
  */
 export function CompanySwitcher() {
   const navigate = useNavigate();
@@ -46,6 +93,33 @@ export function CompanySwitcher() {
     readActiveId(listCompanies()),
   );
   const [open, setOpen] = useState(false);
+  const [brandId, setBrandId] = useState<string | null>(() =>
+    readBrandCompanyId(listCompanies()),
+  );
+
+  useEffect(() => {
+    const sync = () => setBrandId(readBrandCompanyId(listCompanies()));
+    sync();
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key === null ||
+        event.key === ACTIVE_KEY ||
+        event.key === BRAND_HOME_KEY
+      ) {
+        sync();
+      }
+    };
+    window.addEventListener(BRAND_EVENT, sync);
+    window.addEventListener("connect-active-company", sync);
+    window.addEventListener("storage", onStorage);
+    const off = subscribeCompanies(sync);
+    return () => {
+      window.removeEventListener(BRAND_EVENT, sync);
+      window.removeEventListener("connect-active-company", sync);
+      window.removeEventListener("storage", onStorage);
+      off();
+    };
+  }, []);
 
   useEffect(() => {
     const refresh = () => {
@@ -59,6 +133,7 @@ export function CompanySwitcher() {
 
   useEffect(() => {
     if (params.companyId && companies.some((c) => c.id === params.companyId)) {
+      setBrandHome(false);
       writeActiveId(params.companyId);
       setActiveId(params.companyId);
     }
@@ -72,6 +147,11 @@ export function CompanySwitcher() {
 
   const active =
     (activeId ? getCompany(activeId) : undefined) ?? companies[0] ?? null;
+  const brand = (brandId ? getCompany(brandId) : undefined) ?? null;
+
+  useEffect(() => {
+    applyDocumentBrand(brand);
+  }, [brand?.id, brand?.name, brand?.logo]);
 
   const closeThen = (action: () => void) => {
     setOpen(false);
@@ -79,6 +159,7 @@ export function CompanySwitcher() {
   };
 
   const select = (company: ConnectCompany) => {
+    setBrandHome(false);
     writeActiveId(company.id);
     setActiveId(company.id);
     const level = getActiveLevel();
@@ -157,11 +238,12 @@ export function CompanySwitcher() {
           Manage companies
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() =>
+          onClick={() => {
+            setBrandHome(true);
             closeThen(() => {
               void navigate({ to: "/" });
-            })
-          }
+            });
+          }}
         >
           Home
         </DropdownMenuItem>
@@ -181,12 +263,22 @@ export function CompanySwitcher() {
             "bg-sidebar-accent text-sidebar-foreground shadow-[inset_0_0_0_1px_var(--sidebar-border)]",
         )}
         title={
-          active
-            ? `${appConfig.brand.productName} · ${active.name}`
+          brand
+            ? `${appConfig.brand.productName} · ${brand.name}`
             : appConfig.brand.productName
         }
       >
-        <ConnectBrandMark size={22} />
+        <span
+          className="flex size-[22px] shrink-0 items-center justify-center animate-in fade-in-0 zoom-in-75 duration-200 ease-out motion-reduce:animate-none"
+          data-brand={brand?.id ?? "connect"}
+          key={brand?.id ?? "connect"}
+        >
+          {brand ? (
+            <CompanyMark company={brand} size={22} />
+          ) : (
+            <ConnectBrandMark size={22} />
+          )}
+        </span>
       </DropdownMenuTrigger>
       {menu}
     </DropdownMenu>
@@ -228,6 +320,8 @@ function CompanyMark({
   size?: number;
 }) {
   const [broken, setBroken] = useState(false);
+  // A newly uploaded logo gets a fresh chance to load.
+  useEffect(() => setBroken(false), [company?.logo]);
   const initials = (company?.name ?? "C")
     .split(/\s+/)
     .slice(0, 2)
@@ -250,7 +344,10 @@ function CompanyMark({
 
   return (
     <div
-      className="flex shrink-0 items-center justify-center rounded-lg text-xs font-semibold text-white"
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-lg font-semibold text-white",
+        size < 28 ? "text-[9px]" : "text-xs",
+      )}
       style={{
         width: size,
         height: size,
