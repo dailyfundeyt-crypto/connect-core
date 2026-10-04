@@ -1,3 +1,4 @@
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,6 +159,10 @@ export function CodexUsagePanel() {
 
   return (
     <PageSection title="Codex / Tokennutzung">
+      <SettingsSectionHeader
+        description="Tracking der Codex/OpenAI-Nutzung — Tokens, Budget und Tagesverbrauch auf einen Blick."
+        title="Codex Usage"
+      />
       <PageRows>
         <Item size="sm">
           <ItemContent>

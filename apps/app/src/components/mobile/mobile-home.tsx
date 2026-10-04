@@ -1,6 +1,8 @@
 import {
   IconBuildingStore,
   IconChevronDown,
+  IconCompass,
+  IconLayers,
   IconLogout,
   IconMessagePlus,
   IconPlus,
@@ -11,6 +13,7 @@ import {
   IconX,
   IconWorld,
   IconLayoutGrid,
+  IconChevronRight,
 } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
@@ -44,6 +47,7 @@ import { getCompany, listCompanies, subscribeCompanies } from "@/lib/companies/s
 import { getAgentTabs, subscribeAgentTabs } from "@/lib/agents/agent-browser-tabs";
 import { mobileChatDate } from "@/lib/mobile/chat-date";
 import { cn } from "@/lib/utils";
+import { ProfileSheet } from "./profile-sheet";
 
 const ACTIVE_COMPANY_KEY = "connect.activeCompanyId";
 const MAIN_AGENT_KEY = "connect.mobile.mainAgent";
@@ -567,9 +571,17 @@ export function MobileHome() {
 
   const loading = agentsQuery.isPending;
 
+  // Bottom navigation items
+  const navItems = [
+    { id: "browser", label: "Browser", icon: IconCompass, path: "/browser" },
+    { id: "focus", label: "Focus", icon: IconLayers, path: "/focus" },
+    { id: "companies", label: "Unternehmen", icon: IconBuildingStore, path: "/settings" },
+    { id: "settings", label: "Einstellungen", icon: IconSettings, path: "/settings" },
+  ];
+
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-[#0e0e10] text-white antialiased">
-      {/* Kopfzeile */}
+      {/* Kopfzeile — matches reference image: avatar left, search + plus right */}
       <header className="flex shrink-0 items-center gap-3 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         {searchOpen ? (
           <>
@@ -602,6 +614,7 @@ export function MobileHome() {
           </>
         ) : (
           <>
+            {/* Avatar on the LEFT — opens profile hub */}
             <button
               aria-label="Profil"
               className="rounded-full ring-2 ring-white/15 transition active:scale-95"
@@ -615,6 +628,7 @@ export function MobileHome() {
                 profile={profile}
               />
             </button>
+            {/* Search icon + plus icon on the RIGHT */}
             <div className="ml-auto flex items-center gap-2.5">
               <RoundButton label="Suchen" onClick={() => setSearchOpen(true)}>
                 <IconSearch className="size-[21px]" stroke={2} />
@@ -627,8 +641,8 @@ export function MobileHome() {
         )}
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        {/* Hauptagent */}
+      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[max(5rem,env(safe-area-inset-bottom))]">
+        {/* Main agent section — matches reference image design */}
         {!needle && mainAgent ? (
           <div className="flex flex-col items-center pb-5 pt-6">
             <button
@@ -642,9 +656,51 @@ export function MobileHome() {
                 <IconStarFilled className="size-4 text-white" />
               </span>
             </button>
-            <span className="mt-3 text-[15px] text-white/75">{mainAgent.name}</span>
+            {/* Centered agent name with star badge */}
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-[17px] font-semibold text-white">{mainAgent.name}</span>
+              <IconStarFilled className="size-4 text-amber-400" />
+            </div>
+            {/* Italic subtitle in muted gray */}
+            {mainAgent.title && (
+              <p className="mt-0.5 text-[13px] italic text-zinc-400">{mainAgent.title}</p>
+            )}
           </div>
         ) : null}
+
+        {/* Horizontal card row of pinned tabs / saved chats */}
+        {!needle && (
+          <div className="px-4 pb-2">
+            <p className="mb-2 text-[13px] text-white/40">Gespeicherte Tabs</p>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {(() => {
+                const tabs: { agentId: string; agentName: string; url: string; title: string }[] = [];
+                for (const agent of agents) {
+                  const browserTabs = getAgentTabs(agent.id);
+                  for (const tab of browserTabs.tabs.slice(0, 4)) {
+                    tabs.push({ agentId: agent.id, agentName: agent.name, url: tab.url, title: tab.title });
+                  }
+                }
+                if (tabs.length === 0) return null;
+                return tabs.slice(0, 4).map((tab) => (
+                  <button
+                    key={`tab-card-${tab.agentId}-${tab.url}`}
+                    className="flex min-w-[140px] max-w-[160px] flex-col rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left active:bg-white/10"
+                    onClick={() => openTab(tab.url, tab.title)}
+                    type="button"
+                  >
+                    <span className="mb-2 flex size-8 items-center justify-center rounded-lg bg-white/[0.08]">
+                      <IconWorld className="size-4 text-white/50" />
+                    </span>
+                    <span className="line-clamp-1 text-[14px] font-medium text-white">{tab.title}</span>
+                    <span className="line-clamp-1 mt-0.5 text-[12px] text-white/40">{tab.agentName}</span>
+                    <IconChevronRight className="mt-auto pt-2 size-3 text-white/30 self-end" />
+                  </button>
+                ));
+              })()}
+            </div>
+          </div>
+        )}
 
         {error ? (
           <p className="mx-5 mb-3 rounded-xl bg-red-500/15 px-3 py-2 text-sm text-red-300" role="alert">
@@ -662,8 +718,6 @@ export function MobileHome() {
           <p className="px-6 py-8 text-center text-[15px] text-white/45">Noch keine Agents.</p>
         ) : (
           <>
-            {/* Tabs section — always visible when not searching */}
-            {!needle && <TabsSection onOpenTab={openTab} />}
             {filteredSections.map((section) => {
             const isCollapsed = !needle && collapsed[section.id] === true;
             return (
@@ -763,6 +817,24 @@ export function MobileHome() {
         )}
       </main>
 
+      {/* Bottom navigation bar — matches reference image */}
+      <nav className="sticky bottom-0 flex shrink-0 items-center justify-around border-t border-white/[0.08] bg-[#0e0e10] px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              className="flex flex-1 flex-col items-center gap-1 py-1 text-white/40 active:text-white"
+              onClick={() => void navigate({ to: item.path })}
+              type="button"
+            >
+              <Icon className="size-6" stroke={1.5} />
+              <span className="text-[10px]">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
       {/* Plus-Menü */}
       <BottomSheet onClose={() => setPlusOpen(false)} open={plusOpen}>
         <SheetItem
@@ -791,57 +863,8 @@ export function MobileHome() {
         />
       </BottomSheet>
 
-      {/* Profil-Menü */}
-      <BottomSheet onClose={() => setProfileOpen(false)} open={profileOpen}>
-        <div className="flex items-center gap-3 px-3 pb-3 pt-1">
-          <UserAvatar
-            className="size-12 bg-white/10 text-base font-medium text-white!"
-            fallbackEmail={currentUser?.email}
-            fallbackImage={currentUser?.image}
-            profile={profile}
-          />
-          <div className="min-w-0">
-            <p className="truncate text-[17px] font-semibold">{displayName}</p>
-            {currentUser?.email ? (
-              <p className="truncate text-[14px] text-white/50">{currentUser.email}</p>
-            ) : null}
-          </div>
-        </div>
-        <SheetItem
-          icon={<IconBuildingStore className="size-5" />}
-          label="Unternehmen"
-          onClick={() => {
-            setProfileOpen(false);
-            setCompaniesOpen(true);
-          }}
-        />
-        <SheetItem
-          icon={<IconSettings className="size-5" />}
-          label="Globale Einstellungen"
-          onClick={() => {
-            setProfileOpen(false);
-            setSettingsOpen(true);
-          }}
-        />
-        <SheetItem
-          icon={<IconLayoutGrid className="size-5" />}
-          label="Tabs"
-          onClick={() => {
-            setProfileOpen(false);
-            void navigate({ to: "/settings", hash: "tabs" });
-          }}
-        />
-        <SheetItem
-          danger
-          icon={<IconLogout className="size-5" />}
-          label="Abmelden"
-          onClick={async () => {
-            setProfileOpen(false);
-            await signOut.mutateAsync();
-            await navigate({ to: "/sign" });
-          }}
-        />
-      </BottomSheet>
+      {/* Profile hub — uses the dedicated ProfileSheet component */}
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
 
       {/* Mobile Einstellungen Sheet */}
       <MobileSettingsSheet

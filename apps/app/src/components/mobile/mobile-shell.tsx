@@ -5,16 +5,15 @@ import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import { cn } from "@/lib/utils";
-import { MobileHome } from "./mobile-home";
 import "./mobile.css";
 
 const MOBILE_BG = "#0e0e10";
 
-/** Swipeable sections — 0=Home/Chats, 1=Browser, 2=Settings */
+/** Swipeable sections — 0=Browser, 1=Focus, 2=Companies */
 const SWIPE_SECTIONS = [
-  { id: "home", label: "Chats" },
   { id: "browser", label: "Browser" },
-  { id: "settings", label: "Einstellungen" },
+  { id: "focus", label: "Focus" },
+  { id: "companies", label: "Unternehmen" },
 ] as const;
 type SwipeSection = (typeof SWIPE_SECTIONS)[number]["id"];
 
@@ -63,9 +62,9 @@ function SwipeNavigator() {
       startSection.current = s;
       setSection(s);
       // Navigate to the route for this section
-      if (s === "settings") void navigate({ to: "/settings" });
+      if (s === "companies") void navigate({ to: "/settings", hash: "companies" });
       else if (s === "browser") void navigate({ to: "/browser" });
-      else void navigate({ to: "/" });
+      else if (s === "focus") void navigate({ to: "/focus" });
     },
     [navigate],
   );
@@ -105,7 +104,20 @@ function SwipeNavigator() {
       onTouchMove={onTouchMove}
       onTouchStart={onTouchStart}
     >
-      {/* Page indicator */}
+      {/* Progress bar at top showing current page index */}
+      <div className="absolute left-0 right-0 top-0 z-20 flex justify-center gap-1 px-4 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        {SWIPE_SECTIONS.map((s, i) => (
+          <div
+            key={s.id}
+            className={cn(
+              "h-[3px] rounded-full transition-all duration-200",
+              section === s.id ? "w-8 bg-white" : "w-3 bg-white/25",
+            )}
+          />
+        ))}
+      </div>
+
+      {/* Dot indicators at bottom center */}
       <div className="absolute bottom-2 left-0 right-0 z-20 flex justify-center gap-1.5">
         {SWIPE_SECTIONS.map((s) => (
           <button
@@ -126,22 +138,32 @@ function SwipeNavigator() {
         className="flex flex-1 transition-transform duration-200"
         style={{ transform: `translateX(${offset * 100}%)` }}
       >
-        {/* Home/Chats */}
-        <div className="min-w-full flex-1">
-          <MobileHome />
-        </div>
         {/* Browser section */}
         <div className="min-w-full flex-1 overflow-y-auto bg-[#0e0e10] pb-8">
-          <div className="p-4 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <div className="p-4 pt-[max(2.5rem,env(safe-area-inset-top))]">
             <h2 className="text-lg font-semibold text-white">Browser</h2>
             <p className="mt-2 text-sm text-white/50">
               Browser-Tabs erscheinen hier. Öffne einen Tab aus der Chats-Liste.
             </p>
           </div>
         </div>
-        {/* Settings section */}
+        {/* Focus section */}
         <div className="min-w-full flex-1 overflow-y-auto bg-[#0e0e10] pb-8">
-          <Outlet />
+          <div className="p-4 pt-[max(2.5rem,env(safe-area-inset-top))]">
+            <h2 className="text-lg font-semibold text-white">Focus</h2>
+            <p className="mt-2 text-sm text-white/50">
+              Fokussierte Tabs und Ansichten erscheinen hier.
+            </p>
+          </div>
+        </div>
+        {/* Companies section */}
+        <div className="min-w-full flex-1 overflow-y-auto bg-[#0e0e10] pb-8">
+          <div className="p-4 pt-[max(2.5rem,env(safe-area-inset-top))]">
+            <h2 className="text-lg font-semibold text-white">Unternehmen</h2>
+            <p className="mt-2 text-sm text-white/50">
+              Unternehmens- und Team-Einstellungen.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -150,7 +172,7 @@ function SwipeNavigator() {
 
 /**
  * Rahmen der Handy-Version (nur unter 768px auf Touch-Geräten, siehe useMobileShell):
- * "/" zeigt die Chatliste im Stil der Grok-App, "/channel/…" den Chat bildschirmfüllend.
+ * "/" zeigt den Swipe-Navigator (Browser/Focus/Unternehmen), "/channel/…" den Chat bildschirmfüllend.
  */
 export function MobileShell() {
   const location = useLocation();

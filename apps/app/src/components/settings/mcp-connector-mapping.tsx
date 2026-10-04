@@ -17,6 +17,7 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   clearManusConnectorSelection,
@@ -97,10 +98,15 @@ export function McpConnectorMappingPanel() {
   };
 
   return (
-    <PageSection
-      className="mt-6"
-      title="MCP / Connectors · Quellen"
-    >
+    <>
+      <SettingsSectionHeader
+        description="Manche Agents brauchen Zugang zu deinen Connectoren (Notion, Slack, GitHub …). Lege hier fest, welche das dürfen."
+        title="Connector-Mapping"
+      />
+      <PageSection
+        className="mt-6"
+        title="MCP / Connectors · Quellen"
+      >
       <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
         Drei getrennte Quellen mit Badge. Manus-Tasks bekommen{" "}
         <strong className="font-medium text-foreground">nur</strong> ausgewählte
@@ -253,6 +259,7 @@ export function McpConnectorMappingPanel() {
         </Item>
       ) : null}
     </PageSection>
+    </>
   );
 }
 

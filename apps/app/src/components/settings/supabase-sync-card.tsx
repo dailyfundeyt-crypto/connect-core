@@ -1,3 +1,4 @@
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { IconAlertTriangle, IconCloudCheck, IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -47,19 +48,24 @@ export function SupabaseSyncCard() {
 
   if (status && !status.available) {
     return (
-      <PageSection title="Online-Abgleich (Supabase)">
-        <PageRows>
-          <Item size="sm">
-            <ItemContent>
-              <ItemTitle>Abgleich mit der Connect App</ItemTitle>
-              <ItemDescription>
-                Der Abgleich läuft auf dem PC mit der Connect App (Aufgabe "Connect Sync (Supabase)", alle 5 Minuten). Status siehe dort unter
-                Einstellungen &gt; Sicherung.
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-        </PageRows>
-      </PageSection>
+      <>
+        <SettingsSectionHeader
+          description="Automatischer Abgleich zwischen der Connect App auf dem PC und Supabase — alle 5 Minuten, in beide Richtungen."
+          title="Sync & Backup"
+        />
+        <PageSection title="Online-Abgleich (Supabase)">
+          <PageRows>
+            <Item size="sm">
+              <ItemContent>
+                <ItemTitle>Abgleich mit der Connect App</ItemTitle>
+                <ItemDescription>
+                  Der Abgleich laeuft auf dem PC mit der Connect App (Aufgabe "Connect Sync (Supabase)", alle 5 Minuten). Status siehe dort unter Einstellungen &gt; Sicherung.
+                </ItemDescription>
+              </ItemContent>
+            </Item>
+          </PageRows>
+        </PageSection>
+      </>
     );
   }
 
@@ -76,7 +82,12 @@ export function SupabaseSyncCard() {
             ? "Läuft nicht mehr"
             : "Aktiv";
   return (
-    <PageSection title="Online-Abgleich (Supabase)">
+    <>
+      <SettingsSectionHeader
+        description="Automatischer Abgleich zwischen der Connect App auf dem PC und Supabase — alle 5 Minuten, in beide Richtungen."
+        title="Sync & Backup"
+      />
+      <PageSection title="Online-Abgleich (Supabase)">
       <PageRows>
         <Item size="sm">
           <ItemContent>
@@ -117,5 +128,6 @@ export function SupabaseSyncCard() {
         </Item>
       </PageRows>
     </PageSection>
+    </>
   );
 }

@@ -58,7 +58,7 @@ import { screenPickedFiles } from "./picked-files";
 import { AttachmentStrip } from "./attachment-strip";
 import { type RejectedFile, RejectedFiles } from "./rejected-files";
 import { PLACEHOLDER_COMMANDS } from "./sources";
-import { type AgentOption, buildTriggers } from "./triggers";
+import { type AgentOption, buildTriggers, type SavedTabOption } from "./triggers";
 import { ComposerMicButton } from "@/components/voice/composer-voice";
 import { VoiceCallButton } from "@/components/voice/voice-call-overlay";
 
@@ -139,6 +139,8 @@ export type ComposerProps = {
   /** Agents that `@` can address. Empty means the mention menu reports an empty channel. */
   agents?: readonly AgentOption[];
   commands?: readonly CommandOption[];
+  /** Saved browser tabs for `@tab:` mention autocomplete in the composer. */
+  savedTabs?: readonly SavedTabOption[];
   /**
    * Receives the whole draft rather than a string, so a mention or a command reaches the caller as
    * structured data instead of something it would have to re-parse out of the text.
@@ -339,6 +341,7 @@ export function Composer({
   floating = false,
   agents = [],
   commands = PLACEHOLDER_COMMANDS,
+  savedTabs,
   onSubmit,
   onQueue,
   interruptWhileBusy = false,
@@ -1061,8 +1064,8 @@ export function Composer({
 
   const isBusy = pending || isSubmitting;
   const triggers = useMemo(
-    () => buildTriggers({ agents, commands }),
-    [agents, commands],
+    () => buildTriggers({ agents, commands, savedTabs }),
+    [agents, commands, savedTabs],
   );
   const draft = useMemo(() => toDraft(value, staged), [staged, value]);
 

@@ -1,3 +1,4 @@
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -57,11 +58,16 @@ export function UbuntuMachinesPanel() {
   };
 
   return (
-    <PageSection
-      className="scroll-mt-8"
-      description="Pro Bot ein Ubuntu-Docker auf diesem Rechner. Start weckt den Supervisor-Container. Oracle Cloud (24 GB) bleibt die Anchor-Remote-Box im Cloud-Picker — kein extra Oracle-Konto."
-      title="Lokale Ubuntu-Maschinen"
-    >
+    <>
+      <SettingsSectionHeader
+        description="Pro Bot ein Ubuntu-Docker auf diesem Rechner starten — ohne extra Cloud-Konto."
+        title="Ubuntu-Maschinen"
+      />
+      <PageSection
+        className="scroll-mt-8"
+        description="Pro Bot ein Ubuntu-Docker auf diesem Rechner. Start weckt den Supervisor-Container. Oracle Cloud (24 GB) bleibt die Anchor-Remote-Box im Cloud-Picker — kein extra Oracle-Konto."
+        title="Lokale Ubuntu-Maschinen"
+      >
       {agents.isError ? (
         <p className="text-destructive text-sm" role="alert">
           Die Agentenliste konnte nicht geladen werden.
@@ -128,5 +134,6 @@ export function UbuntuMachinesPanel() {
         </PageRows>
       )}
     </PageSection>
+    </>
   );
 }

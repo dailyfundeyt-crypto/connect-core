@@ -24,81 +24,12 @@ export type ConnectCompany = {
   category?: string;
   location?: string;
   website?: string;
-  /**
-   * Whether this company was seeded the first time the app ran.
-   * Used to show/hide the Delete button and to apply the one-time migration
-   * that removes the "default" protection so seed companies are deletable.
-   * False (or absent) for user-created companies.
-   */
-  isDefault?: boolean;
 };
 
-/** Full Connect roster — every company can staff Zentrale / Research / Delivered. */
-const FULL_ROSTER = [
-  "cto",
-  "analysis",
-  "flux",
-  "hyper",
-  "spark",
-  "connect",
-  "consensus",
-] as const;
-
-export const CONNECT_COMPANIES: ConnectCompany[] = [
-  {
-    id: "nordwind",
-    name: "Nordwind",
-    handle: "nordwind",
-    description:
-      "Operations and analysis — keep work moving with clear findings.",
-    agentIds: [...FULL_ROSTER],
-    accent: "linear-gradient(145deg, #0f766e 0%, #164e63 55%, #1e293b 100%)",
-    logo: "/companies/nordwind.png?v=5",
-    category: "Operations company",
-    location: "Remote",
-    website: "nordwind.local",
-    isDefault: true,
-  },
-  {
-    id: "lumen",
-    name: "Lumen",
-    handle: "lumen",
-    description: "Product and creative — briefs, naming, and the next angle.",
-    agentIds: [...FULL_ROSTER],
-    accent: "linear-gradient(145deg, #7c3aed 0%, #db2777 50%, #1e293b 100%)",
-    logo: "/companies/lumen.png?v=5",
-    category: "Product company",
-    location: "Remote",
-    website: "lumen.local",
-    isDefault: true,
-  },
-  {
-    id: "helm",
-    name: "Helm",
-    handle: "helm",
-    description: "Risk, alignment, and decisions the team can stand behind.",
-    agentIds: [...FULL_ROSTER],
-    accent: "linear-gradient(145deg, #ca8a04 0%, #ea580c 45%, #1e293b 100%)",
-    logo: "/companies/helm.png?v=5",
-    category: "Risk & compliance",
-    location: "Remote",
-    website: "helm.local",
-    isDefault: true,
-  },
-  {
-    id: "pulse",
-    name: "Pulse",
-    handle: "pulse",
-    description: "Fast triage and shipping under pressure.",
-    agentIds: [...FULL_ROSTER],
-    accent: "linear-gradient(145deg, #0369a1 0%, #4f46e5 55%, #1e293b 100%)",
-    logo: "/companies/pulse.png?v=5",
-    category: "Delivery company",
-    location: "Remote",
-    website: "pulse.local",
-    isDefault: true,
-  },
-];
+// CONNECT_COMPANIES exported for type use; production ships with no default companies.
+// Seed companies (Nordwind, Lumen, Helm, Pulse) were removed in v0.0.4.
+// See migration key "helium:v2-cleared-default-companies" in store.ts for cleanup logic.
+export const CONNECT_COMPANIES: ConnectCompany[] = [];
 
 export function getCompany(id: string): ConnectCompany | undefined {
   return CONNECT_COMPANIES.find((c) => c.id === id);

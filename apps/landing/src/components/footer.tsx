@@ -9,8 +9,7 @@ const footerLinks = [
     links: [
       { label: "Features", href: "#features" },
       { label: "How it works", href: "#how" },
-      { label: "Onboarding", href: "#onboarding" },
-      { label: "Compare", href: "#compare" },
+      { label: "Install", href: "#install" },
       { label: "Download", href: "#download" },
     ],
   },

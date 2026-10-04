@@ -1,3 +1,4 @@
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -37,6 +38,10 @@ export function CompanySettingsPanel() {
 
   return (
     <div id="companies">
+      <SettingsSectionHeader
+        description="Firmenprofile anlegen und bearbeiten — Name, Beschreibung und Logo für alle Workspace-Ebenen."
+        title="Companies"
+      />
       <PageSection title="Companies">
         <PageRows>
           <Item size="sm">
@@ -85,8 +90,16 @@ export function CompanySettingsPanel() {
                     }
                     try {
                       deleteCompany(company.id);
-                      setCompanies(listCompanies());
+                      const after = listCompanies();
+                      setCompanies(after);
                       if (editingId === company.id) setEditingId(null);
+                      const stillThere = after.some((c) => c.id === company.id);
+                      if (stillThere) {
+                        window.alert(
+                          `„${company.name}" konnte nicht entfernt werden. ` +
+                            `Öffne /settings/diagnose-companies um den Eintrag manuell zu säubern.`,
+                        );
+                      }
                     } catch (caught) {
                       window.alert(
                         caught instanceof Error

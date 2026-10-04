@@ -1,4 +1,5 @@
 import { IconHeartHandshake, IconLoader2 } from "@tabler/icons-react";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +23,13 @@ export function DonatePanel() {
   useEffect(() => subscribeBlueCheck(() => setState(getBlueCheck())), []);
 
   return (
-    <div className="space-y-3 rounded-2xl border border-sky-500/30 bg-sky-500/[0.04] p-4">
-      <div className="flex items-start gap-3">
+    <>
+      <SettingsSectionHeader
+        description="Spende an Connect und erhalte einen blauen Haken — sichtbar im Marketplace und auf deinem Profil."
+        title="Donate"
+      />
+      <div className="space-y-3 rounded-2xl border border-sky-500/30 bg-sky-500/[0.04] p-4">
+        <div className="flex items-start gap-3">
         <span className="mt-0.5 inline-flex size-8 items-center justify-center rounded-full bg-sky-500 text-white">
           <IconHeartHandshake className="size-4" />
         </span>
@@ -90,5 +96,6 @@ export function DonatePanel() {
         </p>
       )}
     </div>
+    </>
   );
 }

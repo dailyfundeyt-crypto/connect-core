@@ -9,6 +9,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import {
   AGENT_API_KEY_META,
   type AgentApiKeyKind,
@@ -52,6 +53,10 @@ export function ApiKeysSettingsPanel() {
 
   return (
     <div className="flex flex-col gap-2">
+      <SettingsSectionHeader
+        description="Eigene API-Schlüssel für OpenAI, Anthropic und andere Anbieter hinterlegen — Connect nutzt sie direkt ohne Umweg."
+        title="API-Keys"
+      />
       <Item size="sm" variant="muted">
         <ItemContent>
           <ItemTitle className="flex items-center gap-1.5">

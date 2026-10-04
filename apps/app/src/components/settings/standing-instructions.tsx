@@ -1,3 +1,4 @@
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { PageSection } from "@/components/layout/page-shell";
@@ -56,10 +57,15 @@ export function StandingInstructions() {
   };
 
   return (
-    <PageSection
-      description="Applies to every coworker in every channel. Your role text on a coworker says what it does; this says how you want things done, for example writing style or how to describe your company."
-      title="Standing instructions"
-    >
+    <>
+      <SettingsSectionHeader
+        description="Wird an jeden Coworker in jedem Kanal weitergegeben — z. B. Schreibstil oder wie dein Unternehmen beschrieben werden soll."
+        title="Standing Instructions"
+      />
+      <PageSection
+        description="Applies to every coworker in every channel. Your role text on a coworker says what it does; this says how you want things done, for example writing style or how to describe your company."
+        title="Standing instructions"
+      >
       {stored.isPending ? null : stored.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {stored.error.message}
@@ -111,5 +117,6 @@ export function StandingInstructions() {
         </div>
       )}
     </PageSection>
+    </>
   );
 }

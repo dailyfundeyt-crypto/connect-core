@@ -12,6 +12,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { Switch } from "@/components/ui/switch";
 import { McpConnectorMappingPanel } from "@/components/settings/mcp-connector-mapping";
 import {
@@ -104,8 +105,12 @@ export function McpSettingsPanel() {
 
   return (
     <>
-    <McpConnectorMappingPanel />
-    <PageSection className="mt-6" title="Computer">
+      <SettingsSectionHeader
+        description="Cursor MCP-Server aktivieren und Berechtigungen für Shell-Befehle und Tool-Aufrufe festlegen."
+        title="MCP-Server"
+      />
+      <McpConnectorMappingPanel />
+      <PageSection className="mt-6" title="Computer">
       <PageRows>
         <Item size="sm">
           <ItemContent>

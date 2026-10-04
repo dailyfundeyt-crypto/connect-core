@@ -1,5 +1,6 @@
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import {
   PageRows,
   PageSection,
@@ -55,6 +56,10 @@ export function VoiceSettingsPanel() {
 
   return (
     <div id="voice">
+      <SettingsSectionHeader
+        description="Sprachausgabe und Spracherkennung über ElevenLabs und Whisper — direkt auf diesem Gerät, keine Cloud."
+        title="Voice"
+      />
       <PageSection title="Voice (ElevenLabs + Whisper)">
         <PageRows>
           <Item size="sm">

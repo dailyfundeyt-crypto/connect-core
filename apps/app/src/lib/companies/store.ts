@@ -29,17 +29,83 @@ const STORAGE_KEY = "connect.companies.custom";
 const DELETED_SEED_KEY = "connect.companies.deleted";
 
 /**
- * Tracks that the "default company" migration ran.
- * When set, seed companies are fully deletable (no special treatment).
- * Previously-deleted seeds that are still in DELETED_SEED_KEY are RESTORED so
- * users who want to keep their four defaults can — they were deleted before
- * the feature existed.
+ * One-time migration (idempotent, v0.0.4):
+ * Seed companies (Nordwind, Lumen, Helm, Pulse) were removed from CONNECT_COMPANIES.
+ * This migration:
+ *   1. Marks them as permanently deleted so they stay gone across reloads even if
+ *      the user never consciously deleted them before.
+ *   2. Sets CLEANUP_KEY so the block runs exactly once.
  *
- * Migration (one-time):
- *  - Clear DELETED_SEED_KEY so previously-hidden seeds reappear.
- *  - Set REMOVED_DEFAULT_KEY so the UI shows Delete for all companies.
+ * The old migration key "connect.companies.removed-default" is intentionally NOT
+ * consulted — its purpose (make seeds deletable) is superseded by removing the
+ * seeds entirely.
  */
-const MIGRATION_KEY = "connect.companies.removed-default";
+function runClearDefaultCompaniesMigration(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const CLEANUP_KEY = "helium:v2-cleared-default-companies";
+    if (window.localStorage.getItem(CLEANUP_KEY) === "1") return;
+
+    // If the old migration ran, it may have cleared DELETED_SEED_KEY.
+    // Restore it with the four seed ids so they stay gone.
+    const SEED_IDS = ["nordwind", "lumen", "helm", "pulse"] as const;
+    const deletedSeeds = readDeletedSeedIds();
+    for (const id of SEED_IDS) deletedSeeds.add(id);
+    window.localStorage.setItem(
+      DELETED_SEED_KEY,
+      JSON.stringify([...deletedSeeds]),
+    );
+
+    // Wipe the four ids from connect.companies.custom if they snuck in there
+    // (older versions kept the seeds in user-storage before the catalog was
+    // emptied). Without this, listCompanies() would still return them and
+    // they could be "deleted" but instantly come back from custom storage.
+    const STORAGE_KEY = "connect.companies.custom";
+    const customRaw = window.localStorage.getItem(STORAGE_KEY);
+    if (customRaw) {
+      try {
+        const parsed = JSON.parse(customRaw) as unknown;
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter(
+            (c): c is unknown =>
+              !c ||
+              typeof c !== "object" ||
+              typeof (c as { id?: unknown }).id !== "string" ||
+              !(SEED_IDS as readonly string[]).includes(
+                (c as { id: string }).id,
+              ),
+          );
+          if (filtered.length !== parsed.length) {
+            if (filtered.length === 0) {
+              window.localStorage.removeItem(STORAGE_KEY);
+            } else {
+              window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify(filtered),
+              );
+            }
+          }
+        }
+      } catch {
+        /* corrupt JSON — leave it for the user to fix manually */
+      }
+    }
+
+    // If the active company pointed at one of the four, drop the pointer so
+    // the UI does not open a workspace that no longer exists.
+    const active = window.localStorage.getItem("connect.activeCompanyId");
+    if (active && (SEED_IDS as readonly string[]).includes(active)) {
+      window.localStorage.removeItem("connect.activeCompanyId");
+    }
+
+    // Also clear the old migration key so it does not re-trigger and confuse future versions.
+    window.localStorage.removeItem("connect.companies.removed-default");
+
+    window.localStorage.setItem(CLEANUP_KEY, "1");
+  } catch {
+    /* ignore — non-fatal */
+  }
+}
 
 function readDeletedSeedIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -51,26 +117,6 @@ function readDeletedSeedIds(): Set<string> {
     return new Set(parsed.filter((s) => typeof s === "string"));
   } catch {
     return new Set();
-  }
-}
-
-/**
- * One-time migration (idempotent):
- * Clears the DELETED_SEED_KEY so previously hidden seed companies reappear.
- * Previously-deleted seeds (Nordwind, Lumen, Helm, Pulse) become visible again
- * so users who never wanted them but deleted them before the feature existed
- * can see them again and delete or keep them.
- *
- * The MIGRATION_KEY flag ensures this runs only once per browser profile.
- */
-function runRemoveDefaultMigration(): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (window.localStorage.getItem(MIGRATION_KEY) === "1") return;
-    window.localStorage.removeItem(DELETED_SEED_KEY);
-    window.localStorage.setItem(MIGRATION_KEY, "1");
-  } catch {
-    /* ignore — non-fatal */
   }
 }
 
@@ -186,7 +232,7 @@ const ACCENTS = [
 
 /** Seed + user companies, minus any seeds the user has deleted. */
 export function listCompanies(): ConnectCompany[] {
-  runRemoveDefaultMigration(); // one-time: restore previously hidden seeds + remove default protection
+  runClearDefaultCompaniesMigration();
   const custom = readCustom();
   const customIds = new Set(custom.map((c) => c.id));
   const deletedSeeds = readDeletedSeedIds();

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +25,10 @@ export function ErweitertPanel() {
 
   return (
     <div className="mt-8 border-t border-white/[0.06] pt-6">
+      <SettingsSectionHeader
+        description="Experimentelle Funktionen und Browser-Verhalten, die noch in Entwicklung sind."
+        title="Erweitert"
+      />
       <button
         className="flex w-full cursor-pointer items-center gap-2 text-sm text-[#888] transition-colors hover:text-white"
         onClick={() => setOpen((o) => !o)}

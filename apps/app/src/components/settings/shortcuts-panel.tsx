@@ -14,6 +14,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { Button } from "@/components/ui/button";
 import {
   HOTKEYS,
@@ -270,6 +271,10 @@ export function ShortcutsPanel() {
 
   return (
     <div className="space-y-4">
+      <SettingsSectionHeader
+        description="Tastenkürzel für die Shell, Agenten-Auswahl und weitere Aktionen — individuell anpassbar."
+        title="Shortcuts"
+      />
       <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-2">
           <IconKeyboard className="size-4" />

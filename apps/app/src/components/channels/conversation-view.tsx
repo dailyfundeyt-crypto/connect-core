@@ -23,6 +23,8 @@ import { VoiceCallOverlay } from "@/components/voice/voice-call-overlay";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import { assistantIds, waitForAgentReply } from "@/lib/voice/agent-reply";
 import { registerVoiceTarget } from "@/lib/voice/notch-bridge";
+import { getAllSavedTabs } from "@/lib/browser/tab-mention";
+import { subscribeAgentTabs } from "@/lib/agents/agent-browser-tabs";
 import { newId } from "../../lib/new-id";
 
 export function ConversationView({
@@ -109,6 +111,17 @@ export function ConversationView({
   voiceAgentId?: string;
 }) {
   const [voiceOpen, setVoiceOpen] = useState(false);
+
+  /** Re-render when agent tabs change so the composer mention picker stays current */
+  const [tabsTick, setTabsTick] = useState(0);
+  useEffect(() => {
+    const off = subscribeAgentTabs(() => setTabsTick((n) => n + 1));
+    return off;
+  }, []);
+  const savedTabs = useMemo(() => {
+    void tabsTick;
+    return getAllSavedTabs();
+  }, [tabsTick]);
 
   /*
    * THE QUEUE LIVES HERE BECAUSE BOTH HALVES OF IT DO.
@@ -515,6 +528,7 @@ export function ConversationView({
           agentId={voiceAgentId ?? agents[0]?.id}
           agents={agents}
           autoFocus={autoFocus}
+          savedTabs={savedTabs}
           {...(channelId ? { channelId } : {})}
           {...(commands ? { commands } : {})}
           className="w-full mt-auto"

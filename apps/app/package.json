@@ -2,7 +2,7 @@
   "name": "@connect/app",
   "license": "MIT",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "scripts": {
     "build": "bun --bun node_modules/vite/bin/vite.js build",

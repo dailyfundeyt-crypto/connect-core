@@ -366,27 +366,29 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                         onClick={() => {
                           const msg =
                             group.apps.length > 0
-                              ? `Gruppe „${group.label}“ löschen? Die ${group.apps.length} App(s) werden ebenfalls entfernt.`
-                              : `Gruppe „${group.label}“ löschen?`;
+                              ? `Gruppe „${group.label}" löschen? Die ${group.apps.length} App(s) werden ebenfalls entfernt.`
+                              : `Gruppe „${group.label}" löschen?`;
                           if (window.confirm(msg)) {
                             setState(setTabGroupOpen(companyId, group.id, false));
                             setTimeout(() => {
                               setState(deleteTabGroup(companyId, group.id));
                             }, 0);
                           }
-                        }
+                        }}
                       >
                         <IconTrash className="size-4" />
                         Gruppe löschen
                       </ContextMenuItem>
-          onDone={(next) => {
-            setState(next);
-            setAdding(false);
-            setEditingId(null);
-          }}
-        />
-      ) : (
-        <div className="flex flex-col gap-0.5">
+                    </ContextMenuContent>
+                  </ContextMenu>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-0.5">
           <button
             className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
             onClick={() => setAdding(true)}
@@ -404,8 +406,6 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
             Neue Gruppe
           </button>
         </div>
-      )}
-
       {connectId ? (
         <ConnectInline
           companyId={companyId}

@@ -8,6 +8,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
   getAgentManusApiKey,
@@ -73,7 +74,14 @@ export function ModelProviderSettingsPanel() {
   };
 
   return (
-    <PageSection title="Model Provider">
+    <PageSection
+      title="Model Provider"
+      description="Wähle den Anbieter für Modell One (Terminal / API-Key) und Modell Two (Hermes)."
+    >
+      <SettingsSectionHeader
+        description="Modell Two = Hermes läuft lokal auf deinem Rechner. Modell One = ein externer Anbieter über API-Key oder Terminal."
+        title="KI-Modelle"
+      />
       <PageRows>
         <Item size="sm">
           <ItemContent>

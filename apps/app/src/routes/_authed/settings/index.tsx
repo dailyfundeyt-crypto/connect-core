@@ -1,46 +1,31 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { SidebarShell } from "@/components/layout/sidebar-shell";
-import { SettingsSidebar } from "@/components/settings/settings-sidebar";
-import React, { useEffect, useRef, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconArrowLeft,
-  IconBolt,
-  IconCloudUpload,
   IconDownload,
-  IconKeyboard,
-  IconLock,
   IconMail,
   IconPlus,
-  IconPlugConnected,
   IconRefresh,
-  IconTrash,
-  IconChevronDown,
-  IconBell,
 } from "@tabler/icons-react";
-import { Link } from "@tanstack/react-router";
-
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { SaveToast } from "@/components/settings/save-toast";
 import { DeleteConfirmDialog } from "@/components/settings/delete-confirm-dialog";
 import { ErweitertPanel } from "@/components/settings/erweitert-panel";
 import { ProfileEditDialog } from "@/components/settings/profile-edit-dialog";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
-import {
-  getLocalProfile,
-  subscribeLocalProfile,
-} from "@/lib/auth/local-profile";
+import { SettingsOverview } from "@/components/settings/settings-overview";
+import { SettingsSidebar } from "@/components/settings/settings-sidebar";
 import {
   getLabPrefs,
   subscribeLabPrefs,
 } from "@/lib/ui/lab-prefs";
 import {
-  getVoiceSettings,
-  subscribeVoiceSettings,
-} from "@/lib/voice/elevenlabs";
-import { useTheme } from "@/components/theme-provider";
-import { LanguageSwitcher } from "@/components/i18n/language-gate";
-import { cn } from "@/lib/utils";
+  getLocalProfile,
+  subscribeLocalProfile,
+} from "@/lib/auth/local-profile";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { SidebarShell } from "@/components/layout/sidebar-shell";
 
 // ─── Auto-save hook ──────────────────────────────────────────────────────────
 
@@ -86,12 +71,18 @@ function Section({
         <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#666]">
           {label}
         </span>
-        <IconChevronDown
+        <svg
           className={cn(
             "size-3 text-[#444] transition-transform duration-150",
             !open && "-rotate-90",
           )}
-        />
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
       </button>
       <div
         className={cn(
@@ -140,13 +131,11 @@ function ActionRow({
   label,
   description,
   onClick,
-  variant = "ghost",
   danger = false,
 }: {
   label: string;
   description?: string;
   onClick?: () => void;
-  variant?: "ghost" | "outline" | "destructive";
   danger?: boolean;
 }) {
   return (
@@ -163,98 +152,13 @@ function ActionRow({
         onClick={onClick}
         size="sm"
         type="button"
-        variant={danger ? "destructive" : variant}
+        variant={danger ? "destructive" : "ghost"}
         className={cn(
-          !danger && variant === "ghost" && "border border-white/10 text-[#888] hover:border-white/20 hover:text-white",
-          variant === "outline" && "border border-white/10 text-[#888] hover:border-white/20 hover:text-white",
+          !danger && "border border-white/10 text-[#888] hover:border-white/20 hover:text-white",
         )}
       >
         {label}
       </Button>
-    </div>
-  );
-}
-
-function AddRow({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      className="flex w-full cursor-pointer items-center gap-2 py-3 text-sm text-[#555] transition-colors hover:text-white"
-      onClick={onClick}
-      type="button"
-    >
-      <IconPlus className="size-4" />
-      {label}
-    </button>
-  );
-}
-
-// ─── Segmented control ────────────────────────────────────────────────────────
-
-function SegmentedControl<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex rounded-lg border border-white/10 bg-[#111] p-0.5">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          className={cn(
-            "rounded-md px-3 py-1 text-xs transition-colors duration-150",
-            value === opt.value
-              ? "bg-[#1f1f1f] text-white"
-              : "text-[#666] hover:text-[#aaa]",
-          )}
-          onClick={() => onChange(opt.value)}
-          type="button"
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ─── Dark pill input ──────────────────────────────────────────────────────────
-
-function DarkInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label?: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      {label && (
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#555]">
-          {label}
-        </span>
-      )}
-      <input
-        className="h-9 w-full rounded-full border-0 bg-[#161616] px-4 text-sm text-white placeholder:text-[#444]"
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        type={type}
-        value={value}
-      />
     </div>
   );
 }
@@ -287,14 +191,12 @@ function RouteComponent() {
   const { savedAt, triggerSave } = useAutoSave();
   const [profile, setProfile] = useState(() => getLocalProfile());
   const [profileOpen, setProfileOpen] = useState(false);
-  const [dark, setDark] = useTheme();
   const { data: currentUser } = React.useQuery(currentUserQueryOptions());
   const [telemetry, setTelemetry] = useState(() => getTelemetryEnabled());
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [labKeepLogin, setLabKeepLogin] = useState(() => getLabPrefs().keepLoggedIn);
 
-  // Helium connection status (mock — real impl would call /api/helium/status)
-  const [heliumStatus, setHeliumStatus] = useState<"ok" | "offline">("ok");
+  // Helium connection status (mock)
+  const [heliumStatus] = useState<"ok" | "offline">("ok");
 
   // Shell shortcut hint
   const [shellShortcut] = useState(() => {
@@ -308,18 +210,36 @@ function RouteComponent() {
     return "Strg+Shift+Y";
   });
 
-  useEffect(() => subscribeLocalProfile(() => setProfile(getLocalProfile())), []);
+  // Read hash from URL for sidebar highlighting and scroll-to-section
+  const [hash, setHash] = useState(() =>
+    typeof window !== "undefined" ? window.location.hash.replace("#", "") : "",
+  );
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const h = window.location.hash.replace("#", "");
+      setHash(h);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // Scroll to hash section when hash changes
+  useEffect(() => {
+    if (hash) {
+      const el = document.getElementById(hash);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+  }, [hash]);
+
   useEffect(
-    () => subscribeLabPrefs(() => setLabKeepLogin(getLabPrefs().keepLoggedIn)),
+    () => subscribeLocalProfile(() => setProfile(getLocalProfile())),
     [],
   );
 
   const avatarSrc = profile.avatarUrl || currentUser?.image || undefined;
-
-  const handleDarkToggle = (checked: boolean) => {
-    setDark(checked);
-    triggerSave();
-  };
 
   const handleTelemetryToggle = (checked: boolean) => {
     setTelemetryEnabled(checked);
@@ -331,36 +251,33 @@ function RouteComponent() {
     try {
       localStorage.clear();
       document.cookie.split(";").forEach((c) => {
-        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        document.cookie = c
+          .replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
       });
       window.location.reload();
     } catch {
-      // fallback
       window.location.reload();
     }
   };
 
   return (
-    <>
-      {/* Save indicator */}
-      <SaveToast savedAt={savedAt} />
+    <SidebarShell className="h-svh overflow-hidden" width="300px">
+      {/* Settings sidebar — 3 collapsible groups */}
+      <SettingsSidebar activeHash={hash} />
 
-      {/* Delete confirmation */}
-      <DeleteConfirmDialog
-        confirmWord="LÖSCHEN"
-        description="Alle lokalen Connect-Daten werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
-        onConfirm={handleDeleteData}
-        onOpenChange={setDeleteOpen}
-        open={deleteOpen}
-        title="Alle Daten löschen"
-      />
-
-      {/* Profile dialog */}
-      <ProfileEditDialog onOpenChange={setProfileOpen} open={profileOpen} />
-
-      {/* ── Minimalist settings page ── */}
+      {/* Content pane */}
       <div className="min-h-0 flex-1 overflow-y-auto bg-[#000]">
-        <div className="mx-auto flex w-full max-w-[560px] flex-col px-6 pb-16 pt-8">
+        {/* When no hash: show the overview */}
+        {!hash && <SettingsOverview />}
+
+        {/* Settings panels — always rendered so all hashes are available */}
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-[560px] flex-col px-6 pb-16",
+            !hash ? "pt-0" : "pt-8",
+          )}
+        >
           {/* Back */}
           <div className="mb-6 flex items-center">
             <Button
@@ -377,35 +294,67 @@ function RouteComponent() {
             />
           </div>
 
-          {/* Title */}
-          <h1 className="mb-8 text-2xl font-bold text-white">Einstellungen</h1>
-
           {/* ── 1. Konto ── */}
           <Section id="konto" label="Konto">
-            {/* Profil */}
-            <Row label="Name & Foto" description={profile.name !== "Connect User" && profile.name.trim() ? profile.name : "Noch nicht gesetzt"}>
+            <Row
+              description={
+                profile.name !== "Connect User" && profile.name.trim()
+                  ? profile.name
+                  : "Noch nicht gesetzt"
+              }
+              label="Name & Foto"
+            >
               <div className="flex items-center gap-2">
                 <div className="size-8 overflow-hidden rounded-full bg-[#1f1f1f]">
                   {avatarSrc ? (
-                    <img alt="" className="size-full object-cover" referrerPolicy="no-referrer" src={avatarSrc} />
+                    <img
+                      alt=""
+                      className="size-full object-cover"
+                      referrerPolicy="no-referrer"
+                      src={avatarSrc}
+                    />
                   ) : null}
                 </div>
-                <Button onClick={() => setProfileOpen(true)} size="sm" type="button" variant="outline" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+                <Button
+                  onClick={() => setProfileOpen(true)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                >
                   Bearbeiten
                 </Button>
               </div>
             </Row>
 
-            {/* Anmelde-Sitzungen */}
-            <Row label="Anmelde-Sitzungen" description="Aktive Sitzungen anzeigen und beenden">
-              <Button render={(props) => <Link {...props} to="/settings" hash="security" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Aktive Sitzungen anzeigen und beenden"
+              label="Anmelde-Sitzungen"
+            >
+              <Button
+                render={(props) => (
+                  <Link {...props} to="/settings" hash="security" />
+                )}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Anzeigen
               </Button>
             </Row>
 
-            {/* Abmelden */}
-            <Row label="Abmelden" description="Sitzung beenden und zur Anmeldung">
-              <Button render={(props) => <Link {...props} to="/sign" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Sitzung beenden und zur Anmeldung"
+              label="Abmelden"
+            >
+              <Button
+                render={(props) => <Link {...props} to="/sign" />}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Abmelden
               </Button>
             </Row>
@@ -414,25 +363,46 @@ function RouteComponent() {
           {/* ── 2. Konnektoren ── */}
           <div className="mt-8 border-t border-white/[0.06]" />
           <Section id="konnektoren" label="Konnektoren">
-            {/* E-Mail-Konten */}
-            <Row label="E-Mail-Konten" description="IMAP/SMTP für E-Mail-basierte Kanäle">
-              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="IMAP/SMTP für E-Mail-basierte Kanäle"
+              label="E-Mail-Konten"
+            >
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 <IconPlus className="mr-1 size-3.5" />
                 Hinzufügen
               </Button>
             </Row>
 
-            {/* Cloud-Sync */}
-            <Row label="Cloud-Sync" description="Google Drive Backup">
-              <Button render={(props) => <Link {...props} to="/settings" hash="backup" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row description="Google Drive Backup" label="Cloud-Sync">
+              <Button
+                render={(props) => (
+                  <Link {...props} to="/settings" hash="backup" />
+                )}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Öffnen
               </Button>
             </Row>
 
-            {/* Helium-Verbindung */}
-            <Row label="Helium-Verbindung" description={heliumStatus === "ok" ? "Verbunden" : "Offline"}>
+            <Row
+              description={heliumStatus === "ok" ? "Verbunden" : "Offline"}
+              label="Helium-Verbindung"
+            >
               <div className="flex items-center gap-2">
-                <span className={cn("size-2 rounded-full", heliumStatus === "ok" ? "bg-emerald-500" : "bg-red-500")} />
+                <span
+                  className={cn(
+                    "size-2 rounded-full",
+                    heliumStatus === "ok" ? "bg-emerald-500" : "bg-red-500",
+                  )}
+                />
                 <Button
                   onClick={() => triggerSave()}
                   size="sm"
@@ -450,13 +420,22 @@ function RouteComponent() {
           {/* ── 3. Helium-Shell ── */}
           <div className="mt-8 border-t border-white/[0.06]" />
           <Section id="helium-shell" label="Helium-Shell">
-            {/* Shortcut */}
-            <Row label="Shortcut" description="Tastenkürzel zum Öffnen der Shell">
+            <Row
+              description="Tastenkürzel zum Öffnen der Shell"
+              label="Shortcut"
+            >
               <div className="flex items-center gap-2">
-                <code className="rounded bg-[#1f1f1f] px-2 py-1 text-xs text-[#888]">{shellShortcut}</code>
+                <code className="rounded bg-[#1f1f1f] px-2 py-1 text-xs text-[#888]">
+                  {shellShortcut}
+                </code>
                 <Button
                   render={(props) => (
-                    <a href="chrome://extensions/shortcuts" rel="noopener noreferrer" target="_blank" {...props}>
+                    <a
+                      href="chrome://extensions/shortcuts"
+                      rel="noopener noreferrer"
+                      target="_blank"
+                      {...props}
+                    >
                       chrome://extensions/shortcuts
                     </a>
                   )}
@@ -470,16 +449,36 @@ function RouteComponent() {
               </div>
             </Row>
 
-            {/* Apple-Dot Verhalten */}
-            <Row label="Apple-Dot Verhalten" description="Sichtbarkeit und Pin-Verhalten pro Domain">
-              <Button render={(props) => <Link {...props} to="/settings" hash="apple-dot" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Sichtbarkeit und Pin-Verhalten pro Domain"
+              label="Apple-Dot Verhalten"
+            >
+              <Button
+                render={(props) => (
+                  <Link {...props} to="/settings" hash="apple-dot" />
+                )}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Konfigurieren
               </Button>
             </Row>
 
-            {/* Browser-Gruppen-Defaults */}
-            <Row label="Browser-Gruppen" description="Standard-Gruppen für neue Tabs">
-              <Button render={(props) => <Link {...props} to="/settings" hash="browser-groups" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Standard-Gruppen für neue Tabs"
+              label="Browser-Gruppen"
+            >
+              <Button
+                render={(props) => (
+                  <Link {...props} to="/settings" hash="browser-groups" />
+                )}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Bearbeiten
               </Button>
             </Row>
@@ -488,30 +487,64 @@ function RouteComponent() {
           {/* ── 4. Connect-Agenten ── */}
           <div className="mt-8 border-t border-white/[0.06]" />
           <Section id="connect-agenten" label="Connect-Agenten">
-            {/* Standard-Agent */}
-            <Row label="Standard-Agent" description="Agent für neue Chats">
-              <Button render={(props) => <Link {...props} to="/agents" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Agent für neue Chats"
+              label="Standard-Agent"
+            >
+              <Button
+                render={(props) => <Link {...props} to="/agents" />}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Auswählen
               </Button>
             </Row>
 
-            {/* Agent-Liste */}
-            <Row label="Agent-Liste" description="Alle Agents verwalten">
-              <Button render={(props) => <Link {...props} to="/agents" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Alle Agents verwalten"
+              label="Agent-Liste"
+            >
+              <Button
+                render={(props) => <Link {...props} to="/agents" />}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Öffnen
               </Button>
             </Row>
 
-            {/* API-Keys */}
-            <Row label="API-Keys" description="Globale Keys für alle Agents">
-              <Button render={(props) => <Link {...props} to="/settings" hash="api-keys" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Globale Keys für alle Agents"
+              label="API-Keys"
+            >
+              <Button
+                render={(props) => (
+                  <Link {...props} to="/settings" hash="api-keys" />
+                )}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Verwalten
               </Button>
             </Row>
 
-            {/* MCP-Server */}
-            <Row label="MCP-Server" description="Model Context Protocol Server">
-              <Button render={(props) => <Link {...props} to="/settings/mcp" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Model Context Protocol Server"
+              label="MCP-Server"
+            >
+              <Button
+                render={(props) => <Link {...props} to="/settings/mcp" />}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Öffnen
               </Button>
             </Row>
@@ -520,22 +553,40 @@ function RouteComponent() {
           {/* ── 5. Benachrichtigungen ── */}
           <div className="mt-8 border-t border-white/[0.06]" />
           <Section id="benachrichtigungen" label="Benachrichtigungen">
-            <Row label="Push-Benachrichtigungen" description="Desktop-Benachrichtigungen">
+            <Row
+              description="Desktop-Benachrichtigungen"
+              label="Push-Benachrichtigungen"
+            >
               <Switch
                 aria-label="Push"
                 checked={true}
-                onCheckedChange={(checked) => { triggerSave(); }}
+                onCheckedChange={() => {
+                  triggerSave();
+                }}
               />
             </Row>
-            <Row label="E-Mail-Benachrichtigungen" description="Updates und Alerts per E-Mail">
+            <Row
+              description="Updates und Alerts per E-Mail"
+              label="E-Mail-Benachrichtigungen"
+            >
               <Switch
                 aria-label="E-Mail"
                 checked={false}
-                onCheckedChange={(checked) => { triggerSave(); }}
+                onCheckedChange={() => {
+                  triggerSave();
+                }}
               />
             </Row>
-            <Row label="Quiet Hours" description="Keine Benachrichtigungen von … bis">
-              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Keine Benachrichtigungen von … bis"
+              label="Quiet Hours"
+            >
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Konfigurieren
               </Button>
             </Row>
@@ -544,28 +595,50 @@ function RouteComponent() {
           {/* ── 6. Datenschutz ── */}
           <div className="mt-8 border-t border-white/[0.06]" />
           <Section id="datenschutz" label="Datenschutz">
-            <Row label="Lokale Daten" description="Datenbank und Cache auf diesem Gerät">
-              <Button render={(props) => <Link {...props} to="/settings" hash="storage" />} size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Datenbank und Cache auf diesem Gerät"
+              label="Lokale Daten"
+            >
+              <Button
+                render={(props) => (
+                  <Link {...props} to="/settings" hash="storage" />
+                )}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 Anzeigen
               </Button>
             </Row>
-            <Row label="Telemetrie" description="Anonyme Nutzungsstatistiken">
+            <Row
+              description="Anonyme Nutzungsstatistiken"
+              label="Telemetrie"
+            >
               <Switch
                 aria-label="Telemetrie"
                 checked={telemetry}
                 onCheckedChange={handleTelemetryToggle}
               />
             </Row>
-            <Row label="Daten exportieren" description="Alle Daten als JSON herunterladen">
-              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Alle Daten als JSON herunterladen"
+              label="Daten exportieren"
+            >
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 <IconDownload className="mr-1 size-3.5" />
                 Export
               </Button>
             </Row>
             <ActionRow
-              label="Daten löschen"
-              description="Alle lokalen Connect-Daten dauerhaft entfernen"
               danger
+              description="Alle lokalen Connect-Daten dauerhaft entfernen"
+              label="Daten löschen"
               onClick={() => setDeleteOpen(true)}
             />
           </Section>
@@ -573,14 +646,26 @@ function RouteComponent() {
           {/* ── 7. Über ── */}
           <div className="mt-8 border-t border-white/[0.06]" />
           <Section id="uber" label="Über">
-            <Row label="Version" description={`Connect App · Build ${import.meta.env.VITE_APP_VERSION ?? "dev"}`}>
-              <span className="text-xs text-[#555]">v{import.meta.env.VITE_APP_VERSION ?? "dev"}</span>
+            <Row
+              description={`Connect App · Build ${import.meta.env.VITE_APP_VERSION ?? "dev"}`}
+              label="Version"
+            >
+              <span className="text-xs text-[#555]">
+                v{import.meta.env.VITE_APP_VERSION ?? "dev"}
+              </span>
             </Row>
-            <Row label="Logs öffnen" description="Browser-Konsole und Server-Logs">
+            <Row
+              description="Browser-Konsole und Server-Logs"
+              label="Logs öffnen"
+            >
               <Button
                 onClick={() => {
                   try {
-                    (window as unknown as { __openLogs__?: () => void }).__openLogs__?.();
+                    (
+                      window as unknown as {
+                        __openLogs__?: () => void;
+                      }
+                    ).__openLogs__?.();
                   } catch { /* ignore */ }
                   triggerSave();
                 }}
@@ -592,8 +677,16 @@ function RouteComponent() {
                 Öffnen
               </Button>
             </Row>
-            <Row label="Feedback" description="Problem melden oder Feature vorschlagen">
-              <Button size="sm" type="button" variant="ghost" className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white">
+            <Row
+              description="Problem melden oder Feature vorschlagen"
+              label="Feedback"
+            >
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+              >
                 <IconMail className="mr-1 size-3.5" />
                 Feedback
               </Button>
@@ -607,6 +700,21 @@ function RouteComponent() {
           <div className="h-8" />
         </div>
       </div>
-    </>
+
+      {/* Dialogs */}
+      <SaveToast savedAt={savedAt} />
+      <DeleteConfirmDialog
+        confirmWord="LÖSCHEN"
+        description="Alle lokalen Connect-Daten werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+        onConfirm={handleDeleteData}
+        onOpenChange={setDeleteOpen}
+        open={deleteOpen}
+        title="Alle Daten löschen"
+      />
+      <ProfileEditDialog
+        onOpenChange={setProfileOpen}
+        open={profileOpen}
+      />
+    </SidebarShell>
   );
 }

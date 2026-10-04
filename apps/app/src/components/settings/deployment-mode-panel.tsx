@@ -1,3 +1,4 @@
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { IconCloud, IconDeviceDesktop } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -65,10 +66,15 @@ export function DeploymentModePanel() {
   };
 
   return (
-    <PageSection
-      description="Lokal empfohlen für Datenschutz. Cloud nur wenn erlaubt."
-      title="Speicher"
-    >
+    <>
+      <SettingsSectionHeader
+        description="Lokal speichern für volle Kontrolle — oder Supabase Cloud für Sync über Geräte hinweg."
+        title="Deployment Mode"
+      />
+      <PageSection
+        description="Lokal empfohlen für Datenschutz. Cloud nur wenn erlaubt."
+        title="Speicher"
+      >
       <PageRows>
         <Item size="sm">
           <ItemContent>
@@ -167,5 +173,6 @@ export function DeploymentModePanel() {
         ) : null}
       </PageRows>
     </PageSection>
+    </>
   );
 }

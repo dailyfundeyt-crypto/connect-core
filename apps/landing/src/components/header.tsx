@@ -9,8 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 const nav = [
   { href: "#features", label: "Features" },
   { href: "#how", label: "How it works" },
-  { href: "#onboarding", label: "Onboarding" },
-  { href: "#compare", label: "Compare" },
+  { href: "#install", label: "Install" },
   { href: "#download", label: "Download" },
 ];
 

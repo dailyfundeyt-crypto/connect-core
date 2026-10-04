@@ -257,45 +257,90 @@ export function localWebSearchUrl(query: string): string {
 export const CHROME_WEB_STORE_URL =
   "https://chromewebstore.google.com/category/extensions";
 
+// SEED_DISABLED — sidebar starts empty; user creates groups via + Neue Gruppe.
 function defaultTabGroups(): LabTabGroup[] {
-  return [
-    {
-      id: "group-technische",
-      label: "Technische",
-      accent: "technische",
-      appIds: ["tradingview", "markettrace", "btcusdt", "prorealtime", "plattform"],
-    },
-    {
-      id: "group-fundamentals",
-      label: "Fundamentals",
-      accent: "fundamentals",
-      appIds: [],
-    },
-    {
-      id: "group-sentimentalle",
-      label: "Sentimentalle",
-      accent: "sentimentalle",
-      appIds: ["cryptopanic", "allcategories"],
-    },
-    {
-      id: "group-sektorielle",
-      label: "Sektorielle",
-      accent: "sektorielle",
-      appIds: [],
-    },
-    {
-      id: "group-build",
-      label: "Build",
-      accent: "build",
-      appIds: ["lovable", "cursor", "github", "laravel"],
-    },
-    {
-      id: "group-ai",
-      label: "AI",
-      accent: "ai",
-      appIds: ["claude", "chatgpt"],
-    },
-  ];
+  return [];
+}
+
+// Keep the function so normalizeGroups() still type-checks without import changes.
+export function getDefaultTabGroups(): LabTabGroup[] {
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// One-time migration: v2-cleared-defaults
+//
+// If the user's persisted localStorage still holds the old seeded groups
+// (Technische, Fundamentals, Sentimentalle, Sektorielle, Build, AI),
+// remove them once so the sidebar is truly empty on first load after this change.
+//
+// The migration key lives under the same localStorage KEY so it is per-company
+// and survives a workspace switch.  Run once on any company that still has the
+// old seed groups.  Group names are matched case-insensitively.
+// ---------------------------------------------------------------------------
+const MIGRATION_KEY = "connect.level3.migrated.v2-cleared-defaults";
+
+const SEED_GROUP_IDS = new Set([
+  "group-technische",
+  "group-fundamentals",
+  "group-sentimentalle",
+  "group-sektorielle",
+  "group-build",
+  "group-ai",
+]);
+
+const SEED_GROUP_LABELS = new Set([
+  // German
+  "technische",
+  "fundamentals",
+  "sentimentalle",
+  "sektorielle",
+  "sektoriell",
+  "build",
+  "ai",
+]);
+
+function runClearDefaultsMigration(
+  state: Level3BrowserState,
+): Level3BrowserState {
+  if (typeof window === "undefined") return state;
+
+  // Check migration flag first (fast path — no JSON parsing on every call)
+  const rawAll = window.localStorage.getItem(KEY);
+  if (!rawAll) return state;
+
+  try {
+    const all = JSON.parse(rawAll) as Record<string, Level3BrowserState>;
+    const entry = all[state.companyId];
+    if (!entry) return state;
+    if (entry[MIGRATION_KEY]) return state;
+  } catch {
+    return state;
+  }
+
+  const cleaned = (entry: Level3BrowserState): Level3BrowserState => ({
+    ...entry,
+    tabGroups: (entry.tabGroups ?? []).filter((g) => {
+      if (SEED_GROUP_IDS.has(g.id)) return false;
+      const label = (g.label ?? "").toLowerCase().trim();
+      if (SEED_GROUP_LABELS.has(label)) return false;
+      return true;
+    }),
+    [MIGRATION_KEY]: true as unknown as undefined,
+  });
+
+  try {
+    const all = JSON.parse(rawAll) as Record<string, Level3BrowserState>;
+    const entry = all[state.companyId];
+    if (entry && !entry[MIGRATION_KEY as keyof Level3BrowserState]) {
+      all[state.companyId] = cleaned(entry);
+      window.localStorage.setItem(KEY, JSON.stringify(all));
+    }
+  } catch {
+    // Non-fatal: skip migration silently.
+  }
+
+  return state;
 }
 
 function readAll(): Record<string, Level3BrowserState> {
@@ -401,39 +446,26 @@ function normalizeGroups(
   );
 }
 
-/** Editable example Split-Link, seeded once into Technische (deterministic id). */
+/** Editable example Split-Link, seeded once into Technische (deterministic id).
+ * SEED_DISABLED — no longer auto-seeded. Kept for reference and manual re-enabling. */
 export const SPLIT_EXAMPLE_ID = "split-example-notion-tradingview";
 
-function splitExampleApp(): LabApp {
-  return {
-    id: SPLIT_EXAMPLE_ID,
-    kind: "split",
-    label: "Notion + TradingView",
-    blurb: "Split-Link (Beispiel – Rechtsklick › Bearbeiten)",
-    url: "https://www.notion.so",
-    url2: "https://de.tradingview.com/chart/",
-    icon: "notion",
-    tint: "#111111",
-    builtin: false,
-  };
+/** Adds the example Split-Link once per company state (flag `splitExampleSeeded`).
+ * SEED_DISABLED — the Split-Link is no longer auto-seeded into any group. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _withSplitExample_DISABLED(state: Level3BrowserState): Level3BrowserState {
+  return state;
 }
 
-/** Adds the example Split-Link once per company state (flag `splitExampleSeeded`). */
+// UNUSED — kept so callers don't break. Remove after any callers are updated.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function withSplitExample(state: Level3BrowserState): Level3BrowserState {
-  if (state.splitExampleSeeded) return state;
-  const hasApp = state.customApps.some((a) => a.id === SPLIT_EXAMPLE_ID);
-  const customApps = hasApp ? state.customApps : [...state.customApps, splitExampleApp()];
-  const inSomeGroup = state.tabGroups.some((g) => g.appIds.includes(SPLIT_EXAMPLE_ID));
-  const tabGroups = inSomeGroup
-    ? state.tabGroups
-    : state.tabGroups.map((g) =>
-        g.id === "group-technische" ? { ...g, appIds: [SPLIT_EXAMPLE_ID, ...g.appIds] } : g,
-      );
-  return { ...state, customApps, tabGroups, splitExampleSeeded: true };
+  return state; // SEED_DISABLED
 }
 
 export function getLevel3Browser(companyId: string): Level3BrowserState {
-  return withSplitExample(readLevel3Browser(companyId));
+  const state = withSplitExample(readLevel3Browser(companyId));
+  return runClearDefaultsMigration(state);
 }
 
 function readLevel3Browser(companyId: string): Level3BrowserState {
