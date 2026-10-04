@@ -1,8 +1,11 @@
 /* Minimal offline shell so Chromium offers "Install app". */
-// v2: Seiten-Navigationen gehen zuerst ans Netz. v1 hat "/" cache-first ausgeliefert –
-// nach einem Update zeigte die alte index.html auf gelöschte Assets (leere Seite).
-const CACHE = "connect-shell-v2";
-const SHELL = ["/", "/manifest.webmanifest", "/brand/connect-logo.png"];
+// v3: Navigationen holen die index.html mit cache:"reload" – umgeht den HTTP-Cache.
+// v2 war zwar network-first, aber der HTTP-Cache lieferte weiterhin eine alte index.html
+// aus, die auf ein altes, inzwischen geloeschtes Bundle zeigte (leere Seite / alte Route).
+// v1 hat "/" cache-first ausgeliefert – nach einem Update zeigte die alte index.html
+// auf gelöschte Assets (leere Seite).
+const CACHE = "connect-shell-v3";
+const SHELL = ["/manifest.webmanifest", "/brand/connect-logo.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -26,9 +29,11 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
   if (request.mode === "navigate") {
-    // Netz zuerst (immer die aktuelle index.html), offline Fallback auf die gecachte Shell.
+    // Netz zuerst, aber mit cache:"reload": erzwingt eine frische index.html und
+    // umgeht eine veraltete HTTP-Cache-Antwort, die auf ein altes Bundle zeigte.
+    // offline Fallback auf die gecachte Shell.
     event.respondWith(
-      fetch(request)
+      fetch(new Request(request.url, { cache: "reload" }))
         .then((response) => {
           if (response.ok && url.pathname === "/") {
             const copy = response.clone();
@@ -44,5 +49,5 @@ self.addEventListener("fetch", (event) => {
   if (SHELL.includes(url.pathname)) {
     event.respondWith(fetch(request).catch(() => caches.match(request).then((c) => c || Response.error())));
   }
-  // Alles andere (Assets mit Hash im Namen) normal übers Netz/HTTP-Cache.
+  // Hash-Assets (index-B4g6BjcX.js) sind immutable und kommen direkt aus dem HTTP-Cache.
 });

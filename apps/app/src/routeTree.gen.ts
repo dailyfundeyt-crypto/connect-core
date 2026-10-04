@@ -31,6 +31,7 @@ import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admi
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsBrainRouteImport } from './routes/_authed/settings/brain'
+import { Route as AuthedSettingsDiagnoseRouteImport } from './routes/_authed/settings/diagnose'
 import { Route as AuthedSettingsDiagnoseCompaniesRouteImport } from './routes/_authed/settings/diagnose-companies'
 import { Route as AuthedSettingsMcpRouteImport } from './routes/_authed/settings/mcp'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
@@ -157,6 +158,11 @@ const AuthedSettingsBrainRoute = AuthedSettingsBrainRouteImport.update({
   path: '/brain',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
+const AuthedSettingsDiagnoseRoute = AuthedSettingsDiagnoseRouteImport.update({
+  id: '/diagnose',
+  path: '/diagnose',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedSettingsDiagnoseCompaniesRoute =
   AuthedSettingsDiagnoseCompaniesRouteImport.update({
     id: '/diagnose-companies',
@@ -267,6 +273,7 @@ export interface FileRoutesByFullPath {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/brain': typeof AuthedSettingsBrainRoute
+  '/settings/diagnose': typeof AuthedSettingsDiagnoseRoute
   '/settings/diagnose-companies': typeof AuthedSettingsDiagnoseCompaniesRoute
   '/settings/mcp': typeof AuthedSettingsMcpRoute
   '/admin/': typeof AuthedAdminIndexRoute
@@ -303,6 +310,7 @@ export interface FileRoutesByTo {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/brain': typeof AuthedSettingsBrainRoute
+  '/settings/diagnose': typeof AuthedSettingsDiagnoseRoute
   '/settings/diagnose-companies': typeof AuthedSettingsDiagnoseCompaniesRoute
   '/settings/mcp': typeof AuthedSettingsMcpRoute
   '/admin': typeof AuthedAdminIndexRoute
@@ -343,6 +351,7 @@ export interface FileRoutesById {
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
   '/_authed/settings/brain': typeof AuthedSettingsBrainRoute
+  '/_authed/settings/diagnose': typeof AuthedSettingsDiagnoseRoute
   '/_authed/settings/diagnose-companies': typeof AuthedSettingsDiagnoseCompaniesRoute
   '/_authed/settings/mcp': typeof AuthedSettingsMcpRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
@@ -384,6 +393,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/brain'
+    | '/settings/diagnose'
     | '/settings/diagnose-companies'
     | '/settings/mcp'
     | '/admin/'
@@ -420,6 +430,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/brain'
+    | '/settings/diagnose'
     | '/settings/diagnose-companies'
     | '/settings/mcp'
     | '/admin'
@@ -459,6 +470,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
     | '/_authed/settings/brain'
+    | '/_authed/settings/diagnose'
     | '/_authed/settings/diagnose-companies'
     | '/_authed/settings/mcp'
     | '/_authed/_app/'
@@ -641,6 +653,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsBrainRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/diagnose': {
+      id: '/_authed/settings/diagnose'
+      path: '/diagnose'
+      fullPath: '/settings/diagnose'
+      preLoaderRoute: typeof AuthedSettingsDiagnoseRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/settings/diagnose-companies': {
       id: '/_authed/settings/diagnose-companies'
       path: '/diagnose-companies'
@@ -799,6 +818,7 @@ const AuthedAdminRouteRouteWithChildren =
 
 interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsBrainRoute: typeof AuthedSettingsBrainRoute
+  AuthedSettingsDiagnoseRoute: typeof AuthedSettingsDiagnoseRoute
   AuthedSettingsDiagnoseCompaniesRoute: typeof AuthedSettingsDiagnoseCompaniesRoute
   AuthedSettingsMcpRoute: typeof AuthedSettingsMcpRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
@@ -808,6 +828,7 @@ interface AuthedSettingsRouteRouteChildren {
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsBrainRoute: AuthedSettingsBrainRoute,
+  AuthedSettingsDiagnoseRoute: AuthedSettingsDiagnoseRoute,
   AuthedSettingsDiagnoseCompaniesRoute: AuthedSettingsDiagnoseCompaniesRoute,
   AuthedSettingsMcpRoute: AuthedSettingsMcpRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,

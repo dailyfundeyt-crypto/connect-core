@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconArrowLeft,
@@ -191,7 +192,7 @@ function RouteComponent() {
   const { savedAt, triggerSave } = useAutoSave();
   const [profile, setProfile] = useState(() => getLocalProfile());
   const [profileOpen, setProfileOpen] = useState(false);
-  const { data: currentUser } = React.useQuery(currentUserQueryOptions());
+  const { data: currentUser } = useQuery(currentUserQueryOptions());
   const [telemetry, setTelemetry] = useState(() => getTelemetryEnabled());
   const [deleteOpen, setDeleteOpen] = useState(false);
 

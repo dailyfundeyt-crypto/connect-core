@@ -82,6 +82,12 @@ apps/landing/.vercel
 **/*.js.map
 **/*.css.map
 
+# Static export output from the landing page build (apps/landing uses `next export`/static gen,
+# which lands in out/ rather than .next/).
+apps/landing/out/
+# Helium bundle build tree (psql/bun/connect runtime) — produced by tools/build-bundle.ps1.
+_build/
+
 # Video/asset render outputs from projects/
 projects/**/out/
 projects/**/*.mp4

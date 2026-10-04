@@ -1055,8 +1055,27 @@ export function resolveTabUrl(state: Level3BrowserState): string {
   return "https://lovable.dev";
 }
 
+/**
+ * cdn.simpleicons.org liefert 404 für Slugs, die Simple Icons nicht (mehr) führt –
+ * u. a. "chart", "activity", "calendar", "category", "mail", "device-desktop",
+ * "flame" und "openai" (Logo 2024 auf Wunsch des Herstellers entfernt).
+ * Diese Namen werden auf einen existierenden, verifizierten Brand-Slug umgeschrieben.
+ * Unbekannte Namen bleiben unverändert; die Aufrufer (ToolGlyph, McpServerLogo)
+ * rendern dann über ihr onError einen lokalen Platzhalter.
+ */
+const ICON_SLUG_ALIASES: Record<string, string> = {
+  openai: "claude", // OpenAI-Slug entfernt -> neutraler AI-Slug.
+  mail: "gmail",
+  calendar: "googlecalendar",
+  category: "coinmarketcap",
+  chart: "tradingview",
+  activity: "tradingview",
+  "device-desktop": "ubuntu",
+  flame: "cryptopanic",
+};
+
 export function toolIconUrl(icon: string): string {
-  return `https://cdn.simpleicons.org/${icon}`;
+  return `https://cdn.simpleicons.org/${ICON_SLUG_ALIASES[icon] ?? icon}`;
 }
 
 export async function navigateChromium(
