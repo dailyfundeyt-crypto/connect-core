@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { cn } from "@/lib/utils";
@@ -19,9 +19,9 @@ export function ErweitertPanel() {
   const [labKeepLogin, setLabKeepLogin] = useState(() => getLabPrefs().keepLoggedIn);
 
   // Subscribe to live changes
-  useState(() => {
+  useEffect(() => {
     return subscribeLabPrefs(() => setLabKeepLogin(getLabPrefs().keepLoggedIn));
-  });
+  }, []);
 
   return (
     <div className="mt-8 border-t border-white/[0.06] pt-6">

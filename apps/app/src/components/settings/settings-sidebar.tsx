@@ -98,6 +98,7 @@ const GROUPS: NavGroup[] = [
       { title: "Donate", hash: "donate" },
       { title: "Deployment Mode", hash: "deployment-mode" },
       { title: "Background", hash: "background" },
+      { title: "Brain", linkTo: "/settings/brain" },
       { title: "Codex Usage", hash: "codex-usage" },
       { title: "Info", hash: "info" },
       { title: "Datenschutz", hash: "privacy" },
