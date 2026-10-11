@@ -107,11 +107,25 @@ export function VaultNotesSection({
   const nodes = useMemo(() => {
     if (!tree.data?.available) return [];
     /*
-     * Only the vault half. Brain notes have their own place in the interface and
-     * mixing 200 vault files with them under one heading would make the section
-     * unreadable.
+     * Every markdown file the Brain knows about, not just the `Vault/`-prefixed
+     * half.
+     *
+     * The sidebar lists two things that are one thing on disk. The notes this
+     * browser owns live in their own folders and are listed above; the vault
+     * holds the rest of `Plannung` and is listed here. Which is which is decided
+     * on the server by whether a path is inside the Brain folder, and when the
+     * Brain *is* the vault — `Plannung` with no `.obsidian` above it, which is how
+     * a fresh install is configured — there is no such split: every file comes
+     * back once, without a `Vault/` marker. Filtering on that marker then matched
+     * nothing and the section rendered empty, which is where "the notes do not
+     * load" came from.
+     *
+     * So the marker is treated as optional rather than required: files that carry
+     * it are shown without it, and files that do not are shown as they are. The
+     * Brain-side list already owns its folders, so anything still reaching here
+     * is what belongs under the vault heading.
      */
-    return buildTree(tree.data.files.filter((f) => f.path.startsWith(VAULT_PREFIX)));
+    return buildTree(tree.data.files);
   }, [tree.data]);
 
   if (tree.isPending) {

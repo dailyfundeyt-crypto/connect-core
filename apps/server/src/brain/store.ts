@@ -147,7 +147,27 @@ async function safeVaultPath(root: string, parts: string[]) {
   const realVault = await realpath(vault).catch(() => vault);
   const realBrain = await realpath(root).catch(() => root);
   if (!isInside(realVault, real)) throw new BrainPathError("Ungültiger Pfad.");
-  if (isInside(realBrain, real)) throw new BrainPathError("Brain-Notizen ohne „Vault/“ öffnen.");
+  /*
+   * The vault must not reach into the Brain. This folder is normally the vault's
+   * parent, so anything the Brain holds is also "inside the vault" and the check
+   * holds. But `vaultRootFor` falls back to the Brain itself whenever no
+   * `CONNECT_BRAIN_VAULT_PATH` is set and the parent has no `.obsidian` folder --
+   * which is the case for `Plannung` under `000_CNT`. Vault and Brain are then the
+   * same directory, every note is inside the Brain by definition, and this threw
+   * "Brain-Notizen ohne Vault/ öffnen" for all 2093 files: the sidebar listed them
+   * and clicking one did nothing.
+   *
+   * When the two roots are the same folder there is no gap left to close, so the
+   * check is skipped rather than blocking the whole vault. The one guarantee that
+   * matters still holds: `isInside(realVault, real)` above, so a `..` or an
+   * absolute path cannot escape the vault.
+   */
+  const sameRoot =
+    realVault.replace(/[\\/]+$/, "").toLowerCase() ===
+    realBrain.replace(/[\\/]+$/, "").toLowerCase();
+  if (!sameRoot && isInside(realBrain, real)) {
+    throw new BrainPathError("Brain-Notizen ohne „Vault/“ öffnen.");
+  }
   return real;
 }
 
@@ -255,7 +275,26 @@ const out: BrainFile[] = [];
 
 /** Brain notes first, then the rest of the vault. */
 export async function listAllMarkdown(root: string): Promise<BrainFile[]> {
-  return [...(await listMarkdown(root)), ...(await listVaultMarkdown(root))];
+  const brain = await listMarkdown(root);
+  const vault = await listVaultMarkdown(root);
+  /*
+   * When the Brain *is* the vault, every note comes back twice: once from
+   * `listMarkdown` as a plain relative path, once from `listVaultMarkdown` as
+   * `Vault/<same path>`. A fresh install is configured exactly that way --
+   * `CONNECT_BRAIN_PATH` and `CONNECT_BRAIN_VAULT_PATH` both point at `Plannung`,
+   * because the parent folder has no `.obsidian` for `vaultRootFor` to find -- so
+   * the sidebar listed 4 186 rows for 2 093 files, and the `Vault/` half of every
+   * pair could not even be opened (`safeVaultPath` refused a file that is inside
+   * the Brain by definition).
+   *
+   * Dropping the second copy is the right answer here rather than showing the
+   * same note under two trees: they are one file at one path, and the plain
+   * listing is the one that can be opened. A genuine layout -- `Plannung/Brain`
+   * beside `Plannung/Projekte` -- has no overlap, so nothing is dropped there.
+   */
+  if (!vault.length) return brain;
+  const seen = new Set(brain.map((file) => file.path));
+  return [...brain, ...vault.filter((file) => !seen.has(file.path.slice(VAULT_PREFIX.length)))];
 }
 
 /**
