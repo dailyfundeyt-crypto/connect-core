@@ -19,6 +19,7 @@ import {
   saveAgentScopes,
   searchMarkdown,
   vaultRootFor,
+  writeMarkdown,
 } from "./store";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
@@ -98,6 +99,40 @@ export function createBrainRoutes(
     if (!brain.available) return context.json(unavailable(brain.reason), 404);
     try {
       return context.json({ available: true, file: await readMarkdown(brain.root, context.req.query("path") ?? "") });
+    } catch (error) {
+      if (error instanceof BrainPathError) return context.json({ error: error.message }, 400);
+      throw error;
+    }
+  });
+
+  /**
+   * Writes a note as a real `.md` file into the Brain.
+   *
+   * This is what makes a note from the app show up in Obsidian and in the Brain
+   * graph — the app stops being the only place it exists. The body is the
+   * markdown the client already produced, not markdown re-derived here, so what
+   * the user sees in the editor is exactly what lands on disk.
+   *
+   * `mode` decides whether an existing file may be replaced: "create" refuses to
+   * overwrite, so a second client cannot silently destroy a note.
+   */
+  app.put("/note", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    if (!(context.req.header("content-type") ?? "").includes("application/json")) {
+      return context.json({ error: "JSON erwartet." }, 415);
+    }
+    const body = (await context.req.json().catch(() => null)) as
+      | { path?: unknown; content?: unknown; mode?: unknown }
+      | null;
+    if (!body) return context.json({ error: "JSON erwartet." }, 400);
+    if (typeof body.path !== "string" || typeof body.content !== "string") {
+      return context.json({ error: "Pfad und Inhalt fehlen." }, 400);
+    }
+    const mode = body.mode === "create" ? "create" : "update";
+    try {
+      const written = await writeMarkdown(brain.root, body.path, body.content, mode);
+      return context.json({ available: true, ...written });
     } catch (error) {
       if (error instanceof BrainPathError) return context.json({ error: error.message }, 400);
       throw error;

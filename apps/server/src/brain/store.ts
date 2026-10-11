@@ -7,7 +7,7 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readdir, readFile, realpath, rename, stat, writeFile, appendFile } from "node:fs/promises";
+import { readdir, readFile, realpath, rename, stat, writeFile, appendFile, mkdir } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -221,6 +221,67 @@ export async function listVaultMarkdown(root: string): Promise<BrainFile[]> {
 /** Brain notes first, then the rest of the vault. */
 export async function listAllMarkdown(root: string): Promise<BrainFile[]> {
   return [...(await listMarkdown(root)), ...(await listVaultMarkdown(root))];
+}
+
+/**
+ * Writes a note into the Brain, creating parent folders as needed.
+ *
+ * The write goes through the same door as the read: the path is relative, `.md`
+ * only, no dot-folders, and after resolving symlinks the file must still be
+ * inside the Brain. `safeMarkdownPath` cannot be reused directly because it
+ * resolves an *existing* file — a note being created does not exist yet — so the
+ * same rules are enforced here on the resolved parent.
+ *
+ * Overwriting is the caller's decision, not a side effect: `create` fails if the
+ * file is there, `update` fails if it is not.
+ */
+export async function writeMarkdown(
+  root: string,
+  relative: string,
+  content: string,
+  mode: "create" | "update",
+): Promise<{ path: string; created: boolean }> {
+  if (Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) {
+    throw new BrainPathError("Notiz ist zu groß zum Speichern.");
+  }
+  const full = await writableMarkdownPath(root, relative);
+  const exists = existsSync(full);
+  if (mode === "create" && exists) throw new BrainPathError("Datei existiert bereits.");
+  if (mode === "update" && !exists) throw new BrainPathError("Datei nicht gefunden.");
+  if (!exists) await mkdir(path.dirname(full), { recursive: true });
+  await writeFile(full, content, "utf8");
+  const realRoot = await realpath(root).catch(() => root);
+  return { path: sep(path.relative(realRoot, full)), created: !exists };
+}
+
+/**
+ * The one door from a request path to a file that may not exist yet.
+ *
+ * `safeMarkdownPath` resolves an existing file and therefore rejects a path
+ * whose parent does not exist. Here the parent is what gets checked: resolve it,
+ * make sure it is inside the Brain, then append the file name.
+ */
+async function writableMarkdownPath(root: string, relative: string): Promise<string> {
+  if (typeof relative !== "string" || relative.length === 0 || relative.length > 400) {
+    throw new BrainPathError("Ungültiger Pfad.");
+  }
+  if (relative.includes("\0") || /^[a-zA-Z]:/.test(relative) || relative.startsWith("/") || relative.startsWith("\\")) {
+    throw new BrainPathError("Ungültiger Pfad.");
+  }
+  const parts = relative.split(/[\\/]+/);
+  if (parts.some((part) => part === "" || part === "." || part === ".." || part.startsWith("."))) {
+    throw new BrainPathError("Ungültiger Pfad.");
+  }
+  if (!relative.toLowerCase().endsWith(".md")) throw new BrainPathError("Nur .md-Dateien.");
+  // Vault notes are read-only (see `readMarkdown`), so a write never goes there.
+  if (relative.startsWith(VAULT_PREFIX)) throw new BrainPathError("Vault ist schreibgeschützt.");
+  const parent = path.resolve(root, ...parts.slice(0, -1));
+  const fileName = parts[parts.length - 1];
+  if (parent !== root && !isInside(root, parent)) throw new BrainPathError("Ungültiger Pfad.");
+  const realRoot = await realpath(root).catch(() => root);
+  const realParent = await realpath(parent).catch(() => null);
+  if (realParent && !isInside(realRoot, realParent)) throw new BrainPathError("Ungültiger Pfad.");
+  return path.join(realParent ?? parent, fileName);
 }
 
 export async function readMarkdown(root: string, relative: string) {
