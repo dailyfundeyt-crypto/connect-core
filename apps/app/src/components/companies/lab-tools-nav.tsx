@@ -420,6 +420,47 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
       </div>
 
       {/*
+       * The rail actions, above the notes.
+       *
+       * They used to sit at the very bottom, below the notes section, and that
+       * put them 559px past the bottom of a 599px viewport: with a realistic note
+       * list the two buttons and the bookmark transfer were a full screen of
+       * scrolling away, which is where "the notes pushed the buttons out" came
+       * from. They are primary actions for the rail itself, so they belong next to
+       * the apps they act on rather than below a list that grows without bound.
+       */}
+      <div className="flex flex-col gap-0.5">
+        <button
+          className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          onClick={() => setAdding(true)}
+          type="button"
+        >
+          <IconPlus className="size-3.5" stroke={1.75} />
+          App hinzufügen
+        </button>
+        <button
+          className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          onClick={createFolder}
+          type="button"
+        >
+          <IconFolderPlus className="size-3.5" stroke={1.75} />
+          Neue Gruppe
+        </button>
+        {/*
+           * The bookmark transfer sits with the other rail actions rather than on
+           * its own: it moves apps between this browser and the desktop one, so it
+           * belongs with "App hinzufügen" and "Neue Gruppe" — the three are the same
+           * kind of thing, and splitting them across two rows made the rail read as
+           * two unrelated lists.
+           */}
+          <BookmarkTransfer
+            companyId={companyId}
+            onChange={setState}
+            state={state}
+          />
+        </div>
+
+      {/*
        * The notes, as a section of their own.
        *
        * They sit *below* the browser section rather than replacing any part of
@@ -434,37 +475,6 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
        * needs to sit in normal flow after the browser block.
        */}
       <NotesSidebarSection companyId={companyId} />
-
-      <div className="flex flex-col gap-0.5">
-          <button
-            className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-            onClick={() => setAdding(true)}
-            type="button"
-          >
-            <IconPlus className="size-3.5" stroke={1.75} />
-            App hinzufügen
-          </button>
-          <button
-            className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-            onClick={createFolder}
-            type="button"
-          >
-            <IconFolderPlus className="size-3.5" stroke={1.75} />
-            Neue Gruppe
-          </button>
-          {/*
-           * The bookmark transfer sits with the other rail actions rather than on
-           * its own: it moves apps between this browser and the desktop one, so it
-           * belongs with "App hinzufügen" and "Neue Gruppe" — the three are the same
-           * kind of thing, and splitting them across two rows made the rail read as
-           * two unrelated lists.
-           */}
-          <BookmarkTransfer
-            companyId={companyId}
-            onChange={setState}
-            state={state}
-          />
-        </div>
       {connectId ? (
         <ConnectInline
           companyId={companyId}
