@@ -25,6 +25,8 @@ const WORKSPACE_KEYS = [
   "connect.account",
   /** Theme: Light/Dark mode persists across sign-in/sign-out. */
   "connect-theme",
+  /** Agent browser tabs + stored favicons (Helium -> local -> mobile). */
+  "connect.agent-browser-tabs",
 ] as const;
 
 let hydrateStarted = false;

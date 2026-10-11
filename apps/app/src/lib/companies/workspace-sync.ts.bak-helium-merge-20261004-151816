@@ -1,0 +1,416 @@
+/**
+ * Sync Connect logos, banners, avatars, companies, groups and sidebar order
+ * into local Postgres (`/api/connect/*`) so every localhost on the same DB
+ * sees the same files — localStorage alone does not travel.
+ */
+
+import { client } from "@/lib/client";
+
+const WORKSPACE_KEYS = [
+  "connect.companies.custom",
+  "connect.projects",
+  "connect.projects.seeded.v1",
+  "connect.avatar.overrides",
+  "connect.sidebar.agentOrder.v1",
+  "connect.activeCompanyId",
+  "connect.activeLevel",
+  "connect.company-posts",
+  "connect.company-connections",
+  "connect.local-profile",
+  /** Lab Browser: tab groups, apps, connections — per account via API. */
+  "connect.level3.browser",
+  "connect.company.siteUrl",
+  "connect.lab.prefs",
+  "connect.account",
+  /** Theme: Light/Dark mode persists across sign-in/sign-out. */
+  "connect-theme",
+] as const;
+
+let hydrateStarted = false;
+let pushTimer: number | null = null;
+
+/*
+ * Sync bookkeeping (stays in this browser profile only):
+ *   connect.workspace-sync.base.<key>  value of <key> as last synced with Postgres
+ *   connect.workspace-sync.owner       userId that local workspace belongs to
+ * With the baseline a client can tell "I changed it" from "another client changed it", so a stale
+ * window no longer overwrites newer data (old behaviour: last save wins for every key), and a push only
+ * sends keys that really changed locally.
+ */
+const SYNC_BASE_PREFIX = "connect.workspace-sync.base.";
+const SYNC_OWNER_KEY = "connect.workspace-sync.owner";
+
+function rawLocal(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function serialize(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function parseLoose(raw: string | null): unknown {
+  if (raw == null) return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
+}
+
+/** Order-independent comparison (jsonb reorders object keys). */
+function canonical(value: unknown): string {
+  const norm = (v: unknown): unknown => {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t.startsWith("{") || t.startsWith("[")) {
+        try {
+          return norm(JSON.parse(t));
+        } catch {
+          return v;
+        }
+      }
+      return v;
+    }
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === "object") {
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        out[k] = norm((v as Record<string, unknown>)[k]);
+      }
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(norm(value) ?? null);
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  return canonical(a) === canonical(b);
+}
+
+function getBase(key: string): string | null {
+  return rawLocal(SYNC_BASE_PREFIX + key);
+}
+
+function setBase(key: string, value: unknown) {
+  try {
+    if (value === undefined || value === null) {
+      window.localStorage.removeItem(SYNC_BASE_PREFIX + key);
+    } else {
+      window.localStorage.setItem(SYNC_BASE_PREFIX + key, serialize(value));
+    }
+  } catch {
+    /* quota */
+  }
+}
+
+function idOf(item: unknown): string | null {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    const id = (item as Record<string, unknown>).id;
+    if (typeof id === "string" || typeof id === "number") return String(id);
+  }
+  return null;
+}
+
+/**
+ * Merge two versions without losing entries: objects merge per field (local wins on scalar
+ * conflicts), arrays of {id} objects are united by id, arrays of primitives are united.
+ */
+function mergeValues(local: unknown, remote: unknown): unknown {
+  if (Array.isArray(local) && Array.isArray(remote)) {
+    const allIds =
+      local.every((x) => idOf(x) !== null) && remote.every((x) => idOf(x) !== null);
+    if (allIds) {
+      const out = local.map((l) => {
+        const r = remote.find((x) => idOf(x) === idOf(l));
+        return r === undefined ? l : mergeValues(l, r);
+      });
+      for (const r of remote) {
+        if (!local.some((l) => idOf(l) === idOf(r))) out.push(r);
+      }
+      return out;
+    }
+    if (local.every((x) => typeof x !== "object") && remote.every((x) => typeof x !== "object")) {
+      const out = [...local];
+      for (const r of remote) if (!out.includes(r)) out.push(r);
+      return out;
+    }
+    return local;
+  }
+  if (
+    local && remote && typeof local === "object" && typeof remote === "object" &&
+    !Array.isArray(local) && !Array.isArray(remote)
+  ) {
+    const l = local as Record<string, unknown>;
+    const r = remote as Record<string, unknown>;
+    const out: Record<string, unknown> = { ...r, ...l };
+    for (const k of Object.keys(l)) {
+      if (k in r) out[k] = mergeValues(l[k], r[k]);
+    }
+    return out;
+  }
+  return local === undefined ? remote : local;
+}
+
+function mergeSerialized(localRaw: string, remote: unknown): string {
+  const l = parseLoose(localRaw);
+  const r = typeof remote === "string" ? parseLoose(remote) : remote;
+  return serialize(mergeValues(l, r));
+}
+
+function accountUserId(value: unknown): string | null {
+  const v = typeof value === "string" ? parseLoose(value) : value;
+  if (v && typeof v === "object" && typeof (v as Record<string, unknown>).userId === "string") {
+    return (v as Record<string, string>).userId;
+  }
+  return null;
+}
+
+function readLocal(key: string): unknown {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw == null) return undefined;
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return raw;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLocal(key: string, value: unknown) {
+  try {
+    if (value === undefined || value === null) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(
+      key,
+      typeof value === "string" ? value : JSON.stringify(value),
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+/** Upload a data-URL image; returns a durable `/api/connect/media/…` URL. */
+export async function persistConnectDataUrl(
+  dataUrl: string,
+  preferredId?: string,
+): Promise<string> {
+  if (!dataUrl.startsWith("data:")) return dataUrl;
+  return client<string>("/api/connect/media", "url", {
+    method: "POST",
+    body: { dataUrl, id: preferredId },
+    fallback: "Could not store image in database",
+  });
+}
+
+async function rewriteDataUrlsInValue(value: unknown): Promise<unknown> {
+  if (typeof value === "string" && value.startsWith("data:")) {
+    try {
+      return await persistConnectDataUrl(value);
+    } catch {
+      return value;
+    }
+  }
+  if (Array.isArray(value)) {
+    const next = [];
+    for (const item of value) {
+      next.push(await rewriteDataUrlsInValue(item));
+    }
+    return next;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = await rewriteDataUrlsInValue(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** Push locally changed workspace keys into Postgres (keys equal to the last sync are skipped). */
+export async function pushConnectWorkspace(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const workspace: Record<string, unknown> = {};
+  for (const key of WORKSPACE_KEYS) {
+    const value = readLocal(key);
+    if (value === undefined) continue;
+    const base = getBase(key);
+    if (base !== null && sameValue(parseLoose(base), value) && !rawLocal(key)?.includes("data:")) {
+      continue;
+    }
+    workspace[key] = await rewriteDataUrlsInValue(value);
+    writeLocal(key, workspace[key]);
+  }
+  if (Object.keys(workspace).length === 0) return;
+  await client("/api/connect/workspace", {
+    method: "PUT",
+    body: { workspace },
+    fallback: "Could not sync workspace to database",
+  });
+  for (const [key, value] of Object.entries(workspace)) setBase(key, value);
+}
+
+/** Schedule a debounced push after local edits. */
+export function scheduleConnectWorkspacePush() {
+  if (typeof window === "undefined") return;
+  if (pushTimer != null) window.clearTimeout(pushTimer);
+  pushTimer = window.setTimeout(() => {
+    pushTimer = null;
+    void pushConnectWorkspace().catch(() => {
+      /* offline / unauthenticated — keep localStorage */
+    });
+  }, 600);
+}
+
+/**
+ * Flush a pending (debounced) push when the page is hidden or closed, so a sidebar change made just
+ * before closing the Connect window still reaches Postgres. Uses `keepalive` (works during unload).
+ * Values are sent as they are; data: URLs are uploaded by the next regular push.
+ */
+function flushPendingPushOnHide() {
+  if (pushTimer == null) return;
+  window.clearTimeout(pushTimer);
+  pushTimer = null;
+  const workspace: Record<string, unknown> = {};
+  for (const key of WORKSPACE_KEYS) {
+    const value = readLocal(key);
+    if (value === undefined) continue;
+    const base = getBase(key);
+    if (base !== null && sameValue(parseLoose(base), value)) continue;
+    workspace[key] = value;
+  }
+  if (Object.keys(workspace).length === 0) return;
+  try {
+    void fetch("/api/connect/workspace", {
+      method: "PUT",
+      credentials: "include",
+      keepalive: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspace }),
+    }).catch(() => undefined);
+  } catch {
+    /* body too large for keepalive / offline — localStorage still has it */
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushPendingPushOnHide);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPendingPushOnHide();
+  });
+}
+
+function isEmptyWorkspaceValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function localLooksEmpty(raw: string | null): boolean {
+  return raw == null || raw === "" || raw === "[]" || raw === "{}";
+}
+
+/** True when local still embeds data: images that belong in Postgres. */
+function localStillHasDataUrls(raw: string | null): boolean {
+  return typeof raw === "string" && raw.includes("data:");
+}
+
+/**
+ * Pull workspace from Postgres into localStorage once per session.
+ * Per key: empty local -> database value; unchanged since last sync -> database value; changed only
+ * locally -> keep and push; changed on both sides -> merge (union by id, local wins on conflicts).
+ * After switching account the database value of the signed-in account wins.
+ */
+export async function hydrateConnectWorkspace(): Promise<void> {
+  if (typeof window === "undefined" || hydrateStarted) return;
+  hydrateStarted = true;
+  try {
+    const workspace = await client<Record<string, unknown>>(
+      "/api/connect/workspace",
+      "workspace",
+      { fallback: "Could not load workspace from database" },
+    );
+    let changed = false;
+    const serverUser = accountUserId(workspace?.["connect.account"]);
+    const storedOwner = rawLocal(SYNC_OWNER_KEY) ?? accountUserId(rawLocal("connect.account"));
+    // Signed in as somebody else than the local data belongs to: the database is the truth for
+    // this account (nothing is pushed from the previous account's local copy).
+    const ownerChanged = Boolean(serverUser && storedOwner && serverUser !== storedOwner);
+    if (ownerChanged) {
+      for (const key of WORKSPACE_KEYS) {
+        const value = workspace?.[key];
+        if (value === undefined || isEmptyWorkspaceValue(value)) {
+          if (rawLocal(key) != null) {
+            writeLocal(key, undefined);
+            changed = true;
+          }
+          setBase(key, undefined);
+        } else {
+          writeLocal(key, value);
+          setBase(key, value);
+          changed = true;
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(workspace ?? {})) {
+        if (!WORKSPACE_KEYS.includes(key as (typeof WORKSPACE_KEYS)[number])) {
+          continue;
+        }
+        if (isEmptyWorkspaceValue(value)) continue;
+        const local = rawLocal(key);
+        const base = getBase(key);
+        if (localLooksEmpty(local) || localStillHasDataUrls(local)) {
+          writeLocal(key, value); // nothing local yet: take the database value
+          setBase(key, value);
+          changed = true;
+        } else if (sameValue(parseLoose(local), value)) {
+          setBase(key, value); // already in sync
+        } else if (base !== null && sameValue(parseLoose(local), parseLoose(base))) {
+          writeLocal(key, value); // unchanged here, changed by another client: take it
+          setBase(key, value);
+          changed = true;
+        } else if (base !== null && sameValue(value, parseLoose(base))) {
+          // changed only here: keep local, the push below uploads it
+        } else {
+          // changed on both sides (or first sync of this profile): merge, nothing gets lost
+          window.localStorage.setItem(key, mergeSerialized(local as string, value));
+          changed = true;
+        }
+      }
+    }
+    if (serverUser) {
+      try {
+        window.localStorage.setItem(SYNC_OWNER_KEY, serverUser);
+      } catch {
+        /* quota */
+      }
+    }
+    if (changed) {
+      window.dispatchEvent(new Event("connect-companies-changed"));
+      window.dispatchEvent(new Event("connect-avatars-changed"));
+      window.dispatchEvent(new Event("connect-projects-changed"));
+      window.dispatchEvent(new Event("connect-sidebar-order-changed"));
+      window.dispatchEvent(new Event("connect-active-company"));
+      window.dispatchEvent(new Event("connect-local-profile-changed"));
+      window.dispatchEvent(new Event("connect-level3-browser-changed"));
+      window.dispatchEvent(new Event("connect-company-site-changed"));
+      window.dispatchEvent(new Event("connect-lab-prefs-changed"));
+    }
+    // Upload any leftover local-only keys / data: URLs into Postgres.
+    void pushConnectWorkspace().catch(() => undefined);
+  } catch {
+    hydrateStarted = false;
+  }
+}

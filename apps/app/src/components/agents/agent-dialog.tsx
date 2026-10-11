@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import {
   IconAdjustments,
   IconArrowsExchange,
@@ -136,7 +137,7 @@ export function AgentDialog({
           dialog because it holds a two-pane layout, which is the stated reason to deviate. */}
       {/* Tall enough that General's rows and its Delete sit on screen together; the popup's own
           max-h-[85svh] still caps it on a short display, where the main pane scrolls. */}
-      <DialogContent className="overflow-hidden p-0 md:max-h-[680px] md:max-w-[700px] lg:max-w-[800px]">
+      <DialogContent className="overflow-hidden p-0 md:max-h-[680px] md:max-w-[700px] lg:max-w-[800px] mobile:top-0 mobile:left-0 mobile:h-svh mobile:max-h-none mobile:w-screen mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-none mobile:border-0 mobile:bg-[#07080c] mobile:bg-[radial-gradient(120%_50%_at_10%_-10%,rgba(56,189,248,0.12),transparent_55%),radial-gradient(90%_40%_at_100%_0%,rgba(167,139,250,0.1),transparent_50%)] mobile:pt-[env(safe-area-inset-top)]">
         {/* Keyed by coworker so the section and edit state never carry over from another one. */}
         {agentId ? <AgentDialogBody agentId={agentId} key={agentId} /> : null}
       </DialogContent>
@@ -198,7 +199,7 @@ function AgentDialogBody({ agentId }: { agentId: string }) {
               size={36}
             />
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium">
+              <span className="truncate text-sm font-medium mobile:text-[17px] mobile:font-semibold">
                 {profile.name}
               </span>
               <span className="truncate text-xs text-muted-foreground">
@@ -226,14 +227,14 @@ function AgentDialogBody({ agentId }: { agentId: string }) {
             </SidebarGroup>
           </SidebarContent>
         </Sidebar>
-        <main className="flex h-[640px] max-h-[80svh] flex-1 flex-col overflow-hidden">
+        <main className="flex h-[640px] max-h-[80svh] flex-1 flex-col overflow-hidden mobile:h-[calc(100svh-env(safe-area-inset-top))] mobile:max-h-none">
           {/*
            * The sidebar hides below md, and without this strip that left the sections unreachable
            * on a phone: the dialog opened on General and nothing could leave it. A scrollable row
            * of the same sections, shown only where the sidebar is not. The identity the sidebar
            * header carries rides along, with room kept for the popup's close button.
            */}
-          <div className="flex shrink-0 flex-col gap-2 border-b border-border p-3 pr-12 md:hidden">
+          <div className="flex shrink-0 flex-col gap-2 border-b border-border p-3 pr-12 md:hidden mobile:gap-3 mobile:px-4 mobile:pt-3">
             <div className="flex items-center gap-2">
               <AbstractAvatar
                 agentId={profile.id}
@@ -245,10 +246,16 @@ function AgentDialogBody({ agentId }: { agentId: string }) {
                 {profile.name}
               </span>
             </div>
-            <div className="flex gap-1 overflow-x-auto">
+            <div className="flex gap-1 overflow-x-auto mobile:-mx-1 mobile:gap-1.5 mobile:px-1 mobile:pb-1 mobile:[scrollbar-width:none]">
               {SECTIONS.map((item) => (
                 <Button
-                  className="shrink-0"
+                  className={cn(
+                    "shrink-0",
+                    "mobile:h-9 mobile:rounded-full mobile:border mobile:px-3.5",
+                    item.id === section
+                      ? "mobile:border-sky-400/40 mobile:bg-sky-400/15 mobile:text-sky-100"
+                      : "mobile:border-white/10 mobile:bg-white/[0.03] mobile:text-white/65",
+                  )}
                   key={item.id}
                   onClick={() => setSection(item.id)}
                   size="sm"
@@ -260,10 +267,10 @@ function AgentDialogBody({ agentId }: { agentId: string }) {
               ))}
             </div>
           </div>
-          <header className="flex h-14 shrink-0 items-center gap-2 px-6">
-            <h2 className="text-sm font-medium">{active?.name}</h2>
+          <header className="flex h-14 shrink-0 items-center gap-2 px-6 mobile:h-12 mobile:px-4">
+            <h2 className="text-sm font-medium mobile:text-[12px] mobile:uppercase mobile:tracking-[0.16em] mobile:text-sky-300/70">{active?.name}</h2>
           </header>
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6">
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6 mobile:px-4 mobile:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
             {section === "general" ? (
               <GeneralSection agentId={agentId} profile={profile} />
             ) : section === "browser" ? (

@@ -149,3 +149,14 @@ export function subscribeFocusTimer(onChange: () => void): () => void {
     window.removeEventListener("storage", handler);
   };
 }
+
+/** Dauer schnell einstellen (Handy-Fokus, helium-mobile4): setzt zurück und startet, wenn gewünscht. */
+export function setFocusTimerMinutes(minutes: number, autostart = false) {
+  const seconds = Math.max(60, Math.round(minutes * 60));
+  write({
+    seconds,
+    running: autostart,
+    startedAt: autostart ? Date.now() : null,
+    secondsAtStart: autostart ? seconds : null,
+  });
+}

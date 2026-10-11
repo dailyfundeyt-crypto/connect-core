@@ -52,11 +52,42 @@ export function moveIdBefore(
   targetId: string,
 ): string[] {
   if (draggedId === targetId) return ids;
+  // Guard both ends: indexOf only reports where the target is, so a dragged id that is not in the
+  // list would otherwise be added instead of the move being ignored.
+  if (!ids.includes(draggedId) || !ids.includes(targetId)) return ids;
   const without = ids.filter((id) => id !== draggedId);
   const at = without.indexOf(targetId);
   if (at < 0) return ids;
   without.splice(at, 0, draggedId);
   return without;
+}
+
+/**
+ * Move `draggedId` so it sits directly above or below `targetId`, decided by where the pointer is.
+ * The list is split-level only, so `ids` is the flat display order; nesting is unchanged.
+ */
+export function moveIdToSlot(
+  ids: string[],
+  draggedId: string,
+  targetId: string,
+  placeAfter: boolean,
+): string[] {
+  if (draggedId === targetId) return ids;
+  // Guard both ends: without this an id that is not in the list would be inserted (or dropped),
+  // because indexOf reports the position of the target and never checks the dragged id.
+  if (!ids.includes(draggedId) || !ids.includes(targetId)) return ids;
+  const without = ids.filter((id) => id !== draggedId);
+  const at = without.indexOf(targetId);
+  if (at < 0) return ids;
+  without.splice(placeAfter ? at + 1 : at, 0, draggedId);
+  return without;
+}
+
+/** Move `draggedId` to the very end -- the one target `moveIdBefore` cannot reach. */
+export function moveIdToEnd(ids: string[], draggedId: string): string[] {
+  if (!ids.includes(draggedId)) return ids;
+  const without = ids.filter((id) => id !== draggedId);
+  return [...without, draggedId];
 }
 
 export const DND_PROJECT = "application/x-connect-project";

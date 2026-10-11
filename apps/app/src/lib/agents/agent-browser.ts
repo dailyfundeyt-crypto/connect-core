@@ -23,6 +23,19 @@ import {
 } from "@/lib/agents/agent-phone";
 import { readScreenshot } from "@/lib/computers/screen";
 import { CHROME_START_PATH_HINT } from "@/lib/ui/lab-prefs";
+import { computeMobileShell } from "@/lib/mobile/use-mobile-shell";
+
+/** Handy (helium-mobile4): statt Windows-Startpfaden ein Satz, der auf dem Handy stimmt. */
+const PHONE_CHROME_HINT =
+  "Der Browser des Agenten läuft in seinem eigenen Profil auf deinem PC. Starte ihn in der Connect App – hier siehst du dann die Live-Ansicht.";
+function startHint(detail: string): string {
+  try {
+    if (computeMobileShell()) return PHONE_CHROME_HINT;
+  } catch {
+    /* SSR/Tests */
+  }
+  return `${detail} — ${CHROME_START_PATH_HINT}`;
+}
 /** @deprecated Prefer AgentComputerRuntime — kept for existing imports. */
 export type AgentBrowserMode = AgentComputerRuntime;
 
@@ -304,7 +317,7 @@ export async function ensureAgentBrowserStarted(
         return patchSession(agentId, {
           mode,
           status: "error",
-          message: `${detail} — ${CHROME_START_PATH_HINT}`,
+          message: startHint(detail),
         });
       }
       return patchSession(agentId, {
@@ -323,8 +336,8 @@ export async function ensureAgentBrowserStarted(
         status: "error",
         message:
           mode === "manus"
-            ? `Manus-Profil nicht erreichbar — Connect Desktop prüfen. — ${CHROME_START_PATH_HINT}`
-            : `Chrome-Profil nicht erreichbar — Connect Desktop oder Sandbox lokal/Azure nutzen. — ${CHROME_START_PATH_HINT}`,
+            ? startHint("Manus-Profil nicht erreichbar — Connect Desktop prüfen.")
+            : startHint("Chrome-Profil nicht erreichbar — Connect Desktop oder Sandbox lokal/Azure nutzen."),
       });
     }
   }

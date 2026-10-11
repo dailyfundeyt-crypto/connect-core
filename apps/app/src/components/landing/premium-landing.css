@@ -1,0 +1,318 @@
+/* Öffentliche Startseite (Premium). Nur unter .cxl-root. */
+.cxl-root {
+  background: #050506;
+  color-scheme: dark;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  scroll-behavior: smooth;
+}
+html:has(.cxl-root) { scroll-behavior: smooth; background: #050506; }
+
+.cxl-aurora {
+  pointer-events: none;
+  position: absolute;
+  inset: -20% -10% auto -10%;
+  height: 1100px;
+  background:
+    radial-gradient(45% 40% at 50% 18%, rgba(56, 189, 248, 0.18), transparent 70%),
+    radial-gradient(35% 35% at 30% 30%, rgba(167, 139, 250, 0.14), transparent 70%),
+    radial-gradient(30% 30% at 72% 26%, rgba(244, 114, 182, 0.09), transparent 70%);
+  filter: blur(40px);
+  animation: cxl-aurora 18s ease-in-out infinite alternate;
+}
+@keyframes cxl-aurora {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(2%, 3%, 0) scale(1.08); }
+}
+.cxl-grid {
+  pointer-events: none;
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1200px;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(60% 50% at 50% 20%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(60% 50% at 50% 20%, #000 20%, transparent 75%);
+}
+
+.cxl-nav {
+  background: linear-gradient(180deg, rgba(5, 5, 6, 0.8), rgba(5, 5, 6, 0.4));
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cxl-orb-wrap {
+  pointer-events: none;
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0.42;
+  filter: blur(28px) saturate(1.25);
+  -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+}
+
+.cxl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px 14px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.75);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  transition: border-color 200ms, background 200ms;
+}
+.cxl-pill:hover { border-color: rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.07); }
+
+.cxl-h1 {
+  font-size: clamp(44px, 7.2vw, 88px);
+  line-height: 1.02;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  color: #fafafa;
+}
+.cxl-h2 {
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  color: #fafafa;
+}
+.cxl-gradient-text {
+  background: linear-gradient(100deg, #ffffff 0%, #bae6fd 35%, #c4b5fd 65%, #f9a8d4 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: cxl-shine 9s ease-in-out infinite alternate;
+}
+@keyframes cxl-shine { to { background-position: 100% 0; } }
+.cxl-eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #7dd3fc, #c4b5fd);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Anmeldeknopf (weiß, wie bei xAI) */
+.cxl-cta {
+  position: relative;
+  display: inline-flex;
+  height: 52px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff, #e7e7ea);
+  color: #09090b;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 50px -14px rgba(125, 211, 252, 0.55);
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms, opacity 200ms;
+}
+.cxl-cta:hover:not(:disabled) { transform: translateY(-1px); box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 70px -14px rgba(125, 211, 252, 0.75); }
+.cxl-cta:active:not(:disabled) { transform: scale(0.98); }
+.cxl-cta:disabled { opacity: 0.6; cursor: progress; }
+.cxl-cta-sm {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: #fafafa;
+  color: #09090b;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 200ms, transform 140ms;
+}
+.cxl-cta-sm:hover:not(:disabled) { background: #fff; }
+.cxl-cta-sm:active:not(:disabled) { transform: scale(0.97); }
+.cxl-input {
+  height: 46px;
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0 18px;
+  font-size: 14px;
+  color: #fafafa;
+  outline: none;
+  transition: border-color 200ms, box-shadow 200ms;
+}
+.cxl-input:focus { border-color: rgba(125, 211, 252, 0.45); box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12); }
+.cxl-ghost {
+  height: 46px;
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 200ms, border-color 200ms;
+}
+.cxl-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.2); }
+
+.cxl-bounce { animation: cxl-bounce 2.4s ease-in-out infinite; }
+@keyframes cxl-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+
+/* App-Vorschau */
+.cxl-window {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(20, 20, 24, 0.92), rgba(11, 11, 13, 0.96));
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 50px 140px -30px rgba(56, 189, 248, 0.28),
+    0 30px 80px -20px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: cxl-float 9s ease-in-out infinite;
+}
+.cxl-window::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(140deg, rgba(125, 211, 252, 0.5), transparent 30%, transparent 70%, rgba(196, 181, 253, 0.45));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+@keyframes cxl-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.cxl-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cxl-window-bar > span { width: 10px; height: 10px; border-radius: 99px; background: rgba(255, 255, 255, 0.12); }
+.cxl-window-url {
+  margin: 0 auto;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 3px 14px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.cxl-typing { display: inline-flex; gap: 3px; }
+.cxl-typing i { width: 5px; height: 5px; border-radius: 99px; background: rgba(255, 255, 255, 0.45); animation: cxl-dot 1.2s infinite ease-in-out; }
+.cxl-typing i:nth-child(2) { animation-delay: 0.15s; }
+.cxl-typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes cxl-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+
+/* Karten */
+.cxl-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+  padding: 26px;
+  transition: border-color 300ms, transform 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms;
+}
+.cxl-card::after {
+  content: "";
+  position: absolute;
+  inset: -1px -1px auto -1px;
+  height: 120px;
+  background: radial-gradient(60% 100% at 50% 0%, rgba(125, 211, 252, 0.14), transparent 70%);
+  opacity: 0;
+  transition: opacity 300ms;
+  pointer-events: none;
+}
+.cxl-card:hover { border-color: rgba(255, 255, 255, 0.14); transform: translateY(-3px); }
+.cxl-card:hover::after { opacity: 1; }
+.cxl-card-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  color: #e0f2fe;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.cxl-step {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 28px;
+}
+.cxl-step-num {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.cxl-security {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 40px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background:
+    radial-gradient(60% 120% at 100% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
+    rgba(255, 255, 255, 0.02);
+  padding: 48px;
+}
+.cxl-check {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #7dd3fc;
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.25);
+}
+.cxl-final {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border-radius: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 80px 24px;
+}
+.cxl-final-glow {
+  position: absolute;
+  inset: auto -10% -60% -10%;
+  height: 120%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(56, 189, 248, 0.22), transparent 70%);
+  filter: blur(30px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cxl-aurora, .cxl-window, .cxl-gradient-text, .cxl-bounce, .cxl-typing i { animation: none !important; }
+}

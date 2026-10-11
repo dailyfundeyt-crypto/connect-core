@@ -1,0 +1,20 @@
+/*
+ * Handy-Version (nur innerhalb von .connect-mobile-chat, also nur in der Handy-Ansicht).
+ * Der Composer bekommt auf schmalen Bildschirmen zwei Zeilen: oben das Textfeld in voller
+ * Breite, darunter die Knöpfe. Desktop ist davon nicht betroffen.
+ */
+.connect-mobile-chat form > .flex.items-center.gap-3 {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+.connect-mobile-chat form > .flex.items-center.gap-3 > :has(textarea, [contenteditable="true"]) {
+  order: -1;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.connect-mobile-chat form > .flex.items-center.gap-3 > .shrink-0.self-end:last-child {
+  margin-left: auto;
+}
+.connect-mobile-chat textarea {
+  font-size: 16px; /* verhindert das automatische Hineinzoomen von iOS */
+}

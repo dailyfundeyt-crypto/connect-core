@@ -16,6 +16,10 @@ import {
   setActiveLevel,
   subscribeLevel,
 } from "@/lib/companies/level";
+import {
+  readActiveCompanyId,
+  resolveCompanyId,
+} from "@/lib/companies/store";
 import { isDesktopApp } from "@/lib/desktop-bridge";
 import { useNotchBridge } from "@/lib/voice/notch-bridge";
 import {
@@ -90,11 +94,15 @@ function RouteComponent() {
     if (mobileShell) return;
     if (level !== 3 && level !== 4) return;
     if (!isHqPath(location.pathname)) return;
-    const companyId =
-      params.companyId ??
-      (typeof window !== "undefined"
-        ? window.localStorage.getItem("connect.activeCompanyId")
-        : null);
+    /*
+     * Normalized, and verified against the company list. This read the raw stored value, so a
+     * JSON-quoted id went straight into the route: the app navigated itself to
+     * `/company/"spark"`, which resolves to no company, which showed "Company not found" — and
+     * because this runs on a level change, it dragged the user back there every time they left.
+     * The stored id is not trustworthy as a route segment; the route is the thing that must be
+     * resolvable.
+     */
+    const companyId = resolveCompanyId(params.companyId ?? readActiveCompanyId());
     if (!companyId) return;
     void navigate({
       to: "/company/$companyId",
@@ -105,10 +113,7 @@ function RouteComponent() {
   }, [level, location.pathname, mobileShell, navigate, params.companyId]);
 
   const companyId =
-    params.companyId ??
-    (typeof window !== "undefined"
-      ? window.localStorage.getItem("connect.activeCompanyId")
-      : null);
+    params.companyId ?? readActiveCompanyId();
 
   const focusAgent =
     level === 1

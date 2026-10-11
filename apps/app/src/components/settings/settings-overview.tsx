@@ -15,7 +15,12 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { IconBrain } from "@tabler/icons-react";
+import { brainAgentsQueryOptions } from "@/lib/brain/queries";
 import { cn } from "@/lib/utils";
+import { useSignOut } from "@/lib/auth/use-sign-out";
 
 type Section = {
   id: string;
@@ -24,7 +29,15 @@ type Section = {
   accent: string;
   title: string;
   description: string;
-  chips: string[];
+  /**
+   * The real targets of this card, as the sidebar spells them.
+   *
+   * These are the sidebar's own hashes and routes, not ids invented for the card: every chip used
+   * to be plain text describing a destination that did not exist, so a card click on `#konnektoren`
+   * fell through to a page with no such section. A chip is a link, so it has to name a hash
+   * `PANELS` (routes/_authed/settings/index.tsx) actually resolves.
+   */
+  chips: { title: string; hash?: string; to?: string }[];
 };
 
 const SECTIONS: Section[] = [
@@ -34,7 +47,12 @@ const SECTIONS: Section[] = [
     accent: "#60a5fa",
     title: "Konto & Sicherheit",
     description: "Dein Profil, aktive Sitzungen und Abmeldung verwalten.",
-    chips: ["Profil", "Sitzungen", "Abmelden"],
+    chips: [
+      { title: "Profil", hash: "profile" },
+      { title: "Sitzungen", hash: "security" },
+      { title: "Konto", hash: "konto" },
+      { title: "Abmelden", to: "/sign" },
+    ],
   },
   {
     id: "konnektoren",
@@ -42,7 +60,17 @@ const SECTIONS: Section[] = [
     accent: "#a78bfa",
     title: "Konnektoren",
     description: "API-Keys, Model-Anbieter, MCP-Server und Connector-Mapping.",
-    chips: ["API-Keys", "Model-Provider", "MCP", "Connector-Mapping", "Browser-Gruppen", "Ubuntu-Maschinen", "Voice"],
+    chips: [
+      { title: "E-Mail-Konten", hash: "konnektoren" },
+      { title: "API-Keys", hash: "api-keys" },
+      { title: "Model-Provider", hash: "model-provider" },
+      { title: "MCP-Server", hash: "mcp" },
+      { title: "Connector-Mapping", hash: "connector-mapping" },
+      { title: "Browser-Gruppen", hash: "browser-groups" },
+      { title: "Ubuntu-Maschinen", hash: "ubuntu-machines" },
+      { title: "Voice", hash: "voice" },
+      { title: "Connect-Agenten", hash: "connect-agenten" },
+    ],
   },
   {
     id: "ki-modelle",
@@ -50,7 +78,11 @@ const SECTIONS: Section[] = [
     accent: "#34d399",
     title: "KI-Modelle",
     description: "Standard-Agent, Modell-Auswahl und API-Provider pro Agent.",
-    chips: ["Modell One", "Modell Two", "Anbieter"],
+    chips: [
+      { title: "Modell One", hash: "model-provider" },
+      { title: "Modell Two", hash: "model-provider" },
+      { title: "Anbieter", hash: "api-keys" },
+    ],
   },
   {
     id: "browser-gruppen",
@@ -58,7 +90,11 @@ const SECTIONS: Section[] = [
     accent: "#fb923c",
     title: "Browser-Gruppen",
     description: "Standard-Browser-Gruppen für neue Tabs festlegen.",
-    chips: ["Gruppen", "Domains", "Apple-Dot"],
+    chips: [
+      { title: "Gruppen", hash: "browser-groups" },
+      { title: "Domains", hash: "browser-groups" },
+      { title: "Apple-Dot", hash: "browser-groups" },
+    ],
   },
   {
     id: "sync-backup",
@@ -66,7 +102,10 @@ const SECTIONS: Section[] = [
     accent: "#60a5fa",
     title: "Sync & Backup",
     description: "Google-Drive-Sicherung, Cloud-Sync-Status und Wiederherstellung.",
-    chips: ["Drive-Backup", "Supabase-Sync"],
+    chips: [
+      { title: "Drive-Backup", hash: "sync-backup" },
+      { title: "Supabase-Sync", hash: "sync-backup" },
+    ],
   },
   {
     id: "erweitert",
@@ -74,7 +113,15 @@ const SECTIONS: Section[] = [
     accent: "#f472b6",
     title: "Erweitert",
     description: "Shortcuts, Deployment-Modus, Background-Agent und Codex-Nutzung.",
-    chips: ["Shortcuts", "Deployment", "Background", "Codex", "Standing Instructions"],
+    chips: [
+      { title: "Shortcuts", hash: "shortcuts" },
+      { title: "Deployment", hash: "deployment-mode" },
+      { title: "Brain", hash: "brain" },
+      { title: "Codex", hash: "codex-usage" },
+      { title: "Helium-Shell", hash: "helium-shell" },
+      { title: "Benachrichtigungen", hash: "benachrichtigungen" },
+      { title: "Standing Instructions", hash: "standing-instructions" },
+    ],
   },
   {
     id: "info",
@@ -82,7 +129,13 @@ const SECTIONS: Section[] = [
     accent: "#94a3b8",
     title: "Über & Rechtliches",
     description: "Version, Logs, Datenschutzerklärung und Nutzungsbedingungen.",
-    chips: ["Version", "Feedback", "Datenschutz", "Nutzungsbedingungen"],
+    chips: [
+      { title: "Version", hash: "info" },
+      { title: "Feedback", hash: "donate" },
+      { title: "Über", hash: "uber" },
+      { title: "Datenschutz", hash: "privacy" },
+      { title: "Nutzungsbedingungen", hash: "terms" },
+    ],
   },
 ];
 
@@ -93,29 +146,82 @@ function searchSections(query: string): Section[] {
     (s) =>
       s.title.toLowerCase().includes(q) ||
       s.description.toLowerCase().includes(q) ||
-      s.chips.some((c) => c.toLowerCase().includes(q)),
+      s.chips.some((c) => c.title.toLowerCase().includes(q)),
+  );
+}
+
+/**
+ * The Brain card's preview: the agents that currently hold a scope, four at a time.
+ *
+ * The Brain page is a separate route, so a chip alone gave no sense of whether anything is in it.
+ * The agent list is the part worth previewing — it is what the page edits — and it comes from the
+ * same query the Brain page uses, so the card and the page can never disagree.
+ */
+function BrainPreview() {
+  const brain = useQuery(brainAgentsQueryOptions());
+  const agents = brain.data?.available ? brain.data.agents : [];
+  const preview = agents.slice(0, 4);
+
+  if (brain.isPending) {
+    return <div className="mt-auto h-9 w-9 animate-pulse rounded-[10px] bg-white/[0.04]" />;
+  }
+
+  if (preview.length === 0) {
+    // An empty Brain is a real state, not a loading one, and it is worth naming: the folder either
+    // is not reachable from this machine or holds nothing yet.
+    return (
+      <div className="mt-auto flex items-center gap-2 text-[11px] text-[#4a4a4a]">
+        <IconBrain className="size-3.5" />
+        {brain.data?.available
+          ? "Noch keine Agenten mit Berechtigungen"
+          : "Brain nicht auf diesem Gerät"}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-auto flex items-center gap-2.5">
+      <div className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gradient-to-b from-[#7ec8f5] to-[#3b9de0] shadow-sm ring-1 ring-black/10">
+        <span className="absolute inset-[3px] grid grid-cols-2 grid-rows-2 gap-[2px] overflow-hidden rounded-[7px] bg-white/25 p-[2px]">
+          {preview.map((agent) => (
+            <span
+              className="flex min-w-0 items-center justify-center overflow-hidden rounded-[3px] bg-white/70 px-[2px] text-[7px] font-semibold leading-none text-[#0b3a5a]"
+              key={agent.slug}
+              title={agent.name ?? agent.slug}
+            >
+              {(agent.name ?? agent.slug).slice(0, 2).toUpperCase()}
+            </span>
+          ))}
+        </span>
+      </div>
+      <span className="text-[11px] leading-tight text-[#4a4a4a]">
+        {agents.length} Agent{agents.length === 1 ? "" : "en"} mit Zugriff
+        {agents.length > 4 ? ` · +${agents.length - 4}` : ""}
+      </span>
+    </div>
   );
 }
 
 export function SettingsOverview() {
   const [query, setQuery] = useState("");
+  const { signOut } = useSignOut();
 
   const sections = searchSections(query);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 pb-16 pt-8">
+    <div className="mx-auto max-w-3xl px-4 pb-16 pt-4 md:px-6 md:pt-8">
       {/* ── Page title ── */}
-      <h1 className="text-2xl font-bold text-white">Einstellungen</h1>
-      <p className="mt-1 text-sm text-[#666]">
+      <h1 className="text-2xl font-bold text-white max-md:sr-only">Einstellungen</h1>
+      <p className="mt-1 text-sm text-[#666] max-md:mt-0">
         Alles an einem Ort — suchen oder wählen, was du brauchst.
       </p>
 
       {/* ── Search bar ── */}
-      <div className="group relative mt-6">
+      <div className="group relative mt-4 md:mt-6">
         <IconSearch className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#555] transition-colors group-focus-within:text-[#888]" />
         <input
           autoComplete="off"
-          className="h-11 w-full rounded-full border border-white/[0.08] bg-[#161616] pl-10 pr-4 text-sm text-white placeholder:text-[#444] transition-colors focus:border-white/[0.16] focus:outline-none focus:ring-0"
+          className="h-11 w-full rounded-full border border-white/[0.08] bg-white/[0.05] pl-10 pr-4 text-[16px] text-white md:bg-[#161616] md:text-sm placeholder:text-[#444] transition-colors focus:border-white/[0.16] focus:outline-none focus:ring-0"
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Einstellungen durchsuchen …"
           type="search"
@@ -134,13 +240,23 @@ export function SettingsOverview() {
       >
         {sections.map((section) => {
           const Icon = section.icon;
+          /*
+           * The card itself opens the first real target of its area.
+           *
+           * It used to link to `#${section.id}` — an id invented for the card. None of them is a
+           * section in this page (`konto`, `konnektoren`, `helium-shell`, …) and only `erweitert`
+           * is a hash `PanelOutlet` resolves, so six of seven cards navigated nowhere. The first
+           * chip is the honest target: it is a destination the sidebar also links to.
+           */
+          const first = section.chips[0];
           return (
-            <a
+            <Link
               key={section.id}
-              href={`/settings#${section.id}`}
+              to={first.to ?? "/settings"}
+              hash={first.to ? undefined : first.hash}
               className={cn(
                 "group relative flex flex-col gap-3 rounded-2xl border border-white/[0.07]",
-                "bg-[#111] p-5 transition-all duration-150",
+                "bg-white/[0.035] p-5 backdrop-blur-sm transition-all duration-150 md:bg-[#111]",
                 "hover:border-white/[0.14] hover:bg-[#141414]",
                 "hover:scale-[1.01] cursor-pointer",
               )}
@@ -172,18 +288,30 @@ export function SettingsOverview() {
                 </p>
               </div>
 
-              {/* Chips */}
+              {/* Chips — each one a real destination, so they are links and not labels */}
               <div className="mt-auto flex flex-wrap gap-1.5">
                 {section.chips.map((chip) => (
-                  <span
-                    key={chip}
-                    className="rounded-full bg-white/[0.05] px-2 py-0.5 text-[11px] text-[#555] transition-colors group-hover:bg-white/[0.08] group-hover:text-[#888]"
+                  <Link
+                    key={chip.title}
+                    to={chip.to ?? "/settings"}
+                    hash={chip.to ? undefined : chip.hash}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (chip.to === "/sign") {
+                        event.preventDefault();
+                        void signOut();
+                      }
+                    }}
+                    className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] text-[#9aa3b2] transition-colors md:px-2 md:py-0.5 md:text-[11px] md:text-[#555] hover:bg-white/[0.12] hover:text-[#ccc]"
                   >
-                    {chip}
-                  </span>
+                    {chip.title}
+                  </Link>
                 ))}
               </div>
-            </a>
+
+              {/* The Brain is a separate route, so the card previews what is actually in it. */}
+              {section.id === "erweitert" ? <BrainPreview /> : null}
+            </Link>
           );
         })}
 
@@ -194,8 +322,12 @@ export function SettingsOverview() {
         )}
       </div>
 
-      {/* ── Footer hint ── */}
-      <p className="mt-8 text-center text-xs text-[#3a3a3a]">
+      {/*
+       * The sidebar is `hidden md:block`, so below the md breakpoint this page is the only way
+       * through and there is no left sidebar to point at. Stating it everywhere was the wrong half
+       * of the two-layout design: the sentence is true on the desktop layout and false on the phone.
+       */}
+      <p className="mt-8 hidden text-center text-xs text-[#3a3a3a] md:block">
         Du kannst auch direkt über die linke Seitenleiste navigieren.
       </p>
     </div>

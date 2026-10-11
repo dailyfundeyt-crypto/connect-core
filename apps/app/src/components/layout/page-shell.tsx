@@ -177,11 +177,18 @@ export function PageSection({
 }
 
 /**
- * The card that rows live in.
+ * The stack that rows live in.
  *
- * Rows are `<Item size="sm">` with a `<Separator />` between them; this is only the border around
- * them. Rendering nothing when there is nothing is deliberate — an empty bordered box reads as a
- * thing that failed to load, where absence reads as nothing to see yet.
+ * Rows are `<Item size="sm" />`, one per setting, and each is its own card with space between them.
+ *
+ * They used to be divided rows inside a single bordered box — `rounded-none` with a `<Separator />`
+ * between — which is the denser, older look. It measured 1px between rows, so three settings read as
+ * one block with lines through it, and a row whose control sat in the top-right corner left the rest
+ * of its own height empty. Separate cards give each row a readable block of its own and let the gap
+ * do the grouping, which is what a settings list actually needs.
+ *
+ * Rendering nothing when there is nothing stays deliberate — an empty bordered box reads as a thing
+ * that failed to load, where absence reads as nothing to see yet.
  */
 export function PageRows({
   children,
@@ -191,22 +198,67 @@ export function PageRows({
   className?: string;
 }) {
   return (
-    /*
-     * The rows are squared off and the card clips them. `Item` carries `rounded-lg` of its own, which
-     * inside a card of divided rows painted a hover as a floating pill: a middle row has no corners,
-     * and the first and last cannot be concentric with the card while sitting a border inside it.
-     */
-    <div
-      className={cn(
-        "mt-4 overflow-hidden rounded-lg border border-border bg-card",
-        "[&_[data-slot=item]]:rounded-none",
-        className,
-      )}
-    >
-      {children}
+    <div className={cn("mt-4 flex flex-col", className)}>
+      {/*
+       * Each row is a card in its own right now, so it keeps `Item`'s own radius and border. The
+       * rounding and the border are restored on every row rather than once on the stack, because
+       * the stack no longer clips anything.
+       *
+       * The gap lives here rather than on the inner stack: the rows are separated by `<Separator />`
+       * elements, and those are display:none below, which leaves a flex gap that is measured between
+       * a visible row and an invisible one — and a gap to a collapsed box is zero. The separators
+       * are removed from the flow entirely instead, so this is the only gap in play.
+       */}
+      <style>{ROWS_CARD_STYLES}</style>
+      <div
+        data-slot="rows-stack"
+        className="flex flex-col gap-3 [&>[data-slot=item]]:rounded-lg [&>[data-slot=item]]:border [&>[data-slot=item]]:border-border [&>[data-slot=item]]:bg-card"
+      >
+        {children}
+      </div>
     </div>
   );
 }
+
+/**
+ * Gives every row its own card.
+ *
+ * `Item` sizes itself for a divided list — a transparent background and no side border, so the
+ * rows read as one surface. As standalone cards they need both, and the hover that a divided list
+ * paints across the full width becomes a hover on the card itself, which is the affordance a
+ * standalone row can carry on its own.
+ */
+const ROWS_CARD_STYLES = `
+[data-slot="rows-stack"] > [data-slot="item"] {
+  border: 1px solid var(--color-border, rgba(28,27,25,0.12));
+  border-radius: 0.5rem;
+  background-color: var(--color-card, Canvas);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+[data-slot="rows-stack"] > [data-slot="item"]:hover {
+  background-color: color-mix(in oklab, var(--color-card, Canvas) 94%, currentColor 6%);
+}
+
+/*
+ * A row's description is a second line under its title, and the action sits beside both. The row
+ * grows to the taller of the two, so a short control on a two-line row left its own half empty —
+ * aligning the action to the top edge rather than centring it keeps the two texts reading as one
+ * line, and the vertical gap between rows does the rest.
+ */
+[data-slot="rows-stack"] > [data-slot="item"] [data-slot="item-actions"] {
+  align-items: flex-start;
+  padding-top: 0.125rem;
+}
+
+/*
+ * The separators were drawn for a divided list. Between separate cards they would hang in the gap
+ * with a card's padding on either side, so they leave the flow entirely rather than being restyled
+ * — a flex gap counts a display:none child as absent, but a zero-height one as present, and the
+ * stack's own gap is what spaces the cards.
+ */
+[data-slot="rows-stack"] > [data-slot="separator"] {
+  display: none;
+}`;
 
 /**
  * What a section says when it has nothing to list.

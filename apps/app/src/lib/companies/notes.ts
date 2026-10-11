@@ -481,3 +481,43 @@ export function deleteNoteFolder(
     ),
   });
 }
+
+/* ------------------------------------------------------------------ *
+ * The open vault file
+ *
+ * A vault note is not a `Note` and never becomes one. It lives on disk, it is
+ * listed by the Brain, and it is edited there — so what the sidebar needs to
+ * remember is only *which* file is open, and only long enough for the reader in
+ * the other component tree to find it.
+ *
+ * `null` is a real answer, not "unknown": it means the notes panel should be
+ * showing its own editor again rather than a vault file.
+ * ------------------------------------------------------------------ */
+
+/** Which vault file the reader is showing, per company. */
+export function getOpenVaultPath(companyId: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(`${KEY}.vault.${companyId}`);
+  } catch {
+    return null;
+  }
+}
+
+export function setOpenVaultPath(
+  companyId: string,
+  filePath: string | null,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (filePath === null) {
+      window.localStorage.removeItem(`${KEY}.vault.${companyId}`);
+    } else {
+      window.localStorage.setItem(`${KEY}.vault.${companyId}`, filePath);
+    }
+    // Same event the notes use, so both trees refresh from one subscription.
+    window.dispatchEvent(new Event(EVENT));
+  } catch {
+    // Blocked storage: the file still opens, it just is not remembered.
+  }
+}

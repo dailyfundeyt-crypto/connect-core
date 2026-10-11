@@ -1,0 +1,90 @@
+/*
+ * Handy-Version (nur .connect-mobile-chat / .connect-mobile-home).
+ * Desktop bleibt unverändert.
+ */
+
+.connect-mobile-chat form > .flex.items-center.gap-3 {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+.connect-mobile-chat form > .flex.items-center.gap-3 > :has(textarea, [contenteditable="true"]) {
+  order: -1;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.connect-mobile-chat form > .flex.items-center.gap-3 > .shrink-0.self-end:last-child {
+  margin-left: auto;
+}
+.connect-mobile-chat textarea {
+  font-size: 16px; /* verhindert iOS-Zoom */
+}
+
+/* Swipe-Pager */
+.connect-mobile-home {
+  --cm-bg: #07080c;
+  --cm-panel: rgba(255, 255, 255, 0.04);
+  --cm-border: rgba(255, 255, 255, 0.1);
+  --cm-accent: #38bdf8;
+  --cm-accent-2: #a78bfa;
+  background:
+    radial-gradient(120% 80% at 10% -10%, rgba(56, 189, 248, 0.14), transparent 55%),
+    radial-gradient(90% 70% at 100% 0%, rgba(167, 139, 250, 0.12), transparent 50%),
+    var(--cm-bg);
+  color-scheme: dark;
+}
+
+.connect-mobile-pager {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.connect-mobile-pager::-webkit-scrollbar {
+  display: none;
+}
+.connect-mobile-page {
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.connect-mobile-dot {
+  height: 6px;
+  width: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: width 180ms ease, background 180ms ease;
+}
+.connect-mobile-dot[data-active="true"] {
+  width: 18px;
+  background: linear-gradient(90deg, var(--cm-accent), var(--cm-accent-2));
+}
+
+.connect-mobile-glass {
+  background: var(--cm-panel);
+  border: 1px solid var(--cm-border);
+  backdrop-filter: blur(12px);
+}
+
+.connect-mobile-tabbar {
+  background: rgba(18, 20, 28, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+.connect-mobile-tab-active {
+  background:
+    linear-gradient(180deg, rgba(56, 189, 248, 0.16), rgba(167, 139, 250, 0.1));
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.18);
+}

@@ -224,10 +224,18 @@ export function BrainSettingsPage() {
         <BrainGraph onOpen={openFromGraph} selected={selected} />
       </section>
 
-      <section className="flex scroll-mt-4 flex-col gap-3" ref={readerRef}>
-        <h2 className="text-base font-semibold">Brain lesen</h2>
-        <BrainBrowser onSelect={setSelected} selected={selected} />
-      </section>
+      {/*
+       * The file tree moved out of the settings.
+       *
+       * Reading a library of 2 093 notes is not a setting, and having it here meant
+       * opening a note from `Plannung` meant walking through every other settings
+       * section to get there and back again to leave. It is now a tab in Spark,
+       * beside the notes written in the app, at `?level=3&vault=1`.
+       *
+       * What stays is the two blocks that are genuinely configuration: the status
+       * line above, and the folder editor beneath it. Choosing where the Brain
+       * lives is a setting; browsing what is in it is not.
+       */}
 
       <section className="flex flex-col gap-3">
         <div>

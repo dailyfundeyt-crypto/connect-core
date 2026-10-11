@@ -5,6 +5,7 @@ import { currentUserQueryOptions, needsOnboarding } from "../lib/auth/queries";
 import { CopilotProvider } from "../lib/copilot/provider";
 import { AppHotkeys } from "../lib/hotkeys/app-hotkeys";
 import { MobileThemeSync } from "../components/mobile/mobile-theme-sync";
+import { ExtensionsProvider } from "@/extensions/context";
 
 export const Route = createFileRoute("/_authed")({
   beforeLoad: async ({ context, location }) => {
@@ -27,18 +28,22 @@ export const Route = createFileRoute("/_authed")({
   // a provider above the sign-in gate would open a run for a visitor who has not signed in yet.
   component: () => (
     <SecurityGate>
-      <CopilotProvider>
-        <AppHotkeys />
-        <MobileThemeSync />
-        <Outlet />
-        {/*
-         * After the Outlet so it stacks above the page rather than under it, and outside it so it
-         * survives the pages that own their own scrolling. Inside the authed boundary for the same
-         * reason the rest of this tree is: the calendar is one person's, and there is nothing to show
-         * somebody who has not signed in.
-         */}
-        <CalendarDock />
-      </CopilotProvider>
+      {/* Above CopilotProvider so an extension can read company state; inside
+          SecurityGate for the same reason as the rest — no session, no tree. */}
+      <ExtensionsProvider>
+        <CopilotProvider>
+          <AppHotkeys />
+          <MobileThemeSync />
+          <Outlet />
+          {/*
+            * After the Outlet so it stacks above the page rather than under it, and outside it so it
+            * survives the pages that own their own scrolling. Inside the authed boundary for the same
+            * reason the rest of this tree is: the calendar is one person's, and there is nothing to show
+            * somebody who has not signed in.
+            */}
+          <CalendarDock />
+        </CopilotProvider>
+      </ExtensionsProvider>
     </SecurityGate>
   ),
 });

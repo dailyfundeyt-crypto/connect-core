@@ -45,7 +45,15 @@ async function call<T>(path: string, init: { method?: string; body?: unknown } =
   return json;
 }
 
-export const fetchDriveBackupStatus = () => call<DriveBackupStatus>("/status");
+export const fetchDriveBackupStatus = () =>
+  call<DriveBackupStatus>("/status").then((status) => {
+    // Ein Server ohne Drive-Sicherung (z. B. altes Vercel-Bundle) antwortet ohne Felder –
+    // vorher stürzte die Seite dann ab (helium-mobile4).
+    if (!status || typeof status !== "object" || !("settings" in status) || !status.settings) {
+      throw new Error("Drive-Sicherung ist hier nicht verfügbar.");
+    }
+    return status;
+  });
 export const runDriveBackup = () => call<{ ok: true; status: DriveBackupStatus; trashed: number }>("/run", { method: "POST" });
 export const listDriveBackups = () => call<{ backups: DriveBackupFile[] }>("/backups").then((r) => r.backups);
 export const disconnectDriveBackup = () => call<DriveBackupStatus>("/disconnect", { method: "POST" });

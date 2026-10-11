@@ -1,0 +1,434 @@
+/*
+ * CONNECT PREMIUM (Desktop + Web) — dunkler Tech-Look, ruhig und teuer.
+ *
+ * Aktiv, wenn <html> die Klassen `connect-premium` UND `dark` trägt (index.html setzt beide beim
+ * ersten Start; der Hell/Dunkel-Schalter im Benutzermenü schaltet zurück auf den alten hellen Look).
+ * Ausschalten komplett: localStorage "connect.premium" = "off".
+ * Handy (`html.connect-mobile-ui`, helium-mobile4) ist bewusst ausgenommen: dort gilt mobile.css.
+ *
+ * Gleiche Akzentfarben wie die Handy-Version (mobile.css: --cm-accent / --cm-accent-2), damit
+ * Handy und PC ein Produkt sind. Nur CSS: keine Komponente muss dafür umgebaut werden.
+ */
+
+html.connect-premium.dark:not(.connect-mobile-ui),
+html.connect-premium.dark:not(.connect-mobile-ui) .lab-light {
+  color-scheme: dark;
+  --cx-bg: #09090b;
+  --cx-bg-2: #0d0d10;
+  --cx-panel: #121215;
+  --cx-panel-2: #17171b;
+  --cx-line: rgba(255, 255, 255, 0.07);
+  --cx-line-2: rgba(255, 255, 255, 0.11);
+  --cx-text: #ededef;
+  --cx-text-2: #a1a1aa;
+  --cx-text-3: #71717a;
+  --cx-accent: #38bdf8;
+  --cx-accent-2: #a78bfa;
+  --cx-glow: rgba(56, 189, 248, 0.16);
+  --cx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --background: var(--cx-bg);
+  --foreground: var(--cx-text);
+  --card: var(--cx-panel);
+  --card-foreground: var(--cx-text);
+  --popover: #141418;
+  --popover-foreground: var(--cx-text);
+  --primary: #f4f4f5;
+  --primary-foreground: #09090b;
+  --secondary: #1b1b20;
+  --secondary-foreground: var(--cx-text);
+  --muted: #17171b;
+  --muted-foreground: var(--cx-text-2);
+  --accent: #1d1d22;
+  --accent-foreground: var(--cx-text);
+  --destructive: #f87171;
+  --success: #34d399;
+  --border: var(--cx-line);
+  --input: rgba(255, 255, 255, 0.09);
+  --ring: rgba(125, 211, 252, 0.55);
+  --radius: 0.85rem;
+  --sidebar: var(--cx-bg-2);
+  --sidebar-foreground: #e4e4e7;
+  --sidebar-primary: #f4f4f5;
+  --sidebar-primary-foreground: #09090b;
+  --sidebar-accent: rgba(255, 255, 255, 0.055);
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-ring: rgba(125, 211, 252, 0.5);
+  --chart-1: #38bdf8;
+  --chart-2: #a78bfa;
+  --chart-3: #34d399;
+  --chart-4: #fbbf24;
+  --chart-5: #f472b6;
+  background: var(--cx-bg);
+  color: var(--cx-text);
+}
+
+/* ---------- Typografie ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) body {
+  background: var(--cx-bg);
+  font-feature-settings: "cv11", "ss01", "ss03", "cv02";
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(h1, h2, h3, [data-slot="dialog-title"], [data-slot="sheet-title"], [data-slot="empty-title"]) {
+  letter-spacing: -0.022em;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) ::selection {
+  background: rgba(56, 189, 248, 0.32);
+  color: #fff;
+}
+
+/* ---------- Scrollbars ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) * {
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 99px;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* ---------- Hauptfläche: ruhiger Verlauf statt Flachweiß ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-wrapper"] {
+  background: var(--cx-bg);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-wrapper"] > main {
+  background:
+    radial-gradient(1100px 520px at 62% -12%, rgba(120, 140, 255, 0.075), transparent 62%),
+    radial-gradient(700px 420px at 100% 100%, rgba(56, 189, 248, 0.035), transparent 60%),
+    var(--cx-bg) !important;
+  border-left-color: var(--cx-line) !important;
+}
+/* Seitenwechsel: Inhalt gleitet weich herein (läuft, sobald die Route ihren Inhalt austauscht). */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-wrapper"] > main > div > * {
+  animation: cx-page-in 420ms var(--cx-ease) both;
+}
+@keyframes cx-page-in {
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* ---------- Seitenleiste ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-inner"],
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-container"] {
+  background: linear-gradient(180deg, #0f0f12 0%, #0b0b0d 100%);
+  border-color: var(--cx-line) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-header"] {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-content"] .sticky.bg-sidebar {
+  background: linear-gradient(180deg, #0e0e11 70%, rgba(14, 14, 17, 0));
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-group-label"] {
+  color: rgba(255, 255, 255, 0.34) !important;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-menu-button"],
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] button.rounded-xl,
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] a.rounded-xl {
+  transition: background-color 180ms var(--cx-ease), box-shadow 180ms var(--cx-ease), color 180ms var(--cx-ease), transform 120ms var(--cx-ease);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-menu-button"][data-active="true"],
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] [aria-current="page"].rounded-xl,
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] .rounded-xl.bg-sidebar-accent {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.045)) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] :is(button, a):active {
+  transform: scale(0.985);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar-input"],
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] [data-slot="input-group"] {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+  transition: border-color 200ms var(--cx-ease), box-shadow 200ms var(--cx-ease), background 200ms;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] [data-slot="input-group"]:focus-within {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(125, 211, 252, 0.35) !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+}
+/* Ungelesen-Punkt in Akzentfarbe */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] .size-2.rounded-full.bg-primary {
+  background: linear-gradient(135deg, var(--cx-accent), var(--cx-accent-2));
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+}
+
+/* ---------- Buttons ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="button"] {
+  transition: background-color 180ms var(--cx-ease), color 180ms var(--cx-ease), border-color 180ms var(--cx-ease), box-shadow 220ms var(--cx-ease), transform 120ms var(--cx-ease), opacity 180ms;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="button"]:not(:disabled):active {
+  transform: scale(0.97);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="button"].bg-primary {
+  background: linear-gradient(180deg, #ffffff 0%, #e4e4e7 100%);
+  color: #09090b;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -10px rgba(255, 255, 255, 0.35);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="button"].bg-primary:not(:disabled):hover {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f4f5 100%);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -10px rgba(255, 255, 255, 0.5);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="button"].bg-primary svg {
+  color: #09090b;
+}
+
+/* ---------- Eingaben ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="combobox-trigger"]) {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.09);
+  transition: border-color 200ms var(--cx-ease), box-shadow 200ms var(--cx-ease), background 200ms;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="input"], [data-slot="textarea"]):focus-visible,
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="input-group"]:focus-within {
+  border-color: rgba(125, 211, 252, 0.45);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="switch"][data-checked],
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="switch"][aria-checked="true"] {
+  background: linear-gradient(135deg, var(--cx-accent), var(--cx-accent-2)) !important;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="checkbox"][data-checked] {
+  background: var(--cx-accent);
+  border-color: var(--cx-accent);
+  color: #04121b;
+}
+
+/* ---------- Menüs, Popover, Tooltip: Glas ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"], [data-slot="combobox-content"]) {
+  background: rgba(20, 20, 24, 0.82) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 24px 60px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  border-radius: 14px;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="dropdown-menu-item"], [data-slot="context-menu-item"], [data-slot="select-item"], [data-slot="combobox-item"], [data-slot="dropdown-menu-sub-trigger"], [data-slot="context-menu-sub-trigger"]) {
+  border-radius: 9px;
+  transition: background-color 140ms var(--cx-ease), color 140ms;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="dropdown-menu-item"], [data-slot="context-menu-item"], [data-slot="select-item"], [data-slot="combobox-item"], [data-slot="dropdown-menu-sub-trigger"], [data-slot="context-menu-sub-trigger"]):is([data-highlighted], :focus) {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="dropdown-menu-separator"], [data-slot="context-menu-separator"]) {
+  background: rgba(255, 255, 255, 0.06);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="tooltip-content"] {
+  background: rgba(24, 24, 28, 0.92) !important;
+  color: #f4f4f5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+}
+
+/* ---------- Dialoge / Sheets ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) :is([data-slot="dialog-overlay"], [data-slot="sheet-overlay"]) {
+  background: rgba(3, 3, 5, 0.62) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="dialog-content"] {
+  background: linear-gradient(180deg, #16161a 0%, #111114 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 40px 120px -20px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  transition-duration: 260ms !important;
+  transition-timing-function: var(--cx-ease) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sheet-content"] {
+  background: #101013 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* ---------- Karten / Items / Empty ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="item"],
+html.connect-premium.dark:not(.connect-mobile-ui) .rounded-xl.border.bg-card,
+html.connect-premium.dark:not(.connect-mobile-ui) .rounded-2xl.border.bg-card {
+  transition: background-color 200ms var(--cx-ease), border-color 200ms var(--cx-ease), box-shadow 200ms var(--cx-ease);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="empty"] {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="separator"] {
+  background: rgba(255, 255, 255, 0.07);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="skeleton"] {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  background-size: 200% 100%;
+  animation: cx-shimmer 1.4s linear infinite;
+}
+@keyframes cx-shimmer { to { background-position: -200% 0; } }
+
+/* ---------- Chat: Composer (Glas, leuchtender Fokus) ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) form:has([aria-label="Message"]) {
+  background: linear-gradient(180deg, rgba(28, 28, 33, 0.82), rgba(19, 19, 23, 0.86)) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  backdrop-filter: blur(24px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 20px 50px -18px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 260ms var(--cx-ease), box-shadow 320ms var(--cx-ease);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) form:has([aria-label="Message"]):focus-within {
+  border-color: rgba(125, 211, 252, 0.32) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 0 4px rgba(56, 189, 248, 0.07), 0 24px 70px -18px rgba(56, 189, 248, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) form:has([aria-label="Message"]) [data-slot="button"].rounded-full:has(> .tabler-icon-arrow-up) {
+  background: linear-gradient(180deg, #fff, #e4e4e7);
+  color: #09090b;
+  box-shadow: 0 6px 18px -6px rgba(255, 255, 255, 0.45);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) form:has([aria-label="Message"]) [data-slot="button"].rounded-full:has(> .tabler-icon-arrow-up):disabled {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+  opacity: 1;
+}
+
+/* ---------- Chat: Nachrichten ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="bubble"][data-align="end"] > [data-slot="bubble-content"],
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="message"][data-align="end"] [data-slot="bubble-content"] {
+  background: linear-gradient(180deg, #232329 0%, #1c1c21 100%) !important;
+  color: #f4f4f5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 22px 22px 6px 22px !important;
+  padding: 10px 16px !important;
+  box-shadow: 0 6px 20px -10px rgba(0, 0, 0, 0.6);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="bubble"]:not([data-align="end"]) > [data-slot="bubble-content"]:not(.bg-transparent) {
+  border-radius: 22px 22px 22px 6px;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="message"],
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="bubble"] {
+  animation: cx-msg-in 360ms var(--cx-ease) both;
+}
+@keyframes cx-msg-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.995); }
+  to { opacity: 1; transform: none; }
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="message-content"] :is(pre, code) {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="message-content"] pre {
+  background: #0e0e11 !important;
+  border-radius: 14px;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="message-scroller-button"] {
+  background: rgba(24, 24, 28, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+html.connect-premium.dark:not(.connect-mobile-ui) .tool-line {
+  color: var(--cx-text-3);
+}
+
+/* ---------- Kopfzeilen der Seiten ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) main header,
+html.connect-premium.dark:not(.connect-mobile-ui) main .border-b {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ---------- Fokus-Modus ---------- */
+html.connect-premium.dark:not(.connect-mobile-ui) .bg-neutral-950 {
+  background-color: #060607 !important;
+}
+
+/*
+ * ---------- Feste Hell-Farben aus älteren Komponenten (Browser/Lab, Worklog, Fokus) ----------
+ * Diese Flächen waren immer weiß (`lab-light`). Im Premium-Look werden sie auf die dunklen Ebenen
+ * umgelegt; bewusst inverse Elemente (`bg-white text-black`) bleiben weiß.
+ */
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.bg-white:not(.text-black):not([class*="text-black"]):not([class*="dark:bg-"]), .bg-neutral-50, .bg-gray-50, .bg-slate-50, .bg-\[\#fafafa\], .bg-\[\#fbfbfa\]):not(.connect-mobile-home *, img, [data-keep-light] *) {
+  background-color: var(--cx-panel) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.bg-neutral-100, .bg-gray-100, .bg-slate-100, .bg-neutral-200, .bg-gray-200):not(.connect-mobile-home *, [data-keep-light] *) {
+  background-color: var(--cx-panel-2) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.bg-white\/80, .bg-white\/90, .bg-white\/60, .bg-white\/70):not(.connect-mobile-home *, [data-keep-light] *):not([class*="dark:bg-"]) {
+  background-color: rgba(20, 20, 24, 0.75) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.text-neutral-900, .text-neutral-800, .text-gray-900, .text-gray-800, .text-slate-900, .text-black:not(.bg-white)):not(.connect-mobile-home *, [data-keep-light] *):not([class*="dark:text-"]) {
+  color: var(--cx-text) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.text-neutral-700, .text-neutral-600, .text-gray-700, .text-gray-600):not(.connect-mobile-home *):not([class*="dark:text-"]) {
+  color: var(--cx-text-2) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.text-neutral-500, .text-gray-500):not(.connect-mobile-home *):not([class*="dark:text-"]) {
+  color: var(--cx-text-3) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.border-neutral-200, .border-neutral-300, .border-gray-200, .border-gray-300, .border-black\/5, .border-black\/8, .border-black\/10, .border-black):not(.connect-mobile-home *):not([class*="dark:border-"]) {
+  border-color: var(--cx-line) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.ring-black\/5, .ring-black\/10):not(.connect-mobile-home *) {
+  --tw-ring-color: rgba(255, 255, 255, 0.07) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) .text-\[\#1c1b19\]:not([class*="dark:text-"]) {
+  color: var(--cx-text) !important;
+}
+
+/* Einstellungen: heller Papier-Hintergrund -> Premium-Fläche */
+html.connect-premium.dark:not(.connect-mobile-ui) .settings-pane {
+  background:
+    radial-gradient(900px 480px at 50% -10%, rgba(120, 140, 255, 0.07), transparent 60%),
+    var(--cx-bg) !important;
+}
+/* Helle Hex-Flächen (Lab/Worklog/Chrome-Attrappe) */
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.bg-\[\#ffffff\], .bg-\[\#f5f5f7\], .bg-\[\#f3f4f6\], .bg-\[\#f8f9fa\], .bg-\[\#f4f5f7\], .md\:bg-\[\#f6f5f2\]):not(.connect-mobile-home *, [data-keep-light] *):not([class*="dark:bg-"]) {
+  background-color: var(--cx-bg) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) .bg-\[\#f5f5f7\]\/92 {
+  background-color: rgba(9, 9, 11, 0.8) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.bg-\[\#ececef\], .bg-\[\#e8eaed\]):not(.connect-mobile-home *) {
+  background-color: var(--cx-panel-2) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.hover\:bg-\[\#e8eaed\], .hover\:bg-\[\#f3f4f6\]):hover {
+  background-color: rgba(255, 255, 255, 0.07) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.text-\[\#1c1b19\], .text-\[\#3d3a35\], .text-\[\#4a4741\], .text-\[\#4a4a4a\], .text-\[\#3a3a3a\], .text-\[\#3c4043\]):not([class*="dark:text-"]):not(.connect-mobile-home *) {
+  color: var(--cx-text) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.text-\[\#6b6862\], .text-\[\#8a867e\]):not([class*="dark:text-"]):not(.connect-mobile-home *) {
+  color: var(--cx-text-2) !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) :is(.hover\:text-\[\#1c1b19\]):hover {
+  color: #fff !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) .border-\[\#ffffff\] {
+  border-color: var(--cx-line) !important;
+}
+
+/* Einstellungs-Navigation: ruhige Zeilen statt umrandeter Kästen (aktiv bleibt hervorgehoben) */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] .border-black\/\[0\.07\] {
+  border-color: transparent !important;
+  background-color: transparent !important;
+}
+html.connect-premium.dark:not(.connect-mobile-ui) [data-slot="sidebar"] .border-black\/\[0\.07\]:hover {
+  background-color: rgba(255, 255, 255, 0.045) !important;
+}
+
+/* Bewegung reduzieren respektieren */
+@media (prefers-reduced-motion: reduce) {
+  html.connect-premium.dark:not(.connect-mobile-ui) *,
+  html.connect-premium.dark:not(.connect-mobile-ui) *::before,
+  html.connect-premium.dark:not(.connect-mobile-ui) *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

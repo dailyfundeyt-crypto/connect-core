@@ -43,6 +43,13 @@ const searchSchema = z.object({
    */
   level: z.coerce.number().int().min(1).max(4).catch(2).default(2),
   project: z.string().optional().catch(undefined),
+  /**
+   * Which note the Spark sidebar has open, as a `SparkNote.id`.
+   *
+   * Optional on purpose: every other caller navigates to this route without it,
+   * and a required param would make the search object mandatory everywhere.
+   */
+  note: z.string().optional().catch(undefined),
   profile: z
     .union([z.boolean(), z.literal("true"), z.literal("false")])
     .optional()

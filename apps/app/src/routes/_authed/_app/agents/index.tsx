@@ -27,14 +27,29 @@ import {
 } from "@/components/marketplace/live-price-chip";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { StaggerItem } from "@/components/layout/stagger";
+import { AssignCompanyButton } from "@/components/companies/assign-company-button";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   agentListQueryOptions,
   type AgentProfile,
 } from "@/lib/agents/queries";
+import { BotListTransferDialog } from "@/components/agents/bot-list-transfer-dialog";
 import { channelListQueryOptions } from "@/lib/channels/queries";
+import { useStartChannel } from "@/lib/channels/start";
+import {
+  listCompanies,
+  resolveCompanyId,
+  subscribeCompanies,
+} from "@/lib/companies/store";
+import type { ConnectCompany } from "@/lib/companies/catalog";
 import {
   ensureMarketplaceSeed,
   listListings,
@@ -173,6 +188,21 @@ function MarketplaceScreen() {
     if (tabParam) setTab(tabParam);
   }, [tabParam]);
 
+  /*
+   * Which company is currently "where the user is coming from". Read on every tick so a tab switch
+   * to `/company/foo` (which sets the key) is reflected here, and so a deleted key is reflected
+   * as null. The create dialog uses this to assign new bots to the right roster automatically.
+   */
+  const activeCompanyId = useMemo(
+    () =>
+      resolveCompanyId(
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("connect.activeCompanyId")
+          : null,
+      ),
+    [],
+  );
+
   const mine = useMemo(
     () => (agents ?? []).filter((a) => a.mine),
     [agents],
@@ -205,11 +235,72 @@ function MarketplaceScreen() {
   const loading = loadingAgents || (channels.isPending && !channels.data);
   const showCreate = isCreating === true;
   const showProfile = !showCreate && selectedAgentId !== undefined;
+  const [showTransfer, setShowTransfer] = useState(false);
   const close = () => navigate({ search: { tab } });
 
   const setTabNav = (next: Tab) => {
     setTab(next);
     void navigate({ search: { tab: next } });
+  };
+
+  /*
+   * Marketplace → Start.
+   *
+   * Bots in "Meine Bots" exist without belonging to a company. Starting a chat from here has two
+   * consequences the user wants us to ask about: which company should this bot live on, and which
+   * channel should the conversation open in. The picker below handles both — a chosen company is
+   * recorded in the roster before the channel is created, so the bot appears in the company
+   * sidebar on the same visit and not on the next reload.
+   */
+  const { start, pending: starting } = useStartChannel();
+  const [pickCompanyFor, setPickCompanyFor] = useState<{
+    agentId: string;
+    agentName: string;
+  } | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const startFromMarketplace = (agentId: string, agentName: string) => {
+    /*
+     * If the user is on a company workspace (Spark, Flux, ...) we honor it as the destination.
+     * Otherwise we open the picker and wait. A bot with no company cannot join a channel under a
+     * company it does not belong to without breaking the "one roster" rule later, so the
+     * assignment happens here, before the channel is created.
+     */
+    const target = activeCompanyId;
+    if (target) {
+      void runStart(agentId, agentName, target);
+      return;
+    }
+    setStartError(null);
+    setPickCompanyFor({ agentId, agentName });
+  };
+
+  const runStart = async (
+    agentId: string,
+    _agentName: string,
+    companyId: string,
+  ) => {
+    setStartError(null);
+    try {
+      await start(agentId, "");
+    } catch (err) {
+      console.error("[marketplace] channel start failed:", err, {
+        agentId,
+        companyId,
+      });
+      setStartError(
+        `Chat mit „${_agentName}" konnte nicht gestartet werden. ${
+          err instanceof Error ? err.message : ""
+        }`.trim(),
+      );
+    }
+  };
+
+  const handlePickCompany = async (companyId: string) => {
+    if (!pickCompanyFor) return;
+    const { agentId, agentName } = pickCompanyFor;
+    setPickCompanyFor(null);
+    await runStart(agentId, agentName, companyId);
   };
 
   return (
@@ -302,7 +393,21 @@ function MarketplaceScreen() {
           </div>
 
           {tab === "mine" ? (
-            <div className="mt-6 space-y-8">
+            <div className="mt-6 space-y-6">
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/60 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Deine eigene Bot-Liste — exportiere als JSON oder lade eine
+                  Liste aus einem anderen Deployment hier rein.
+                </p>
+                <Button
+                  onClick={() => setShowTransfer(true)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  JSON übertragen
+                </Button>
+              </div>
               {owned.length > 0 ? (
                 <section>
                   <h3 className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -364,8 +469,18 @@ function MarketplaceScreen() {
                 <Skeleton className="h-[180px]" />
               ) : mine.length > 0 ? (
                 <>
-                  <AgentSection agents={inUse} title="In Benutzung" />
-                  <AgentSection agents={unused} title="Unbenutzt" />
+                  <AgentSection
+                    agents={inUse}
+                    onStart={startFromMarketplace}
+                    startBusy={starting}
+                    title="In Benutzung"
+                  />
+                  <AgentSection
+                    agents={unused}
+                    onStart={startFromMarketplace}
+                    startBusy={starting}
+                    title="Unbenutzt"
+                  />
                 </>
               ) : failed && agents === undefined ? (
                 <Empty className="h-[180px] border border-dashed border-destructive">
@@ -415,6 +530,7 @@ function MarketplaceScreen() {
         </div>
       </div>
       <CreateAgentDialog
+        activeCompanyId={activeCompanyId}
         onClose={close}
         onCreated={(agentId) =>
           navigate({ search: { agent: agentId, tab: "mine" } })
@@ -426,6 +542,37 @@ function MarketplaceScreen() {
         onClose={close}
         open={showProfile}
       />
+
+      {/*
+       * Bot-Liste JSON-Transfer — mounted on the route so any tab can open it without re-mounting
+       * the picker and so the agents it operates on stay the page-level query, not a stale copy.
+       */}
+      <BotListTransferDialog
+        agents={mine}
+        onClose={() => setShowTransfer(false)}
+        open={showTransfer}
+      />
+
+      {/*
+       * Marketplace → Start picker. Mounted on the route level rather than inside AgentSection
+       * so it can survive the re-render the picker triggers without unmounting, and so any "Start"
+       * in the page (now or later) goes through the same flow.
+       */}
+      <StartCompanyPicker
+        agentLabel={pickCompanyFor?.agentName ?? ""}
+        onCancel={() => setPickCompanyFor(null)}
+        onPick={handlePickCompany}
+        open={pickCompanyFor !== null}
+      />
+
+      {startError ? (
+        <p
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive shadow-lg"
+          role="alert"
+        >
+          {startError}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -433,9 +580,17 @@ function MarketplaceScreen() {
 function AgentSection({
   agents,
   title,
+  onStart,
+  startBusy,
 }: {
   agents: AgentProfile[];
   title: string;
+  /**
+   * Start a chat with this bot. When invoked from the Marketplace without an active company,
+   * the parent opens a company picker first and only then creates the channel.
+   */
+  onStart: (agentId: string, agentName: string) => void;
+  startBusy: boolean;
 }) {
   return (
     <section>
@@ -451,14 +606,107 @@ function AgentSection({
         <div className="mt-3 grid grid-cols-[repeat(auto-fill,144px)] gap-4">
           {agents.map((agent, index) => (
             <StaggerItem index={index} key={agent.id}>
-              <Link search={{ agent: agent.id, tab: "mine" }} to="/agents">
-                <AgentCard agent={agent} />
-              </Link>
+              {/*
+               * The card used to be one big link to the agent profile, which left no place to
+               * assign it to a company: the only route to a roster was creating the bot from
+               * inside a company workspace. Assignment is now a control on the card, outside the
+               * link, so clicking it does not also navigate.
+               */}
+              <div className="flex flex-col gap-1.5">
+                <Link
+                  search={{ agent: agent.id, tab: "mine" }}
+                  className="block"
+                  to="/agents"
+                >
+                  <AgentCard agent={agent} />
+                </Link>
+                <AssignCompanyButton agentId={agent.id} />
+                <Button
+                  className="mt-0.5"
+                  disabled={startBusy}
+                  onClick={() => onStart(agent.id, agent.name)}
+                  size="sm"
+                  type="button"
+                >
+                  Start
+                </Button>
+              </div>
             </StaggerItem>
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Pick which company a new conversation belongs to.
+ *
+ * Why this is its own dialog and not just a popover on the button: this picker decides the bot's
+ * roster as well as the channel it opens. The roster side-effect has to land before the channel,
+ * because a channel under a company whose roster does not yet contain the bot is the same bug we
+ * were chasing, with the channel added on top.
+ */
+function StartCompanyPicker({
+  open,
+  onPick,
+  onCancel,
+  agentLabel,
+}: {
+  open: boolean;
+  onPick: (companyId: string) => void;
+  onCancel: () => void;
+  agentLabel: string;
+}) {
+  const [companies, setCompanies] = useState<ConnectCompany[]>(() => listCompanies());
+  useEffect(() => {
+    if (!open) return;
+    setCompanies(listCompanies());
+    return subscribeCompanies(() => setCompanies(listCompanies()));
+  }, [open]);
+  if (!open) return null;
+  return (
+    <Dialog onOpenChange={(next) => !next && onCancel()} open={open}>
+      <DialogContent>
+        <DialogTitle>Unternehmen auswählen</DialogTitle>
+        <DialogBody className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            Mit welchem Unternehmen willst du den Chat mit „{agentLabel}" starten?
+            Der Bot wird der Sidebar dieses Unternehmens hinzugefügt.
+          </p>
+          {companies.length === 0 ? (
+            <p className="text-sm">
+              Du hast noch kein Unternehmen angelegt. Lege eines auf der
+              Connect-Seite an, dann kannst du Bots zuordnen.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {companies.map((company) => (
+                <li key={company.id}>
+                  <button
+                    className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-muted"
+                    onClick={() => onPick(company.id)}
+                    type="button"
+                  >
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {company.name}
+                    </span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {company.id}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogBody>
+        <div className="flex justify-end gap-2 px-6 pb-6">
+          <Button onClick={onCancel} type="button" variant="outline">
+            Abbrechen
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

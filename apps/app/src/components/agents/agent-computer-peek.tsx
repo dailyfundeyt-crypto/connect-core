@@ -218,14 +218,14 @@ function PeekShell({
     <button
       aria-label={`${label} Vorschau öffnen`}
       className={cn(
-        "group mb-2 flex w-full overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-colors hover:border-foreground/20",
+        "group mb-2 flex w-full overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-colors hover:border-foreground/20 mobile:rounded-[20px] mobile:border-white/[0.08] mobile:bg-white/[0.04] mobile:shadow-none mobile:backdrop-blur-xl",
         className,
       )}
       onClick={onOpen}
       title={statusMessage ?? "Monitor öffnen"}
       type="button"
     >
-      <div className="relative h-[4.5rem] w-[7.5rem] shrink-0 overflow-hidden border-r border-border bg-muted/40">
+      <div className="relative h-[4.5rem] w-[7.5rem] shrink-0 overflow-hidden border-r border-border bg-muted/40 mobile:m-1.5 mobile:h-[3.75rem] mobile:w-[5.5rem] mobile:rounded-[14px] mobile:border-0">
         {children}
         {status === "starting" ? (
           <span className="absolute inset-0 flex items-center justify-center bg-background/50">
@@ -234,7 +234,7 @@ function PeekShell({
         ) : null}
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3 py-2">
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium tracking-tight">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium tracking-tight mobile:text-[14px]">
           <Icon
             className={cn(
               "size-3.5 shrink-0",
@@ -244,7 +244,7 @@ function PeekShell({
           />
           <span className="truncate">{label}</span>
         </span>
-        <span className="truncate text-[11px] text-muted-foreground">
+        <span className="truncate text-[11px] text-muted-foreground mobile:line-clamp-2 mobile:whitespace-normal mobile:text-[12px]">
           {status === "error"
             ? (statusMessage ?? "Fehler")
             : status === "starting"
@@ -264,21 +264,21 @@ function ChromeFramePlaceholder({
   subtle?: boolean;
 }) {
   return (
-    <div className="flex h-full w-full flex-col bg-[#ececef]">
-      <div className="flex items-center gap-1 border-b border-black/10 bg-[#f5f5f7] px-1.5 py-1">
+    <div className="flex h-full w-full flex-col bg-[#ececef] mobile:bg-[#11141d]">
+      <div className="flex items-center gap-1 border-b border-black/10 bg-[#f5f5f7] px-1.5 py-1 mobile:border-white/[0.06] mobile:bg-white/[0.04]">
         <span className="flex gap-0.5">
           <span className="size-1.5 rounded-full bg-[#ff5f57]" />
           <span className="size-1.5 rounded-full bg-[#febc2e]" />
           <span className="size-1.5 rounded-full bg-[#28c840]" />
         </span>
-        <div className="min-w-0 flex-1 truncate rounded bg-white px-1 py-0.5 text-[8px] text-muted-foreground shadow-sm">
+        <div className="min-w-0 flex-1 truncate rounded bg-white px-1 py-0.5 text-[8px] text-muted-foreground shadow-sm mobile:rounded-full mobile:bg-white/[0.08] mobile:shadow-none">
           Chrome
         </div>
       </div>
       <div
         className={cn(
           "flex flex-1 items-center justify-center px-1.5 text-center text-[9px] leading-tight",
-          subtle ? "text-muted-foreground" : "text-destructive",
+          subtle ? "text-muted-foreground" : "text-destructive mobile:text-white/45",
         )}
       >
         {message}

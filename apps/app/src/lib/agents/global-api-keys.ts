@@ -17,6 +17,8 @@ export type GlobalApiKeys = {
   browserUse: string;
   elevenLabs: string;
   zielAi: string;
+  claude: string;
+  grok: string;
 };
 
 const EMPTY: GlobalApiKeys = {
@@ -24,6 +26,8 @@ const EMPTY: GlobalApiKeys = {
   browserUse: "",
   elevenLabs: "",
   zielAi: "",
+  claude: "",
+  grok: "",
 };
 
 function read(): GlobalApiKeys {
@@ -37,6 +41,8 @@ function read(): GlobalApiKeys {
       browserUse: typeof parsed.browserUse === "string" ? parsed.browserUse : "",
       elevenLabs: typeof parsed.elevenLabs === "string" ? parsed.elevenLabs : "",
       zielAi: typeof parsed.zielAi === "string" ? parsed.zielAi : "",
+      claude: typeof parsed.claude === "string" ? parsed.claude : "",
+      grok: typeof parsed.grok === "string" ? parsed.grok : "",
     };
   } catch {
     return { ...EMPTY };

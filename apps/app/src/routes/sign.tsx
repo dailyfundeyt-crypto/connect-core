@@ -1,30 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
-import AgentOrb from "@/components/agents/orb/agent-orb";
 import { ProviderLogo } from "@/components/auth/provider-logo";
-import { PublicLegalFooter } from "@/components/legal/public-legal-footer";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import { PremiumLanding } from "@/components/landing/premium-landing";
 import {
   providerName,
   signInWith,
   signInWithEmailDomain,
 } from "@/lib/auth/client";
-import { appConfig } from "@/lib/generated/application-config";
 import {
   type AuthProviderId,
   authProvidersQueryOptions,
   currentUserQueryOptions,
 } from "../lib/auth/queries";
 
-const EASE_OUT = [0.23, 1, 0.32, 1] as const;
-
-const ENTRANCE_SECONDS = 0.4;
-const ENTRANCE_STAGGER_SECONDS = 0.08;
-const ENTRANCE_OFFSET = "translateY(12px)";
 
 export const Route = createFileRoute("/sign")({
   beforeLoad: async ({ context }) => {
@@ -89,130 +78,74 @@ function SignScreen() {
     }
   }
 
-  const prefersReducedMotion = useReducedMotion();
-  const hidden = {
-    opacity: 0,
-    ...(prefersReducedMotion ? {} : { transform: ENTRANCE_OFFSET }),
-  };
-  const shown = {
-    opacity: 1,
-    ...(prefersReducedMotion ? {} : { transform: "translateY(0px)" }),
-  };
+  /*
+   * Premium-Startseite (connect-premium): Besucher ohne Anmeldung sehen zuerst die Landingpage,
+   * die Anmeldung sitzt im Hero und am Ende. Gleiche Handler wie vorher (Google, SSO, Fehler).
+   */
+  const label = (provider: AuthProviderId) =>
+    opening === provider
+      ? `${providerName(provider)} wird geöffnet …`
+      : `Mit ${providerName(provider)} fortfahren`;
+
+  const signIn = (
+    <div className="flex w-full flex-col gap-2.5">
+      {providers.map((provider) => (
+        <button
+          className="cxl-cta"
+          disabled={opening !== null}
+          key={provider}
+          onClick={() => handleSignIn(provider)}
+          type="button"
+        >
+          <ProviderLogo provider={provider} />
+          <span>{label(provider)}</span>
+        </button>
+      ))}
+      {providers.length === 0 && !options?.sso ? (
+        <p className="text-center text-sm text-white/50">
+          Für diese Installation ist keine Anmeldung eingerichtet.
+        </p>
+      ) : null}
+      {options?.sso ? (
+        <form className="mt-1 flex flex-col gap-2" onSubmit={handleDomainSignIn}>
+          <input
+            autoComplete="email"
+            className="cxl-input"
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="du@firma.de"
+            required
+            type="email"
+            value={email}
+          />
+          <button
+            className="cxl-ghost"
+            disabled={opening !== null || email.trim().length === 0}
+            type="submit"
+          >
+            {opening === "sso" ? "Wird geöffnet …" : "Mit Firmenkonto fortfahren"}
+          </button>
+        </form>
+      ) : null}
+    </div>
+  );
+
+  const first = providers[0];
+  const signInCompact = first ? (
+    <button
+      className="cxl-cta-sm"
+      disabled={opening !== null}
+      onClick={() => handleSignIn(first)}
+      type="button"
+    >
+      Anmelden
+    </button>
+  ) : null;
 
   return (
-    <div className="flex flex-col h-dvh w-full items-center justify-center -mt-12">
-      <motion.div
-        animate="shown"
-        className="flex-1 flex w-full max-w-82 flex-col items-center justify-center p-4"
-        initial="hidden"
-        variants={{
-          hidden: {},
-          shown: { transition: { staggerChildren: ENTRANCE_STAGGER_SECONDS } },
-        }}
-      >
-        <motion.div
-          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
-          variants={{ hidden, shown }}
-          className="flex items-center justify-center"
-        >
-          <img
-            alt="Connect"
-            className="size-16 object-contain"
-            src="/brand/connect-logo.png"
-          />
-        </motion.div>
-        <motion.h1
-          className="text-2xl font-medium tracking-tight text-center mt-8"
-          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
-          variants={{ hidden, shown }}
-        >
-          Sign in to {appConfig.brand.productName}
-        </motion.h1>
-        <motion.div
-          className="mt-8 w-full"
-          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
-          variants={{ hidden, shown }}
-        >
-          {providers.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              {providers.map((provider) => (
-                /*
-                 * Every provider gets the same button, and it is the light-themed outline one
-                 * rather than the app's filled primary. Google's guidelines require their button be
-                 * at least as prominent as any other sign-in option and specify its fill and
-                 * stroke, so making one provider the loud one would break that for the others. The
-                 * same size and weight throughout is also the honest presentation: a deployment
-                 * that configured three has three, and none of them is the recommended one.
-                 */
-                <Button
-                  className="h-10 w-full justify-start gap-3 px-3 tracking-tight"
-                  disabled={opening !== null}
-                  key={provider}
-                  onClick={() => handleSignIn(provider)}
-                  size="lg"
-                  variant="outline"
-                >
-                  <ProviderLogo provider={provider} />
-                  {/* Centred against the button, not against the space left of the mark. */}
-                  <span className="flex-1 text-center">
-                    {opening === provider
-                      ? `Opening ${providerName(provider)}…`
-                      : `Continue with ${providerName(provider)}`}
-                  </span>
-                  {/* Balances the mark so the label sits in the middle of the button. */}
-                  <span aria-hidden="true" className="size-[18px]" />
-                </Button>
-              ))}
-            </div>
-          ) : options?.sso ? null : (
-            <p className="text-center text-sm text-muted-foreground">
-              No sign-in provider is configured for this deployment.
-            </p>
-          )}
-          {/*
-           * The way in for a company that runs its own identity provider.
-           *
-           * Below the buttons, because a deployment with both has more people arriving through the
-           * buttons: the registered providers are for the companies whose IdP was added by hand.
-           */}
-          {options?.sso ? (
-            <form className="mt-3" onSubmit={handleDomainSignIn}>
-              {providers.length > 0 ? (
-                <div className="mb-3 flex items-center gap-3">
-                  <Separator className="flex-1" />
-                  <span className="text-muted-foreground text-xs">or</span>
-                  <Separator className="flex-1" />
-                </div>
-              ) : null}
-              <Input
-                autoComplete="email"
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@company.com"
-                required
-                type="email"
-                value={email}
-              />
-              <Button
-                className="mt-2 h-10 w-full tracking-tight"
-                disabled={opening !== null || email.trim().length === 0}
-                size="lg"
-                type="submit"
-                variant="outline"
-              >
-                {opening === "sso"
-                  ? "Opening…"
-                  : "Continue with your company account"}
-              </Button>
-            </form>
-          ) : null}
-          {error ? (
-            <p className="mt-3 text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </motion.div>
-      </motion.div>
-      <PublicLegalFooter />
-    </div>
+    <PremiumLanding
+      error={error}
+      signIn={signIn}
+      signInCompact={signInCompact}
+    />
   );
 }

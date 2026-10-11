@@ -3,12 +3,16 @@ import { IconCircleCheck, IconCircleX, IconLoader2 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PcBridgeAgentCard } from "@/components/pc-bridge/pc-bridge-agent-card";
+import { pcBridgeStatusQuery } from "@/lib/pc-bridge/api";
 import {
   agentHubAgentQuery,
+  cliProvidersQuery,
   invalidateAgentHub,
   type ModelProvider,
   ollamaModelsQuery,
   saveAgentModel,
+  startCliProviderLogin,
   testAgentModel,
 } from "@/lib/agent-hub/api";
 
@@ -18,12 +22,16 @@ const PROVIDERS: { id: ModelProvider; label: string; hint: string }[] = [
   { id: "anthropic", label: "Anthropic", hint: "Ohne eigenen Key wird der globale Anthropic-Key genutzt." },
   { id: "ollama-local", label: "Ollama lokal", hint: "Läuft auf diesem PC über http://127.0.0.1:11434 – kein Key nötig." },
   { id: "ollama-cloud", label: "Ollama Cloud", hint: "Eigener Key pro Agent – erstellen unter ollama.com/settings/keys." },
+  { id: "codex-cli", label: "Codex · mit ChatGPT-Konto", hint: "Nutzt dein ChatGPT-Abo über die Codex-CLI im Hintergrund – kein API-Key, kein Terminal." },
+  { id: "claude-cli", label: "Claude · mit Claude-Konto", hint: "Nutzt dein Claude-Abo über Claude Code im Hintergrund – kein API-Key, kein Terminal." },
   { id: "openai-compatible", label: "OpenAI-kompatibel", hint: "Beliebiger Anbieter mit /v1/chat/completions (LM Studio, vLLM, OpenRouter …)." },
 ];
 
 const SUGGESTIONS: Partial<Record<ModelProvider, string[]>> = {
   openai: ["gpt-4.1-mini", "gpt-4.1", "gpt-5-mini", "gpt-5"],
   anthropic: ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-1"],
+  "codex-cli": ["gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna"],
+  "claude-cli": ["sonnet", "opus", "haiku"],
   "ollama-cloud": ["gpt-oss:120b", "gpt-oss:20b", "qwen3-coder:480b", "deepseek-v3.1:671b", "kimi-k2:1t", "glm-4.6"],
 };
 
@@ -33,8 +41,18 @@ const DEFAULT_URLS: Partial<Record<ModelProvider, string>> = {
   "openai-compatible": "http://127.0.0.1:1234/v1",
 };
 
-/** Agent → Einstellungen → Modell: eigenes Modell pro eingebautem Agent. */
+/**
+ * Agent → Einstellungen → Modell. Online (Handy/Vercel) gibt es die lokalen Anbieter nicht – dort
+ * entscheidet die Handy-Brücke, ob der Agent über die CLI auf deinem PC antwortet.
+ */
 export function AgentModelPanel({ agentId }: { agentId: string }) {
+  const bridge = useQuery(pcBridgeStatusQuery());
+  if (bridge.data?.mode === "relay") return <PcBridgeAgentCard agentId={agentId} status={bridge.data} />;
+  return <LocalAgentModelPanel agentId={agentId} />;
+}
+
+/** Lokal (3101): eigenes Modell pro eingebautem Agent. */
+function LocalAgentModelPanel({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
   const agent = useQuery(agentHubAgentQuery(agentId));
   const [provider, setProvider] = useState<ModelProvider>("default");
@@ -42,6 +60,10 @@ export function AgentModelPanel({ agentId }: { agentId: string }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const ollama = useQuery({ ...ollamaModelsQuery(), enabled: provider === "ollama-local" });
+  const isCli = provider === "codex-cli" || provider === "claude-cli";
+  const cli = useQuery({ ...cliProvidersQuery(), enabled: isCli, refetchInterval: isCli ? 5_000 : false });
+  const cliInfo = cli.data?.providers.find((entry) => `${entry.kind}-cli` === provider);
+  const login = useMutation({ mutationFn: () => startCliProviderLogin(provider === "claude-cli" ? "claude" : "codex") });
 
   useEffect(() => {
     const current = agent.data?.model;
@@ -135,7 +157,27 @@ export function AgentModelPanel({ agentId }: { agentId: string }) {
             ) : null}
           </label>
 
-          {provider !== "openai" && provider !== "anthropic" ? (
+          {isCli ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12.5px]" data-testid="agent-model-cli-status">
+              {cli.isLoading ? (
+                <span className="flex items-center gap-1.5 text-muted-foreground"><IconLoader2 className="size-4 animate-spin" /> Prüfe Anmeldung …</span>
+              ) : cliInfo && !cliInfo.installed ? (
+                <span className="text-destructive">{cliInfo.detail}</span>
+              ) : cliInfo?.loggedIn ? (
+                <span className="flex items-center gap-1.5 text-emerald-600"><IconCircleCheck className="size-4" /> Angemeldet{cliInfo.version ? ` · ${cliInfo.version}` : ""}</span>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1.5 text-muted-foreground"><IconCircleX className="size-4" /> Nicht angemeldet</span>
+                  <Button size="sm" variant="outline" onClick={() => login.mutate()} disabled={login.isPending}>
+                    {login.isPending ? <IconLoader2 className="animate-spin" /> : null} Mit Konto anmelden
+                  </Button>
+                  {login.data ? <span className="text-muted-foreground">{login.data.message}</span> : null}
+                </>
+              )}
+            </div>
+          ) : null}
+
+          {provider !== "openai" && provider !== "anthropic" && !isCli ? (
             <label className="flex flex-col gap-1.5">
               <span className="font-medium text-[13px]">Adresse (Base-URL)</span>
               <Input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder={DEFAULT_URLS[provider] ?? ""} />

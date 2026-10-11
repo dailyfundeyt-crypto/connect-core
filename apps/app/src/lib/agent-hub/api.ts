@@ -51,7 +51,7 @@ export type AgentHubCatalog = {
   defaults: Record<string, string>;
 };
 
-export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible";
+export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible" | "codex-cli" | "claude-cli";
 
 export type AgentModelView = {
   provider: ModelProvider;
@@ -143,6 +143,69 @@ export function saveAgentModel(agentId: string, input: { provider: ModelProvider
 export async function testAgentModel(agentId: string) {
   const response = await client(`${base}/agents/${enc(agentId)}/model/test`, { method: "POST", body: {}, fallback: "Test fehlgeschlagen" });
   return (await response.json()) as { ok: boolean; text?: string; error?: string; ms?: number };
+}
+
+export type CliProviderStatus = {
+  kind: string;
+  label: string;
+  installed: boolean;
+  version: string | null;
+  loggedIn: boolean | null;
+  detail: string;
+  models?: string[];
+  botCount?: number | null;
+  installHint?: string;
+};
+
+export type GrokBotListItem = {
+  id: string;
+  name: string;
+  title?: string;
+  description?: string;
+  avatarColor?: string;
+  avatarShape?: string;
+  hiddenFromSidebar?: boolean;
+  alreadyImported: boolean;
+  connectAgentId: string | null;
+};
+
+export function grokBotsQuery() {
+  return queryOptions({
+    queryKey: [...agentHubKeys.all, "grok-bots"] as const,
+    queryFn: async (): Promise<{ bots: GrokBotListItem[]; status: CliProviderStatus }> => {
+      const response = await client(`${base}/grok-bots`, { fallback: "Grok Bots konnten nicht geladen werden" });
+      return (await response.json()) as { bots: GrokBotListItem[]; status: CliProviderStatus };
+    },
+    staleTime: 15_000,
+  });
+}
+
+export async function importGrokBots(ids: string[]) {
+  const response = await client(`${base}/grok-bots/import`, {
+    method: "POST",
+    body: { ids },
+    fallback: "Grok-Import fehlgeschlagen",
+  });
+  return (await response.json()) as {
+    imported: { grokBotId: string; agentId: string; name: string; status: "created" | "skipped" }[];
+    errors: { grokBotId: string; name?: string; error: string }[];
+  };
+}
+
+export function cliProvidersQuery() {
+  return queryOptions({
+    queryKey: [...agentHubKeys.all, "cli-providers"] as const,
+    queryFn: async (): Promise<{ providers: CliProviderStatus[] }> => {
+      const response = await client(`${base}/cli-providers`, { fallback: "Anbieter-Status nicht abrufbar" });
+      return (await response.json()) as { providers: CliProviderStatus[] };
+    },
+    staleTime: 15_000,
+  });
+}
+
+export async function startCliProviderLogin(kind: "codex" | "claude") {
+  const response = await client(`${base}/cli-providers/${enc(kind)}/login`, { method: "POST", body: {}, fallback: "Anmeldung konnte nicht gestartet werden" });
+  return (await response.json()) as { started: boolean; message: string };
 }
 
 export function saveAgentBrowser(agentId: string, input: { enabled: boolean; headless: boolean }) {

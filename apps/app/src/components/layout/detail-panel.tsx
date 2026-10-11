@@ -4,6 +4,8 @@ import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { EASE_OUT } from "@/lib/motion";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
+import { cn } from "@/lib/utils";
 
 /**
  * A main pane with details beside it when there is room, or in a sheet on narrow windows.
@@ -47,6 +49,8 @@ export function DetailPanel({
 }) {
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
   const shouldReduceMotion = useReducedMotion();
+  // Handy (helium-mobile4): Details als bildschirmfüllende Seite im Tech-Look statt 400px-Leiste.
+  const mobile = useMobileShell();
   const container = useRef<HTMLDivElement>(null);
   const [overlay, setOverlay] = useState(true);
   useLayoutEffect(() => {
@@ -73,10 +77,23 @@ export function DetailPanel({
           }}
         >
           <SheetContent
-            className="gap-0"
-            style={{ width: `min(${detailWidth}px, 100vw)`, maxWidth: "100vw" }}
+            className={cn(
+              "gap-0",
+              mobile &&
+                "border-0 bg-[#07080c] bg-[radial-gradient(120%_50%_at_10%_-10%,rgba(56,189,248,0.12),transparent_55%),radial-gradient(90%_40%_at_100%_0%,rgba(167,139,250,0.1),transparent_50%)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-white",
+            )}
+            style={
+              mobile
+                ? { width: "100vw", maxWidth: "100vw" }
+                : { width: `min(${detailWidth}px, 100vw)`, maxWidth: "100vw" }
+            }
           >
-            <SheetTitle className="h-12 shrink-0 px-4 pr-12 flex items-center">
+            <SheetTitle
+              className={cn(
+                "h-12 shrink-0 px-4 pr-12 flex items-center",
+                mobile && "h-14 border-b border-white/[0.06] text-[17px] font-semibold tracking-tight",
+              )}
+            >
               {title ?? "Details"}
             </SheetTitle>
             <div className="flex-1 min-h-0 overflow-y-auto">

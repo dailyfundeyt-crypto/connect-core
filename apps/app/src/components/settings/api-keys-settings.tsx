@@ -42,6 +42,8 @@ export function ApiKeysSettingsPanel() {
     browserUse: "",
     elevenLabs: "",
     zielAi: "",
+    claude: "",
+    grok: "",
   });
 
   useEffect(() => {

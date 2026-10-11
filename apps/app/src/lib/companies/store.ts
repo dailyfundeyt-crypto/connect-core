@@ -402,17 +402,65 @@ export async function updateCompany(
   return next;
 }
 
-/** Attach a bot to a company roster (e.g. after Plus → New bot in Connect). */
+/**
+ * Attach a bot to a company roster (e.g. after Plus → New bot in Connect).
+ *
+ * The id is normalized first. It arrives from three places that disagree about quoting — the route
+ * param, localStorage, and the company switcher — and an id that fails to resolve here throws,
+ * which the callers swallow, which is how a created bot ended up owned by nobody.
+ */
 export async function addAgentToCompany(
   companyId: string,
   agentId: string,
 ): Promise<ConnectCompany> {
-  const company = getCompany(companyId);
-  if (!company) throw new Error("Company not found.");
+  const id = normalizeCompanyId(companyId);
+  if (!id) throw new Error("Company id is empty.");
+  const company = getCompany(id);
+  if (!company) throw new Error(`Company not found: ${id}`);
   if (company.agentIds.includes(agentId)) return company;
-  return updateCompany(companyId, {
+  return updateCompany(id, {
     agentIds: [...company.agentIds, agentId],
   });
+}
+
+/**
+ * Move a bot from one company roster to another.
+ *
+ * A bot must live on exactly one roster, so this removes it from every company that claims it
+ * before adding it to the target. Doing only the add would leave the bot listed in two companies,
+ * and which one it "belongs" to would depend on which sidebar the user happened to be looking at.
+ *
+ * Returns the target company. Idempotent: moving a bot that is already only in the target is a
+ * no-op write, not an error.
+ */
+export async function moveAgentToCompany(
+  agentId: string,
+  toCompanyId: string,
+): Promise<ConnectCompany> {
+  const target = normalizeCompanyId(toCompanyId);
+  if (!target) throw new Error("Target company id is empty.");
+  if (!getCompany(target)) throw new Error(`Company not found: ${target}`);
+
+  const from = listCompanies().filter((c) => c.agentIds.includes(agentId));
+
+  for (const company of from) {
+    if (company.id === target) continue;
+    updateCompany(company.id, {
+      agentIds: company.agentIds.filter((a) => a !== agentId),
+    });
+  }
+
+  const current = getCompany(target);
+  if (!current) throw new Error(`Company vanished mid-move: ${target}`);
+  if (current.agentIds.includes(agentId)) return current;
+  return updateCompany(target, {
+    agentIds: [...current.agentIds, agentId],
+  });
+}
+
+/** Which company currently lists this bot, or null when it is on no roster. */
+export function companyIdForAgent(agentId: string): string | null {
+  return listCompanies().find((c) => c.agentIds.includes(agentId))?.id ?? null;
 }
 
 export function deleteCompany(id: string) {
@@ -474,10 +522,65 @@ export function subscribeCompanies(onChange: () => void): () => void {
   };
 }
 
-/** Read active company id from localStorage. Exported so other modules (e.g. marketplace redeem) can use it. */
+/**
+ * Strip the quoting that creeps into a stored company id.
+ *
+ * Some entry points write a JSON-encoded string into this key instead of a bare id, so the raw
+ * value comes back as `"spark"` — quotes included. Every lookup then misses: `getCompany('"spark"')`
+ * finds nothing, `addAgentToCompany` throws "Company not found", and the bot is silently left in
+ * the Marketplace while the sidebar shows an empty roster. The bot saved fine; the assignment to a
+ * company never landed. Only `profile-sheet` ever unquoted this on read, which is why the same
+ * key behaved differently depending on which screen asked.
+ *
+ * Trims, then unwraps one or two layers of JSON string encoding, then trims again — the outer trim
+ * matters because `JSON.stringify` of an already-quoted value leaves no padding but a value that
+ * was written with surrounding whitespace does.
+ */
+export function normalizeCompanyId(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  let value = raw.trim();
+  for (let pass = 0; pass < 2; pass++) {
+    if (value.length < 2 || value[0] !== '"' || value[value.length - 1] !== '"') break;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (typeof parsed !== "string") break;
+      value = parsed.trim();
+    } catch {
+      break;
+    }
+  }
+  return value.length > 0 ? value : null;
+}
+
+/**
+ * Resolve a company id from any source (route param, localStorage, stored value) to one that
+ * actually exists, falling back to the first available company. Returns null when there is none.
+ */
+export function resolveCompanyId(raw: string | null | undefined): string | null {
+  const candidate = normalizeCompanyId(raw);
+  if (!candidate) return null;
+  if (getCompany(candidate)) return candidate;
+  return listCompanies()[0]?.id ?? null;
+}
+
+/** Read active company id from localStorage, normalized. Exported so other modules can use it. */
 export function readActiveCompanyId(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem("connect.activeCompanyId");
+  return normalizeCompanyId(
+    window.localStorage.getItem("connect.activeCompanyId"),
+  );
+}
+
+/** Write the active company id, normalized, and tell every listener in the same tick. */
+export function writeActiveCompanyId(id: string | null): void {
+  if (typeof window === "undefined") return;
+  const normalized = normalizeCompanyId(id);
+  if (normalized) {
+    window.localStorage.setItem("connect.activeCompanyId", normalized);
+  } else {
+    window.localStorage.removeItem("connect.activeCompanyId");
+  }
+  window.dispatchEvent(new Event("connect-active-company"));
 }
 
 /**
@@ -488,17 +591,26 @@ export function readActiveCompanyId(): string | null {
  * Idempotent — skips if the agent is already in the roster.
  */
 export async function addAgentToActiveCompany(agentId: string): Promise<void> {
-  let companyId = readActiveCompanyId();
+  // `resolveCompanyId` normalizes the quoting AND checks the id resolves to a company that exists.
+  // The old fallback chain — raw localStorage value, first company on failure — could hand
+  // `addAgentToCompany` an id for a company that no longer existed, and the throw was swallowed
+  // into a console.warn. From the user's side: bot created, roster unchanged, no message.
+  const companyId = resolveCompanyId(readActiveCompanyId());
   if (!companyId) {
-    const companies = listCompanies();
-    companyId = companies[0]?.id ?? null;
+    console.warn(
+      "[redeem] no company available to attach agent to:",
+      agentId,
+    );
+    return;
   }
-  if (!companyId) return;
   try {
     await addAgentToCompany(companyId, agentId);
   } catch (err) {
-    // Non-fatal: the agent is redeemed but adding to the roster failed.
-    // The user can still access it via "Meine Bots" in the Marketplace.
-    console.warn("[redeem] could not add agent to company:", err);
+    // Still non-fatal for the redeem itself, but loud enough to be findable: this used to be the
+    // quiet half of a bug where bots were created and then owned by no company at all.
+    console.error(
+      `[redeem] agent ${agentId} was created but could not be added to company ${companyId}:`,
+      err,
+    );
   }
 }

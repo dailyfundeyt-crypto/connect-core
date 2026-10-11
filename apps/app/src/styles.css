@@ -12,7 +12,10 @@
  */
 @source "../node_modules/streamdown/dist/*.js";
 
-@custom-variant dark (&:is(.dark *));
+/* Handy-Version: .connect-mobile-ui auf <html> schaltet die dunklen Varianten ein (helium-mobile4). */
+@custom-variant dark (&:is(.dark *, .connect-mobile-ui *));
+/* Nur Handy-Version (helium-mobile4), z. B. `mobile:bg-…`. */
+@custom-variant mobile (&:is(.connect-mobile-ui *));
 
 html {
   font-size: 15px;
@@ -115,6 +118,50 @@ div.min-h-dvh > div[style*="z-index:99999"] {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/*
+ * Handy-Version (helium-mobile4): dunkler Tech-Look für ALLE Seiten auf dem Handy –
+ * Einstellungen, Agent-Einstellungen, Computer/Chrome-Fenster, Sheets und Menüs.
+ * Die Klasse setzt MobileThemeSync nur unter 768px auf Touch-Geräten; Desktop bleibt unverändert.
+ */
+html.connect-mobile-ui {
+  color-scheme: dark;
+  background-color: #07080c;
+  --background: #07080c;
+  --foreground: oklch(0.97 0 0);
+  --card: #0e1017;
+  --card-foreground: oklch(0.97 0 0);
+  --popover: #0e1017;
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.93 0 0);
+  --primary-foreground: #07080c;
+  --secondary: rgb(255 255 255 / 0.07);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: rgb(255 255 255 / 0.06);
+  --muted-foreground: rgb(255 255 255 / 0.5);
+  --accent: rgb(255 255 255 / 0.08);
+  --accent-foreground: oklch(0.97 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: rgb(255 255 255 / 0.09);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #38bdf8;
+  --sidebar: #0a0b11;
+  --sidebar-foreground: oklch(0.96 0 0);
+  --sidebar-primary: #38bdf8;
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: rgb(255 255 255 / 0.07);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #38bdf8;
+}
+html.connect-mobile-ui body {
+  background:
+    radial-gradient(120% 60% at 10% -10%, rgba(56, 189, 248, 0.12), transparent 55%),
+    radial-gradient(90% 50% at 100% 0%, rgba(167, 139, 250, 0.1), transparent 50%),
+    #07080c;
+  background-attachment: fixed;
+  color: oklch(0.97 0 0);
 }
 
 /*

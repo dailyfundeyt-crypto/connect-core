@@ -25,6 +25,11 @@ export type LabApp = {
   icon: string;
   tint: string;
   builtin?: boolean;
+  /**
+   * Echtes Seiten-Icon (data-URL oder https), lokal aus dem offenen Helium-Tab erfasst
+   * (lab-favicons.ts). Wird per Workspace-Sync mitgenommen; die Handy-Browserliste zeigt es.
+   */
+  favicon?: string;
 };
 
 /** App icons in the sidebar — agents + humans open them in the Lab browser. */
@@ -461,7 +466,7 @@ export function resolveLabEngine(
   return engine === "embed" ? "embed" : "full";
 }
 
-function normalizeGroups(
+export function normalizeGroups(
   groups: LabTabGroup[] | undefined,
 ): LabTabGroup[] {
   if (!Array.isArray(groups)) return [];
@@ -508,6 +513,9 @@ function normalizeGroups(
     const legit =
       defaultIds.has(g.id) ||
       g.id.startsWith("group-") ||
+      // Groups created by the bookmark importer. Without this they would be treated as legacy and
+      // silently dropped on the next read, so an imported structure would vanish on reload.
+      g.id.startsWith("bmg-") ||
       Boolean(g.accent && accented.has(g.accent));
     if (legit) kept.push({ ...g, appIds });
     else legacyApps.push(...appIds.filter((id) => knownAppIds.has(id)));
@@ -611,6 +619,28 @@ export function setLevel3Browser(
   all[companyId] = next;
   writeAll(all);
   return next;
+}
+
+/** Alle Firmen-IDs mit gespeichertem Lab-Browser (für die Favicon-Erfassung). */
+export function listLevel3CompanyIds(): string[] {
+  return Object.keys(readAll());
+}
+
+/** Favicon an einer eigenen App speichern; schreibt nur, wenn sich wirklich etwas ändert. */
+export function setLabAppFavicon(
+  companyId: string,
+  appId: string,
+  favicon: string,
+): boolean {
+  const value = favicon.trim();
+  if (!value) return false;
+  const prev = getLevel3Browser(companyId);
+  const current = prev.customApps.find((a) => a.id === appId);
+  if (!current || current.favicon === value) return false;
+  setLevel3Browser(companyId, {
+    customApps: prev.customApps.map((a) => (a.id === appId ? { ...a, favicon: value } : a)),
+  });
+  return true;
 }
 
 export function subscribeLevel3Browser(cb: () => void): () => void {
@@ -887,6 +917,64 @@ export function setTabGroupOpen(
   });
 }
 
+/**
+ * Make `groupId` a child of `parentId`.
+ *
+ * Refuses a move that would detach the whole tree into a cycle (moving a folder into one of its
+ * own descendants) and refuses to make a folder a child of itself, so the sidebar tree can never
+ * stop rendering the group.
+ */
+export function moveTabGroupIntoGroup(
+  companyId: string,
+  groupId: string,
+  parentId: string,
+): Level3BrowserState {
+  const prev = getLevel3Browser(companyId);
+  const groups = normalizeGroups(prev.tabGroups);
+  if (groupId === parentId) return prev;
+  if (!groups.some((g) => g.id === groupId)) return prev;
+  if (!groups.some((g) => g.id === parentId)) return prev;
+
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  // Walk up from the target parent; meeting groupId means the target sits below the folder.
+  let cursor: LabTabGroup | undefined = byId.get(parentId);
+  while (cursor) {
+    if (cursor.id === groupId) return prev;
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+  }
+
+  return setLevel3Browser(companyId, {
+    tabGroups: groups.map((g) =>
+      g.id === groupId ? { ...g, parentId, collapsed: false } : g,
+    ),
+  });
+}
+
+/**
+ * Detach a folder from its parent so it becomes a top-level folder again, keeping its own apps and
+ * subfolders.
+ *
+ * This is the inverse of moveTabGroupIntoGroup and is what a drag out of a folder performs. A
+ * folder that is already at the root is left untouched, and the move is refused when the folder
+ * does not exist, so callers can pass the id of whatever is under the pointer without pre-checking.
+ */
+export function moveTabGroupToRoot(
+  companyId: string,
+  groupId: string,
+): Level3BrowserState {
+  const prev = getLevel3Browser(companyId);
+  const groups = normalizeGroups(prev.tabGroups);
+  const target = groups.find((g) => g.id === groupId);
+  if (!target) return prev;
+  if (!target.parentId) return prev;
+
+  return setLevel3Browser(companyId, {
+    tabGroups: groups.map((g) =>
+      g.id === groupId ? { ...g, parentId: undefined } : g,
+    ),
+  });
+}
+
 export function deleteTabGroup(
   companyId: string,
   groupId: string,
@@ -1058,6 +1146,21 @@ export function setLabEngine(
 export const DND_LAB_GROUP = "application/x-connect-lab-group";
 export const DND_LAB_APP = "application/x-connect-lab-app";
 
+/**
+ * Payload of a note dragged out of the notes list.
+ *
+ * A custom MIME type rather than `text/plain` because this sidebar already drags apps and folders
+ * with their own types. Sharing `text/plain` would let an app row be dropped on a folder and be
+ * read as a note, silently re-filing instead of moving the app.
+ */
+export const DND_NOTE = "application/x-connect-note";
+
+/**
+ * Folder the dragged note came from, so a drop onto that same folder can be ignored. Empty string
+ * stands for "Allgemein", which has no id.
+ */
+export const DND_NOTE_FROM = "application/x-connect-note-from-folder";
+
 export type LabFolderNode = LabTabGroup & {
   apps: LabApp[];
   children: LabFolderNode[];
@@ -1210,3 +1313,483 @@ export async function navigateChromium(
 
 export const LOVABLE_MCP_HINT =
   "Lovable MCP (mcp.lovable.dev): get_project → github_url / preview_url → Connect.";
+
+// ---------------------------------------------------------------------------
+// Bookmark import / export
+//
+// The sidebar nests folders arbitrarily deep and the user has to be able to move that structure
+// between browsers and machines. The native Netscape bookmark HTML is the only interchange every
+// major browser consumes, so export writes that and import parses it. Folders stay folders, so a
+// round-trip loses nothing.
+//
+// Our own extras (icon, tint, split-URL, blurb) do not exist in that format. They are preserved as
+// ADD_DATE-style custom attributes, which browsers ignore -- so the file still imports cleanly
+// elsewhere, while a return trip into Connect restores the original look.
+// ---------------------------------------------------------------------------
+
+export const BOOKMARK_FORMAT = "connect-level3-bookmarks";
+
+export type LabBookmarkNode = {
+  label: string;
+  /** Child folders of this folder. */
+  folders: LabBookmarkNode[];
+  /** Bookmarks in this folder. */
+  items: LabBookmarkItem[];
+};
+
+export type LabBookmarkItem = {
+  label: string;
+  url?: string;
+  url2?: string;
+  blurb?: string;
+  /** Icon slug of the source app, so a round-trip keeps the look. */
+  icon?: string;
+  tint?: string;
+  /** Set when the entry was a "computer"/"split" app rather than a plain bookmark. */
+  kind?: LabAppKind;
+};
+
+/** Escape the XML entities so a folder or app name can never break the file. */
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/** Undo `xmlEscape`; also decodes the numeric spellings other exporters emit. */
+function xmlUnescape(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) =>
+      String.fromCodePoint(parseInt(code, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, code: string) =>
+      String.fromCodePoint(Number(code)),
+    )
+    .replace(/&amp;/g, "&");
+}
+
+function indentOf(depth: number): string {
+  return "    ".repeat(depth);
+}
+
+function renderNodes(nodes: LabBookmarkNode[], depth: number): string {
+  const pad = indentOf(depth);
+  return nodes
+    .map((node) => {
+      const lines: string[] = [`${pad}<DT><H3>${xmlEscape(node.label)}</H3>`];
+      const body: string[] = [];
+      for (const item of node.items) {
+        // A bookmark with no URL cannot be a link; it is still written so nothing is silently
+        // dropped, and import reads it back as a plain entry.
+        const extra: string[] = [];
+        if (item.icon) extra.push(`DATA-ICON="${xmlEscape(item.icon)}"`);
+        if (item.tint) extra.push(`DATA-TINT="${xmlEscape(item.tint)}"`);
+        if (item.url2) extra.push(`DATA-URL2="${xmlEscape(item.url2)}"`);
+        if (item.blurb) extra.push(`DATA-BLURB="${xmlEscape(item.blurb)}"`);
+        if (item.kind && item.kind !== "browser") {
+          extra.push(`DATA-KIND="${xmlEscape(item.kind)}"`);
+        }
+        const attrs = item.url
+          ? `HREF="${xmlEscape(item.url)}"${extra.length ? ` ${extra.join(" ")}` : ""}`
+          : extra.join(" ");
+        body.push(
+          `${pad}    <DT><A ${attrs}>${xmlEscape(item.label)}</A>`,
+        );
+      }
+      if (node.folders.length > 0) {
+        body.push(renderNodes(node.folders, depth + 1));
+      }
+      lines.push(`${pad}<DL><p>`, ...body, `${pad}</DL><p>`);
+      return lines.join("\n");
+    })
+    .join("\n");
+}
+
+/** Build the full Netscape bookmark file for a folder tree. */
+export function buildBookmarkHtml(
+  tree: LabBookmarkNode[],
+  meta: { companyId: string; companyName?: string },
+): string {
+  const title = meta.companyName?.trim() || "Connect";
+  return [
+    "<!DOCTYPE NETSCAPE-Bookmark-file-1>",
+    `<!-- This is an automatically generated file.`,
+    `     Exported from Connect · ${title}.`,
+    "     It opens in Chrome, Edge, Firefox and Safari; re-importing it in Connect restores",
+    "     the folders, the nesting and the icons. -->",
+    '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
+    "<TITLE>Bookmarks</TITLE>",
+    "<H1>Bookmarks</H1>",
+    "<DL><p>",
+    renderNodes(tree, 1),
+    "</DL><p>",
+    "",
+  ].join("\n");
+}
+
+export type LabBookmarkParseResult = {
+  tree: LabBookmarkNode[];
+  /** Number of bookmarks read, for the confirmation dialog. */
+  count: number;
+  /** How many folders were read, for the confirmation dialog. */
+  folderCount: number;
+  /** Non-fatal problems, surfaced before the user commits the import. */
+  warnings: string[];
+};
+
+function parseAttributes(tag: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const re = /([A-Za-z0-9_:.-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(tag)) !== null) {
+    attrs[match[1]!.toUpperCase()] = match[3] ?? match[4] ?? match[5] ?? "";
+  }
+  return attrs;
+}
+
+type MarkupToken =
+  | { kind: "tag"; value: string }
+  | { kind: "text"; value: string };
+
+/**
+ * Split markup into tags and text runs, treating a ">" inside a quoted attribute value as literal
+ * text rather than the end of the tag. A regex like /<[^>]*>/ cannot do this, and bookmark files
+ * really do contain such URLs (e.g. HREF="https://x.example/?a=1>0").
+ */
+function tokenizeMarkup(input: string): MarkupToken[] {
+  const tokens: MarkupToken[] = [];
+  let i = 0;
+  while (i < input.length) {
+    if (input[i] !== "<") {
+      let end = input.indexOf("<", i);
+      if (end === -1) end = input.length;
+      const value = input.slice(i, end);
+      if (value.trim()) tokens.push({ kind: "text", value });
+      i = end;
+      continue;
+    }
+    let j = i + 1;
+    let quote: string | null = null;
+    while (j < input.length) {
+      const ch = input[j]!;
+      if (quote) {
+        if (ch === quote) quote = null;
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === ">") {
+        break;
+      }
+      j += 1;
+    }
+    // An unterminated tag runs to the end of the input; taking the rest is the safe reading.
+    tokens.push({ kind: "tag", value: input.slice(i, j + 1) });
+    i = j + 1;
+  }
+  return tokens;
+}
+
+/**
+ * Parse Netscape bookmark HTML.
+ *
+ * Written as a small tag scanner rather than DOMParser so it stays dependency-free and can run
+ * against a pasted string as well as a file. It is deliberately lenient: unknown attributes are
+ * ignored, and a malformed line is skipped instead of failing the whole import. A folder is
+ * `<DT><H3>name</H3>` followed by `<DL>`; `</DL>` closes it. That is the whole grammar that matters,
+ * and everything else in the file is noise to us.
+ */
+export function parseBookmarkHtml(html: string): LabBookmarkParseResult {
+  const warnings: string[] = [];
+  const root: LabBookmarkNode = { label: "", folders: [], items: [] };
+  // Nodes whose <DL> is currently open. The root is always at the bottom.
+  const stack: LabBookmarkNode[] = [root];
+  const current = () => stack[stack.length - 1]!;
+
+  // Comments carry no structure and can contain arbitrary text, so drop them first.
+  const cleaned = html.replace(/<!--[\s\S]*?-->/g, "");
+  // Two things a naive /<[^>]*>/ regex gets wrong, and both occur in real files:
+  //   1. A label is the TEXT between <H3> and </H3> (or <A> and </A>), not part of the tag, so the
+  //      scanner has to yield text runs too -- otherwise every folder and bookmark loses its name.
+  //   2. A quoted attribute may legally contain ">" (a URL with a query string, for one), so a tag
+  //      only ends at a ">" outside quotes. Hence a manual walk.
+  const tokens = tokenizeMarkup(cleaned);
+
+  // Label of the element being read, and the attributes of an <A> waiting for its text.
+  let text = "";
+  let anchor: Record<string, string> | null = null;
+  /** Folder whose name is still being collected, committed on </H3>. */
+  let openFolder: LabBookmarkNode | null = null;
+
+  const flushAnchor = () => {
+    if (!anchor) return;
+    const attrs = anchor;
+    const url = attrs.HREF ? xmlUnescape(attrs.HREF).trim() : "";
+    const label = xmlUnescape(text.trim());
+    const item: LabBookmarkItem = {
+      label: label || url || "Ohne Titel",
+      url: url || undefined,
+      url2: attrs["DATA-URL2"] ? xmlUnescape(attrs["DATA-URL2"]) : undefined,
+      blurb: attrs["DATA-BLURB"] ? xmlUnescape(attrs["DATA-BLURB"]) : undefined,
+      icon: attrs["DATA-ICON"] ? xmlUnescape(attrs["DATA-ICON"]) : undefined,
+      tint: attrs["DATA-TINT"] ? xmlUnescape(attrs["DATA-TINT"]) : undefined,
+      kind:
+        attrs["DATA-KIND"] === "computer" || attrs["DATA-KIND"] === "split"
+          ? (attrs["DATA-KIND"] as LabAppKind)
+          : undefined,
+    };
+    if (!item.url) {
+      warnings.push(`"${item.label}" hat keine URL und wird ohne Klickfunktion angelegt.`);
+    }
+    current().items.push(item);
+    anchor = null;
+    text = "";
+  };
+
+  for (const token of tokens) {
+    if (token.kind === "text") {
+      if (anchor || openFolder) text += token.value;
+      continue;
+    }
+    const tag = token.value;
+    const upper = tag.toUpperCase();
+
+    if (upper.startsWith("</")) {
+      if (upper.startsWith("</A")) {
+        flushAnchor();
+        continue;
+      }
+      if (upper.startsWith("</H3")) {
+        if (openFolder) openFolder.label = xmlUnescape(text.trim()) || "Ohne Titel";
+        openFolder = null;
+        text = "";
+        continue;
+      }
+      if (upper.startsWith("</DL") && stack.length > 1) {
+        stack.pop();
+      }
+      continue;
+    }
+
+    if (upper.startsWith("<A")) {
+      // Defensive: a file that leaves an <A> unclosed must not swallow the next bookmark.
+      flushAnchor();
+      anchor = parseAttributes(tag);
+      text = "";
+      continue;
+    }
+
+    if (upper.startsWith("<H3")) {
+      const node: LabBookmarkNode = { label: "", folders: [], items: [] };
+      current().folders.push(node);
+      // Pushed immediately: the matching </DL> closes the folder, so bookmarks read before that
+      // land in `node`. A file that omits the final </DL> still keeps everything to the end.
+      stack.push(node);
+      openFolder = node;
+      text = "";
+      continue;
+    }
+
+    // <DL>, <DT>, <META>, <TITLE>, <H1>, <BODY> … carry no information for us.
+  }
+  // Tolerate a file that ends without closing the last <A> or </H3>.
+  flushAnchor();
+  if (openFolder) openFolder.label = xmlUnescape(text.trim()) || "Ohne Titel";
+
+  // Bookmarks that sat outside any folder still belong to the user, so they are collected in one
+  // extra folder instead of being dropped.
+  const tree: LabBookmarkNode[] = [...root.folders];
+  if (root.items.length > 0) {
+    tree.push({ label: "Importierte Lesezeichen", folders: [], items: root.items });
+  }
+
+  let count = 0;
+  let folderCount = 0;
+  const walk = (nodes: LabBookmarkNode[]) => {
+    for (const node of nodes) {
+      folderCount += 1;
+      count += node.items.length;
+      walk(node.folders);
+    }
+  };
+  walk(tree);
+
+  if (tree.length === 0) {
+    warnings.push("In der Datei wurden keine Lesezeichen gefunden.");
+  }
+
+  return { tree, count, folderCount, warnings };
+}
+
+/** Read a user-picked file as text, rejecting anything that is not a bookmark file. */
+export async function readBookmarkFile(file: File): Promise<string> {
+  const text = await file.text();
+  if (!/<A[\s>]/i.test(text) && !/<H3[\s>]/i.test(text)) {
+    throw new Error(
+      "Das ist keine gültige Lesezeichen-Datei. Bitte eine exportierte HTML-Datei wählen.",
+    );
+  }
+  return text;
+}
+
+/** Trigger a browser download of the bookmark file. */
+export function downloadBookmarkFile(
+  filename: string,
+  html: string,
+): void {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Revoked on the next tick so Safari has read the blob before it is released.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Turn one parsed bookmark into an app. Built-ins are skipped: their id must stay stable. */
+function appFromBookmark(
+  node: LabBookmarkNode,
+  item: LabBookmarkItem,
+  builtinIds: Set<string>,
+): LabApp | null {
+  // Built-in apps are identified by id, and the export writes the icon, not the id. Matching on
+  // the URL keeps an exported built-in from being duplicated as a second custom app.
+  const id = `bm-${hashString(`${item.url ?? ""}|${item.label}`)}`;
+  if (builtinIds.has(id)) return null;
+  return {
+    id,
+    kind: item.kind ?? "browser",
+    label: item.label,
+    blurb: item.blurb?.trim() || "Aus Lesezeichen importiert",
+    url: item.url,
+    url2: item.url2,
+    icon: item.icon?.trim() || "globe",
+    tint: item.tint?.trim() || "#64748B",
+  };
+}
+
+/** Small, stable, collision-tolerant id hash. */
+function hashString(value: string): string {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) + hash + value.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
+export type LabImportPreview = {
+  /** Next state with everything imported, for the user to confirm. */
+  next: Level3BrowserState;
+  addedApps: number;
+  addedFolders: number;
+  /** Bookmarks that matched an existing app and were skipped. */
+  skippedDuplicates: number;
+  warnings: string[];
+};
+
+/**
+ * Build the state that results from importing `tree`, without writing anything.
+ *
+ * Returning the next state instead of mutating in place lets the caller show a preview and let the
+ * user cancel. Import only ever adds: an existing folder or app is left exactly as it is, so a
+ * double import cannot destroy work.
+ */
+export function buildImportState(
+  state: Level3BrowserState,
+  tree: LabBookmarkNode[],
+): LabImportPreview {
+  const existingApps = allLabApps(state);
+  const existingKeys = new Set(
+    existingApps.map((a) => `${(a.url ?? "").trim().toLowerCase()}|${a.label.trim().toLowerCase()}`),
+  );
+  const builtinIds = new Set(
+    LAB_APP_ICONS.map((a) => `bm-${hashString(`${a.url ?? ""}|${a.label}`)}`),
+  );
+
+  const newApps: LabApp[] = [];
+  const newGroups: LabTabGroup[] = [];
+  const warnings: string[] = [];
+  let addedApps = 0;
+  let skippedDuplicates = 0;
+  // Ids are unique per import run so a folder never merges with a same-named one from a previous run.
+  let seq = 0;
+
+  const addGroup = (
+    node: LabBookmarkNode,
+    parentId: string | undefined,
+  ): void => {
+    seq += 1;
+    const groupId = `bmg-${Date.now().toString(36)}-${seq}`;
+    const appIds: string[] = [];
+    for (const item of node.items) {
+      const key = `${(item.url ?? "").trim().toLowerCase()}|${item.label.trim().toLowerCase()}`;
+      if (existingKeys.has(key)) {
+        skippedDuplicates += 1;
+        continue;
+      }
+      const app = appFromBookmark(node, item, builtinIds);
+      if (!app) {
+        skippedDuplicates += 1;
+        continue;
+      }
+      existingKeys.add(key);
+      newApps.push(app);
+      appIds.push(app.id);
+      addedApps += 1;
+    }
+    newGroups.push({
+      id: groupId,
+      label: node.label,
+      parentId,
+      appIds,
+      collapsed: false,
+    });
+    for (const child of node.folders) {
+      addGroup(child, groupId);
+    }
+  };
+
+  for (const root of tree) {
+    addGroup(root, undefined);
+  }
+
+  return {
+    next: {
+      ...state,
+      customApps: [...state.customApps, ...newApps],
+      tabGroups: [...normalizeGroups(state.tabGroups), ...newGroups],
+      updatedAt: new Date().toISOString(),
+    },
+    addedApps,
+    addedFolders: newGroups.length,
+    skippedDuplicates,
+    warnings,
+  };
+}
+
+/** Folder tree of a company, shaped for the export file. */
+export function toBookmarkTree(state: Level3BrowserState): LabBookmarkNode[] {
+  const { roots } = labFolderTree(state);
+  const toNode = (node: LabFolderNode): LabBookmarkNode => ({
+    label: node.label,
+    folders: node.children.map(toNode),
+    items: node.apps.map((app) => ({
+      label: app.label,
+      url: app.url,
+      url2: app.url2,
+      blurb: app.blurb,
+      icon: app.icon,
+      tint: app.tint,
+      kind: app.kind,
+    })),
+  });
+  return roots.map(toNode);
+};

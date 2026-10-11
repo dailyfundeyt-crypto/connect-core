@@ -6,6 +6,8 @@ import { queryClient } from "./query-client";
 import { router } from "./router";
 import "@copilotkit/react-core/v2/styles.css";
 import "./styles.css";
+// Premium-Look (dunkel, Glas, weiche Bewegung) – siehe styles/premium.css
+import "./styles/premium.css";
 
 const rootElement = document.getElementById("root");
 
@@ -23,6 +25,10 @@ createRoot(rootElement).render(
 
 void import("@/lib/companies/workspace-sync").then((m) => {
   void m.hydrateConnectWorkspace();
+});
+
+void import("@/lib/agents/agent-browser-tabs").then((m) => {
+  m.startHeliumTabFaviconListener();
 });
 
 // API keys live encrypted on the server; localStorage is only the mirror (+ one-time migration).

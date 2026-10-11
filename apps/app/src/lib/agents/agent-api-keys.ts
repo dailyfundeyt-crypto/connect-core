@@ -8,7 +8,9 @@ export type AgentApiKeyKind =
   | "browserUse"
   | "elevenLabs"
   | "zielAi"
-  | "codex";
+  | "codex"
+  | "claude"
+  | "grok";
 
 export type AgentApiKeys = {
   /** Manus Open API key (header: x-manus-api-key) — https://open.manus.ai/docs */
@@ -20,6 +22,10 @@ export type AgentApiKeys = {
   zielAi: string;
   /** Optional Codex/OpenAI key when this bot does not use the global Settings key. */
   codex: string;
+  /** Anthropic Claude API key (header: x-api-key). Beta family. */
+  claude: string;
+  /** xAI Grok API key (header: Authorization: Bearer …). Beta family. */
+  grok: string;
 };
 
 /** Whether Bot-CLI Codex/ChatGPT/Cursor uses Settings → Usage or this bot's own key. */
@@ -38,6 +44,8 @@ const EMPTY: AgentApiKeys = {
   elevenLabs: "",
   zielAi: "",
   codex: "",
+  claude: "",
+  grok: "",
 };
 
 function read(): Store {
@@ -84,6 +92,8 @@ export function getAgentApiKeys(agentId: string): AgentApiKeys {
     elevenLabs: typeof row.elevenLabs === "string" ? row.elevenLabs : "",
     zielAi: typeof row.zielAi === "string" ? row.zielAi : "",
     codex: typeof row.codex === "string" ? row.codex : "",
+    claude: typeof row.claude === "string" ? row.claude : "",
+    grok: typeof row.grok === "string" ? row.grok : "",
   };
 }
 
@@ -180,6 +190,18 @@ export const AGENT_API_KEY_META: {
     hint: "Externer API-Key, wenn dieser Agent eine Ziel-AI-API aufruft.",
     placeholder: "ziel_…",
   },
+  {
+    id: "claude",
+    label: "Anthropic Claude (Beta)",
+    hint: "Eigener Claude API-Key für die Beta-Family 'claude'. console.anthropic.com → Settings → API Keys. Header: x-api-key.",
+    placeholder: "sk-ant-…",
+  },
+  {
+    id: "grok",
+    label: "xAI Grok (Beta)",
+    hint: "Eigener Grok API-Key für die Beta-Family 'grok'. console.x.ai → API Keys. Header: Authorization Bearer.",
+    placeholder: "xai-…",
+  },
 ];
 
 /** Resolve Manus key: agent override → Settings global. */
@@ -210,4 +232,14 @@ export function getAgentBrowserUseKey(agentId: string): string {
 /** Convenience: agent Ziel AI key for external calls. */
 export function getAgentZielAiKey(agentId: string): string {
   return getAgentApiKeys(agentId).zielAi.trim();
+}
+
+/** Convenience: agent Claude API key (Beta family). Empty string means unset. */
+export function getAgentClaudeKey(agentId: string): string {
+  return getAgentApiKeys(agentId).claude.trim();
+}
+
+/** Convenience: agent xAI Grok API key (Beta family). Empty string means unset. */
+export function getAgentGrokKey(agentId: string): string {
+  return getAgentApiKeys(agentId).grok.trim();
 }

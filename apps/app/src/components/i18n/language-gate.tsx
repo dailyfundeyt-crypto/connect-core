@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PublicLegalFooter } from "@/components/legal/public-legal-footer";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,8 @@ import { cn } from "@/lib/utils";
  */
 export function LanguageGate({ children }: { children: React.ReactNode }) {
   const [locale, setLoc] = useState<Locale | null>(() => getLocale());
+  // Die öffentliche Startseite (/sign) ist deutsch und darf nicht hinter der Sprachwahl hängen.
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => subscribeLocale(() => setLoc(getLocale())), []);
 
@@ -27,7 +30,7 @@ export function LanguageGate({ children }: { children: React.ReactNode }) {
     }
   }, [locale]);
 
-  if (locale) return children;
+  if (locale || pathname === "/sign") return children;
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-[#0a0a0a] px-6 py-10 text-white">

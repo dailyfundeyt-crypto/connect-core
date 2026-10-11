@@ -18,6 +18,7 @@ import { ChannelChat } from "@/components/channels/channel-chat";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { MobileBackOrSidebarToggle } from "@/components/mobile/mobile-shell";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import { Button } from "@/components/ui/button";
 import { subscribeOpenAgentWatch } from "@/lib/agents/shell-dispatch";
 import { markChannelReadMutationOptions } from "@/lib/channels/mutations";
@@ -55,6 +56,7 @@ function RouteComponent() {
   const isSettingsOpen = settings === true;
   const prefersReducedMotion = useReducedMotion();
   const isWatching = watch === true;
+  const mobileShell = useMobileShell();
   /** Channel routing currently supports one coworker. */
   const agentId = channel.data?.agentIds[0];
   /** Only polled while the screen is closed; the screen panel polls control itself. */
@@ -149,6 +151,9 @@ function RouteComponent() {
       onClose={() => show(null)}
       open={(isSettingsOpen || isWatching) && agentId !== undefined}
       detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
+      title={
+        mobileShell ? (isWatching ? "Computer" : "Agent-Einstellungen") : undefined
+      }
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action.

@@ -1,25 +1,26 @@
 /**
- * Profile hub bottom sheet — opens when the avatar in the mobile header is tapped.
- * Contains: Profile, Switch Company, Settings, Browser, Focus, Sync, Sign out.
+ * Profile hub — opens from the avatar. Company switch lives here (hidden from the main chrome).
  */
 
 import {
-  IconCompass,
-  IconSettings,
-  IconLogout,
-  IconBuildingStore,
-  IconCloudUpload,
-  IconWorld,
   IconChevronRight,
+  IconCloudUpload,
+  IconLogout,
+  IconSettings,
+  IconWorld,
 } from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { UserAvatar } from "@/components/app-sidebar/user-avatar";
-import { getLocalProfile, subscribeLocalProfile, type LocalProfile } from "@/lib/auth/local-profile";
+import {
+  getLocalProfile,
+  type LocalProfile,
+  subscribeLocalProfile,
+} from "@/lib/auth/local-profile";
+import { goToSignInAfterSignOut, signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { listCompanies, subscribeCompanies } from "@/lib/companies/store";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
 function readActiveCompanyId(): string | null {
@@ -52,8 +53,15 @@ function useWorkspaceTick(): number {
   return tick;
 }
 
-/** Bottom sheet — no external dependencies */
-function BottomSheet({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+function BottomSheet({
+  open,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex flex-col justify-end" role="dialog">
@@ -63,7 +71,7 @@ function BottomSheet({ open, onClose, children }: { open: boolean; onClose: () =
         onClick={onClose}
         type="button"
       />
-      <div className="relative rounded-t-3xl border-t border-white/10 bg-[#1c1c1e] px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 text-white shadow-2xl">
+      <div className="relative max-h-[85svh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#12131a] px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 text-white shadow-2xl">
         <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-white/25" />
         {children}
       </div>
@@ -95,14 +103,14 @@ function SheetItem({
     >
       <span className="text-white/70">{icon}</span>
       <span className="flex-1">{label}</span>
-      {description && <span className="text-[13px] text-white/40">{description}</span>}
-      {!danger && <IconChevronRight className="size-4 text-white/30" />}
+      {description ? <span className="text-[13px] text-white/40">{description}</span> : null}
+      {!danger ? <IconChevronRight className="size-4 text-white/30" /> : null}
     </button>
   );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="mb-1 px-3 text-[12px] text-white/35">{children}</p>;
+  return <p className="mb-1 px-3 pt-1 text-[12px] font-medium uppercase tracking-[0.14em] text-white/35">{children}</p>;
 }
 
 export interface ProfileSheetProps {
@@ -117,7 +125,6 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
   const profile = useLocalProfileState();
   const tick = useWorkspaceTick();
   const signOut = useMutation(signOutMutationOptions(queryClient));
-
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const displayName =
@@ -134,23 +141,22 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
   const setActiveCompany = (id: string) => {
     window.localStorage.setItem("connect.activeCompanyId", id);
     window.dispatchEvent(new Event("connect-active-company"));
-    onClose();
   };
 
   const handleSignOut = useCallback(async () => {
     setSignOutError(null);
     try {
       await signOut.mutateAsync();
-      onClose();
-      await navigate({ to: "/sign" });
     } catch {
       setSignOutError("Abmelden fehlgeschlagen. Bitte erneut versuchen.");
+      return;
     }
-  }, [signOut, navigate, onClose]);
+    onClose();
+    goToSignInAfterSignOut();
+  }, [signOut, onClose]);
 
   return (
     <BottomSheet onClose={onClose} open={open}>
-      {/* Profile header */}
       <div className="flex items-center gap-3 px-3 pb-3 pt-1">
         <UserAvatar
           className="size-12 bg-white/10 text-base font-medium text-white!"
@@ -163,78 +169,80 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
           {currentUser?.email ? (
             <p className="truncate text-[14px] text-white/50">{currentUser.email}</p>
           ) : null}
-          {companies.length > 1 && (
-            <p className="truncate text-[13px] text-white/35">
-              {companies.find((c) => c.id === activeCompanyId)?.name || "Kein Unternehmen"}
-            </p>
-          )}
         </div>
       </div>
 
-      <div className="border-t border-white/10 pt-1">
-        <SectionLabel>Profil</SectionLabel>
-        {/* /browser and /focus were never routes -- they redirected to "/". The browser lives
-            inside the company workspace, so both entries go there. */}
-        <SheetItem
-          icon={<IconCompass className="size-5" />}
-          label="Browser"
-          onClick={() => {
-            onClose();
-            if (activeCompanyId) {
-              void navigate({ to: "/company/$companyId", params: { companyId: activeCompanyId } });
-            }
-          }}
-        />
-        <SheetItem
-          icon={<IconCompass className="size-5" />}
-          label="Browser-Gruppen"
-          onClick={() => { onClose(); void navigate({ to: "/settings", hash: "browser-groups" }); }}
-        />
+      <div className="border-t border-white/10 pt-2">
+        <SectionLabel>Unternehmen wechseln</SectionLabel>
+        {companies.length === 0 ? (
+          <p className="px-3 py-2 text-[14px] text-white/40">Noch keine Unternehmen.</p>
+        ) : (
+          companies.map((company) => {
+            const active = company.id === activeCompanyId;
+            return (
+              <button
+                key={company.id}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[16px] active:bg-white/10",
+                  active ? "text-sky-300" : "text-white",
+                )}
+                onClick={() => setActiveCompany(company.id)}
+                type="button"
+              >
+                {company.logo ? (
+                  <img
+                    alt=""
+                    className="size-8 rounded-full object-cover ring-1 ring-white/10"
+                    src={company.logo}
+                  />
+                ) : (
+                  <span
+                    className="size-8 rounded-full ring-1 ring-white/10"
+                    style={{ background: company.accent || "#334155" }}
+                  />
+                )}
+                <span className="flex-1 truncate">{company.name}</span>
+                {active ? (
+                  <span className="rounded-full bg-sky-400/20 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+                    Aktiv
+                  </span>
+                ) : null}
+              </button>
+            );
+          })
+        )}
       </div>
-
-      {companies.length > 1 && (
-        <div className="border-t border-white/10 pt-1">
-          <SectionLabel>Unternehmen</SectionLabel>
-          {companies.map((company) => (
-            <button
-              key={company.id}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[16px] active:bg-white/10",
-                activeCompanyId === company.id ? "text-sky-400" : "text-white",
-              )}
-              onClick={() => setActiveCompany(company.id)}
-              type="button"
-            >
-              {company.logo ? (
-                <img alt={company.name} className="size-7 rounded-full object-cover" src={company.logo} />
-              ) : (
-                <span className="size-7 rounded-full" style={{ background: company.accent }} />
-              )}
-              <span className="flex-1 truncate">{company.name}</span>
-              {activeCompanyId === company.id && <span className="text-[13px] text-white/50">✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
 
       <div className="border-t border-white/10 pt-1">
         <SectionLabel>Einstellungen</SectionLabel>
         <SheetItem
           icon={<IconSettings className="size-5" />}
           label="Globale Einstellungen"
-          onClick={() => { onClose(); void navigate({ to: "/settings" }); }}
+          onClick={() => {
+            onClose();
+            void navigate({ to: "/settings" });
+          }}
         />
         <SheetItem
           icon={<IconCloudUpload className="size-5" />}
-          label="Sync"
-          onClick={() => { onClose(); void navigate({ to: "/settings", hash: "backup" }); }}
+          label="Sicherung / Sync"
+          onClick={() => {
+            onClose();
+            void navigate({ to: "/settings", hash: "sync-backup" });
+          }}
+        />
+        <SheetItem
+          icon={<IconWorld className="size-5" />}
+          label="Browser-Gruppen"
+          onClick={() => {
+            onClose();
+            void navigate({ to: "/settings", hash: "browser-groups" });
+          }}
         />
       </div>
 
       <div className="border-t border-white/10 pt-1">
-        {signOutError && (
-          <p className="mb-1 px-3 text-[12px] text-red-400">{signOutError}</p>
-        )}
+        {signOutError ? <p className="mb-1 px-3 text-[12px] text-red-400">{signOutError}</p> : null}
         <button
           className={cn(
             "flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-[16px] active:bg-white/10",
@@ -251,9 +259,7 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
               <IconLogout className="size-5" />
             )}
           </span>
-          <span className="flex-1">
-            {signOut.isPending ? "Abmelde…" : "Abmelden"}
-          </span>
+          <span className="flex-1">{signOut.isPending ? "Abmelde…" : "Abmelden"}</span>
         </button>
       </div>
     </BottomSheet>

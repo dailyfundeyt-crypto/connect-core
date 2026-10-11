@@ -50,7 +50,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { signOutMutationOptions } from "@/lib/auth/mutations";
+import { goToSignInAfterSignOut, signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   getLocalProfile,
@@ -67,6 +67,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { NewAgentGroupDialog } from "@/components/agents/new-agent-group-dialog";
 import { CompanyAgentsNav } from "@/components/companies/company-agents-nav";
 import { CompanyAppFoldersNav } from "@/components/companies/company-app-folders-nav";
+import { ExtensionsSidebarSlot } from "@/extensions/components/extensions-sidebar-slot";
 import {
   CompanyLevelChips,
   SidebarCollapseGlyph,
@@ -299,7 +300,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const handleSignOut = async () => {
     await signOut.mutateAsync();
-    await navigate({ to: "/sign" });
+    goToSignInAfterSignOut();
   };
 
   const displayName =
@@ -457,6 +458,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <div className="order-2 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
               <CompanyAppFoldersNav searching={searching} />
             </div>
+            {/* Notes, between app folders and agents. The slot renders nothing when
+                every extension is off, so the sidebar looks unchanged without them. */}
+            <ExtensionsSidebarSlot searching={searching} />
             <div className="order-3 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
               <CompanyAgentsNav searching={searching} />
             </div>

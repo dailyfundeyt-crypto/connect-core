@@ -115,8 +115,8 @@ export function ComputerViewPanel({
   const title = computerDisplayLabel(getAgentComputerPrefs(agentId));
 
   return (
-    <div className="mt-4 px-4">
-      <div className="p-4">
+    <div className="mt-4 px-4 mobile:mt-0 mobile:px-0">
+      <div className="p-4 mobile:px-4 mobile:pt-2">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-medium">
@@ -129,7 +129,7 @@ export function ComputerViewPanel({
               className={cn(
                 "text-xs",
                 session.status === "error"
-                  ? "text-destructive"
+                  ? "text-destructive mobile:hidden"
                   : "text-muted-foreground",
               )}
             >
@@ -169,21 +169,21 @@ export function ComputerViewPanel({
             }}
           />
         ) : manusLive ? (
-          <figure className="overflow-hidden rounded-2xl border bg-[#ececef]">
-            <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2">
+          <figure className="overflow-hidden rounded-2xl border bg-[#ececef] mobile:rounded-[24px] mobile:border-white/[0.08] mobile:bg-[#0e1017]">
+            <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2 mobile:border-white/[0.06] mobile:bg-white/[0.03] mobile:py-2.5">
               <span className="flex gap-1">
                 <span className="size-2.5 rounded-full bg-[#ff5f57]" />
                 <span className="size-2.5 rounded-full bg-[#febc2e]" />
                 <span className="size-2.5 rounded-full bg-[#28c840]" />
               </span>
-              <div className="min-w-0 flex-1 truncate rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
+              <div className="min-w-0 flex-1 truncate rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm mobile:rounded-full mobile:bg-white/[0.07] mobile:px-3 mobile:py-1.5 mobile:text-[12px] mobile:text-white/60 mobile:shadow-none">
                 {manusRecord?.watchUrl ||
                   manusRecord?.taskUrl ||
                   "manus.im · Voll-Chrome Lab"}
               </div>
               <IconCloudComputing className="size-3.5 shrink-0 text-sky-600" />
             </div>
-            <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#e8f4fc] p-6 text-center">
+            <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#e8f4fc] p-6 mobile:from-[#0f1a26] mobile:to-[#0a0c12] text-center">
               <IconCloudComputing className="size-8 text-sky-600" />
               <p className="text-sm font-medium">Manus Cloud aktiv</p>
               <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
@@ -193,16 +193,16 @@ export function ComputerViewPanel({
             </div>
           </figure>
         ) : cloudLive ? (
-          <figure className="overflow-hidden rounded-2xl border">
+          <figure className="overflow-hidden rounded-2xl border mobile:rounded-[24px] mobile:border-white/[0.08]">
             <iframe
               allow="clipboard-read; clipboard-write; fullscreen"
-              className="aspect-[16/10] w-full bg-muted"
+              className="aspect-[16/10] w-full bg-muted mobile:aspect-[9/14]"
               src={session.liveViewUrl}
               title={`${name ?? "Bot"} ${computerDisplayLabel(getAgentComputerPrefs(agentId))}`}
             />
           </figure>
         ) : localLive ? (
-          <figure className="overflow-hidden rounded-2xl border bg-black/5">
+          <figure className="overflow-hidden rounded-2xl border bg-black/5 mobile:rounded-[24px] mobile:border-white/[0.08]">
             <ComputerView
               active
               computerId={agentId}
@@ -241,7 +241,7 @@ export function ComputerViewPanel({
         ) : null}
 
         <div className="mt-10">
-          <h3 className="mb-2 font-medium text-sm">Activity</h3>
+          <h3 className="mb-2 font-medium text-sm mobile:text-[12px] mobile:uppercase mobile:tracking-[0.14em] mobile:text-white/40">Activity</h3>
           <ActivityLog computerId={agentId} />
         </div>
       </div>
@@ -267,14 +267,14 @@ function ChromeLiveStage({
   });
   const [focusNote, setFocusNote] = useState<string | null>(null);
   return (
-    <figure className="overflow-hidden rounded-2xl border bg-[#ececef]">
-      <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2">
+    <figure className="overflow-hidden rounded-2xl border bg-[#ececef] mobile:rounded-[24px] mobile:border-white/[0.08] mobile:bg-[#0e1017]">
+      <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2 mobile:border-white/[0.06] mobile:bg-white/[0.03] mobile:py-2.5">
         <span className="flex gap-1">
           <span className="size-2.5 rounded-full bg-[#ff5f57]" />
           <span className="size-2.5 rounded-full bg-[#febc2e]" />
           <span className="size-2.5 rounded-full bg-[#28c840]" />
         </span>
-        <div className="min-w-0 flex-1 truncate rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
+        <div className="min-w-0 flex-1 truncate rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm mobile:rounded-full mobile:bg-white/[0.07] mobile:px-3 mobile:py-1.5 mobile:text-[12px] mobile:text-white/60 mobile:shadow-none">
           {pageUrl || `Agent-Browser · ${name ?? "Bot"}`}
         </div>
         <Button
@@ -296,12 +296,12 @@ function ChromeLiveStage({
       {src && !error ? (
         <img
           alt={`Live-Ansicht ${name ?? "Bot"}`}
-          className="block aspect-[16/10] w-full bg-white object-contain object-top"
+          className="block aspect-[16/10] w-full bg-white object-contain object-top mobile:aspect-[9/14] mobile:bg-black"
           draggable={false}
           src={src}
         />
       ) : (
-        <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#f0f0f2] p-6 text-center">
+        <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#f0f0f2] p-6 mobile:from-[#11141d] mobile:to-[#0a0c12] text-center">
           <IconBrandChrome className="size-8 text-muted-foreground" />
           <p className="text-sm font-medium">
             {error ? "Keine Live-Vorschau" : "Live-Vorschau lädt…"}
@@ -349,10 +349,10 @@ function BrowserBootStage({
 
   if (session.status === "error") {
     return (
-      <figure className="overflow-hidden rounded-2xl border border-destructive/30 bg-muted/40">
+      <figure className="overflow-hidden rounded-2xl border border-destructive/30 bg-muted/40 mobile:rounded-[24px] mobile:border-white/[0.08] mobile:bg-white/[0.03]">
         <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-3 p-6 text-center">
-          <Icon className="size-8 text-destructive/80" />
-          <p className="max-w-xs text-sm text-destructive">
+          <Icon className="size-8 text-destructive/80 mobile:text-sky-300" />
+          <p className="max-w-xs text-sm text-destructive mobile:text-[14px] mobile:leading-relaxed mobile:text-white/70">
             {session.message ?? "Computer-Start fehlgeschlagen."}
           </p>
           <Button
@@ -371,7 +371,7 @@ function BrowserBootStage({
 
   if (busy) {
     return (
-      <figure className="overflow-hidden rounded-2xl border bg-muted/50">
+      <figure className="overflow-hidden rounded-2xl border bg-muted/50 mobile:rounded-[24px]">
         <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-3 p-6 text-center">
           <IconLoader2 className="size-8 animate-spin text-muted-foreground" />
           <p className="text-sm font-medium">
@@ -408,19 +408,19 @@ function BrowserBootStage({
   }
 
   return (
-    <figure className="overflow-hidden rounded-2xl border bg-[#ececef]">
-      <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2">
+    <figure className="overflow-hidden rounded-2xl border bg-[#ececef] mobile:rounded-[24px] mobile:border-white/[0.08] mobile:bg-[#0e1017]">
+      <div className="flex items-center gap-2 border-b border-black/10 bg-[#f5f5f7] px-3 py-2 mobile:border-white/[0.06] mobile:bg-white/[0.03] mobile:py-2.5">
         <span className="flex gap-1">
           <span className="size-2.5 rounded-full bg-[#ff5f57]" />
           <span className="size-2.5 rounded-full bg-[#febc2e]" />
           <span className="size-2.5 rounded-full bg-[#28c840]" />
         </span>
-        <div className="min-w-0 flex-1 rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
+        <div className="min-w-0 flex-1 rounded-md bg-white px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm mobile:rounded-full mobile:bg-white/[0.07] mobile:px-3 mobile:py-1.5 mobile:text-[12px] mobile:text-white/60 mobile:shadow-none">
           about:blank · Azure
         </div>
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
       </div>
-      <div className="relative flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#f0f0f2] p-6 text-center">
+      <div className="relative flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-white to-[#f0f0f2] p-6 mobile:from-[#11141d] mobile:to-[#0a0c12] text-center">
         <p className="text-sm font-medium text-foreground">
           {name ?? "Bot"} · Browser bereit
         </p>
@@ -428,7 +428,7 @@ function BrowserBootStage({
           Azure-Session läuft. Sobald Anchor eine Live-URL liefert, erscheint sie
           hier.
         </p>
-        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-700 mobile:text-emerald-300">
           <span className="size-1.5 rounded-full bg-emerald-500" />
           {session.message ?? "Läuft"}
         </span>

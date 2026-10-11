@@ -50,6 +50,8 @@ export function AgentApiKeysPanel({
     elevenLabs: "",
     zielAi: "",
     codex: "",
+    claude: "",
+    grok: "",
   });
 
   useEffect(() => {

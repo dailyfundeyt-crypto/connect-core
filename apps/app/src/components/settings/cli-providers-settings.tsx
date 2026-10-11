@@ -1,0 +1,190 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IconLoader2, IconRobot, IconDownload } from "@tabler/icons-react";
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { PcBridgeLocalSection, PcBridgeRelaySection } from "@/components/pc-bridge/pc-bridge-settings";
+import { pcBridgeStatusQuery } from "@/lib/pc-bridge/api";
+import {
+  cliProvidersQuery,
+  grokBotsQuery,
+  importGrokBots,
+  invalidateAgentHub,
+} from "@/lib/agent-hub/api";
+
+/**
+ * Einstellungen › Anbieter-CLIs. Lokal (3101): Status der CLIs + Grok-Import + Handy-Brücke.
+ * Online (Handy/Vercel): die CLIs laufen auf dem PC – dort zeigt die Seite den PC-Status und die
+ * Grok-Bot-Auswahl über die Handy-Brücke.
+ */
+export function CliProvidersSettingsPanel() {
+  const bridge = useQuery(pcBridgeStatusQuery());
+  if (bridge.data?.mode === "relay") {
+    return (
+      <PageSection
+        title="Anbieter-CLIs"
+        description="Codex, Claude und deine Grok Bots laufen auf deinem PC. Das Handy schickt die Nachrichten über die Handy-Brücke dorthin."
+      >
+        <PcBridgeRelaySection status={bridge.data} />
+      </PageSection>
+    );
+  }
+  return <LocalCliProvidersPanel localBridge={bridge.data?.mode === "local" ? bridge.data.worker : null} />;
+}
+
+function LocalCliProvidersPanel({ localBridge }: { localBridge: import("@/lib/pc-bridge/api").PcBridgeLocalWorker | null }) {
+  const queryClient = useQueryClient();
+  const providers = useQuery(cliProvidersQuery());
+  const grok = useQuery(grokBotsQuery());
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const bots = grok.data?.bots ?? [];
+  const selectedIds = useMemo(
+    () => bots.filter((bot) => selected[bot.id] && !bot.alreadyImported).map((bot) => bot.id),
+    [bots, selected],
+  );
+
+  const importMutation = useMutation({
+    mutationFn: () => importGrokBots(selectedIds),
+    onSuccess: async () => {
+      setSelected({});
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["agent-hub", "grok-bots"] }),
+        invalidateAgentHub(queryClient),
+        queryClient.invalidateQueries({ queryKey: ["agents"] }),
+      ]);
+    },
+  });
+
+  const toggle = (id: string, already: boolean) => {
+    if (already) return;
+    setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const selectNew = () => {
+    const next: Record<string, boolean> = {};
+    for (const bot of bots) if (!bot.alreadyImported) next[bot.id] = true;
+    setSelected(next);
+  };
+
+  return (
+    <PageSection
+      title="Anbieter-CLIs"
+      description="Unsichtbare CLIs mit deinem Login: Codex, Claude, Grok-Bot-Sync, Google/Veo, freebuff."
+    >
+      {localBridge ? <PcBridgeLocalSection worker={localBridge} /> : null}
+      <SettingsSectionHeader
+        description="Status der installierten Anbieter. Login bleibt bei der CLI — Connect liest keine Token-Dateien."
+        title="Anbieter"
+      />
+      <PageRows>
+        <div className="flex flex-col gap-2 px-1">
+          {(providers.data?.providers ?? []).map((provider) => (
+            <div className="rounded-xl border border-border px-3 py-2.5" key={provider.kind}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">{provider.label}</p>
+                  <p className="mt-0.5 text-[12px] text-muted-foreground">{provider.detail}</p>
+                </div>
+                <div className="shrink-0 text-right text-[11px] text-muted-foreground">
+                  <div>{provider.installed ? (provider.version ? `v${provider.version}` : "installiert") : "fehlt"}</div>
+                  <div>
+                    {provider.loggedIn === true ? "angemeldet" : provider.loggedIn === false ? "nicht angemeldet" : "—"}
+                  </div>
+                </div>
+              </div>
+              {"installHint" in provider && !provider.installed && typeof (provider as { installHint?: string }).installHint === "string" ? (
+                <p className="mt-1 font-mono text-[11px] text-muted-foreground">{(provider as { installHint: string }).installHint}</p>
+              ) : null}
+            </div>
+          ))}
+          {providers.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <IconLoader2 className="size-4 animate-spin" /> Status wird geladen…
+            </div>
+          ) : null}
+        </div>
+      </PageRows>
+
+      <div className="mt-10">
+        <SettingsSectionHeader
+          description="Holt deine Grok Bots aus der Desktop-App (gbot) und legt sie als Connect-Agenten an. Keine Secrets."
+          title="Grok Bots holen"
+        />
+        <PageRows>
+          <div className="flex flex-wrap gap-2 px-1">
+            <Button disabled={grok.isFetching} onClick={() => void grok.refetch()} type="button" variant="outline">
+              <IconRobot className="size-4" />
+              {grok.isFetching ? "Lade…" : "Grok Bots holen"}
+            </Button>
+            <Button disabled={bots.length === 0} onClick={selectNew} type="button" variant="ghost">
+              Neue auswählen
+            </Button>
+            <Button
+              disabled={selectedIds.length === 0 || importMutation.isPending}
+              onClick={() => importMutation.mutate()}
+              type="button"
+            >
+              <IconDownload className="size-4" />
+              {importMutation.isPending ? "Import…" : `Importieren (${selectedIds.length})`}
+            </Button>
+          </div>
+
+          {grok.data?.status && grok.data.status.loggedIn === false ? (
+            <p className="px-1 text-sm text-amber-700 dark:text-amber-400">
+              {grok.data.status.detail || "Grok-Bot-Desktop-App öffnen und anmelden, dann erneut holen."}
+            </p>
+          ) : null}
+
+          {importMutation.data ? (
+            <p className="px-1 text-sm text-muted-foreground">
+              Neu: {importMutation.data.imported.filter((row) => row.status === "created").length}, übersprungen:{" "}
+              {importMutation.data.imported.filter((row) => row.status === "skipped").length}
+              {importMutation.data.errors.length ? `, Fehler: ${importMutation.data.errors.length}` : ""}
+            </p>
+          ) : null}
+          {importMutation.error ? (
+            <p className="px-1 text-sm text-destructive">
+              {importMutation.error instanceof Error ? importMutation.error.message : "Import fehlgeschlagen"}
+            </p>
+          ) : null}
+
+          <div className="mt-2 max-h-[420px] overflow-auto rounded-xl border border-border">
+            {bots.length === 0 && !grok.isLoading ? (
+              <p className="p-3 text-sm text-muted-foreground">Noch keine Liste — „Grok Bots holen“ tippen.</p>
+            ) : null}
+            {bots.map((bot) => (
+              <label
+                className="flex cursor-pointer items-start gap-3 border-b border-border/60 px-3 py-2 last:border-0 hover:bg-muted/40"
+                key={bot.id}
+              >
+                <input
+                  checked={Boolean(selected[bot.id]) || bot.alreadyImported}
+                  className="mt-1"
+                  disabled={bot.alreadyImported}
+                  onChange={() => toggle(bot.id, bot.alreadyImported)}
+                  type="checkbox"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium">{bot.name}</span>
+                    {bot.alreadyImported ? (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">schon da</span>
+                    ) : null}
+                    {bot.hiddenFromSidebar ? (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">hidden</span>
+                    ) : null}
+                  </div>
+                  {bot.title ? <p className="truncate text-[11px] text-muted-foreground">{bot.title}</p> : null}
+                  {bot.description ? (
+                    <p className="mt-0.5 line-clamp-2 text-[12px] text-muted-foreground">{bot.description}</p>
+                  ) : null}
+                </div>
+              </label>
+            ))}
+          </div>
+        </PageRows>
+      </div>
+    </PageSection>
+  );
+}

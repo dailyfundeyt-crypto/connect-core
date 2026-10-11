@@ -93,7 +93,13 @@ export function DriveBackupPanel() {
       <PageSection
         title="Google-Drive-Sicherung"
       >
-        {loadError ? <p className="mt-3 text-destructive text-sm">{loadError}</p> : null}
+        {loadError ? (
+        <p className="mt-3 text-destructive text-sm">
+          {/HTTP 404|nicht verfügbar/.test(loadError)
+            ? "Die Drive-Sicherung steuert die Connect App auf deinem PC (localhost:3101). In dieser Online-Version ist sie noch nicht verfügbar – deine Daten werden trotzdem über den Abgleich unten gesichert."
+            : loadError}
+        </p>
+      ) : null}
         {message ? (
           <p className={`mt-3 text-sm ${message.tone === "error" ? "text-destructive" : "text-emerald-500"}`} role="status">
             {message.text}
@@ -168,13 +174,13 @@ export function DriveBackupPanel() {
               <ItemDescription>
                 {s?.scheduler === "serverless"
                   ? "In der Web-Version (Vercel) nur ueber Jetzt sichern."
-                  : `Bei Aenderungen hoechstens alle ${s?.settings.minIntervalMinutes ?? 15} Min., sonst alle ${s?.settings.maxAgeHours ?? 24} h. Aufbewahrt: die neuesten ${s?.settings.keep ?? 24} + je Tag eine fuer ${s?.settings.keepDays ?? 30} Tage.`}
+                  : `Bei Aenderungen hoechstens alle ${s?.settings?.minIntervalMinutes ?? 15} Min., sonst alle ${s?.settings?.maxAgeHours ?? 24} h. Aufbewahrt: die neuesten ${s?.settings?.keep ?? 24} + je Tag eine fuer ${s?.settings?.keepDays ?? 30} Tage.`}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <Switch
                 aria-label="Automatisch sichern"
-                checked={s?.settings.enabled ?? true}
+                checked={s?.settings?.enabled ?? true}
                 disabled={!s?.connected || !!busy}
                 onCheckedChange={(checked) => act("settings", async () => void (await saveDriveBackupSettings({ enabled: checked })))}
               />
