@@ -1,6 +1,7 @@
 ﻿import {
   IconChevronRight,
   IconCopy,
+  IconDots,
   IconFolder,
   IconFolderPlus,
   IconNote,
@@ -17,7 +18,15 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { RenameFolderDialog } from "@/components/companies/rename-folder-dialog";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +44,7 @@ import {
   createNoteFolder,
   deleteNote,
   deleteNoteFolder,
+  renameNoteFolder,
   getNotes,
   getOpenNoteId,
   getOpenVaultPath,
@@ -150,6 +160,14 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
     listNoteFolders(companyId),
   );
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  /*
+   * Which folder the rename dialog is editing, or `null` when it is closed.
+   *
+   * The id rather than the folder itself: the tree re-reads from storage on every
+   * change, so a folder captured in state would go stale the moment the dialog was
+   * open and rename the wrong thing.
+   */
+  const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<
     Record<string, boolean>
   >({});
@@ -256,6 +274,27 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
     deleteNote(companyId, note.id);
   };
 
+  /*
+   * Deleting a folder is tidying up, not throwing work away -- `deleteNoteFolder`
+   * sends its notes back to "Allgemein" rather than deleting them, and the dialog
+   * says so by name and count. A folder that held work therefore needs no extra
+   * warning, but it does need to say what will happen to that work, because
+   * "löschen" next to a non-empty folder otherwise reads as deleting the notes.
+   */
+  const removeFolder = (folder: NoteFolder, count: number) => {
+    const body =
+      count > 0
+        ? `Der Ordner „${folder.label}“ wird gelöscht.\n\nDie ${count} ${
+            count === 1 ? "Notiz wandert" : "Notizen wandern"
+          } nach „Allgemein“. Nichts geht verloren.`
+        : `Der Ordner „${folder.label}“ wird gelöscht.`;
+    if (!window.confirm(body)) return;
+    deleteNoteFolder(companyId, folder.id);
+  };
+
+  const rename = (folder: NoteFolder) => setRenameFolderId(folder.id);
+  const renameFolder = noteFolders.find((f) => f.id === renameFolderId);
+
   return (
     <>
       {/*
@@ -310,6 +349,24 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
         }}
         onOpenChange={setFolderDialogOpen}
         open={folderDialogOpen}
+      />
+
+      {/*
+       * Renaming is a dialog rather than an inline field: the row is the trigger, and
+       * turning the row itself into an input would mean the click that opened the
+       * menu also has to land in a text field. `renameNoteFolder` ignores an empty
+       * name, so Abbrechen and an emptied field behave the same way -- nothing is
+       * written.
+       */}
+      <RenameFolderDialog
+        folder={renameFolder ?? null}
+        onOpenChange={(open) => {
+          if (!open) setRenameFolderId(null);
+        }}
+        onRename={(name) => {
+          if (renameFolderId) renameNoteFolder(companyId, renameFolderId, name);
+          setRenameFolderId(null);
+        }}
       />
 
       {/*
@@ -393,6 +450,42 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
                   >
                     <IconPlus className="size-3" stroke={1.75} />
                   </button>
+                  {/*
+                   * Sibling of the row, not a child of it, for the reason the note
+                   * row documents: a button inside the trigger also runs the
+                   * trigger's own handler, so the folder would fold and the menu
+                   * would open underneath it. Here it would fold the folder and
+                   * delete it, which is worse.
+                   */}
+                  <DropdownMenu>
+                    {/*
+                     * Base UI, so no `asChild` and no nested button: the trigger
+                     * renders the button itself and takes the class and the label.
+                     */}
+                    <DropdownMenuTrigger
+                      aria-label={`Ordner ${folder.label} bearbeiten`}
+                      className="flex size-5 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/nf:opacity-100 data-[state=open]:opacity-100"
+                      title={`Ordner ${folder.label} bearbeiten`}
+                    >
+                      <IconDots className="size-3" stroke={1.75} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => rename(folder)}>
+                        Ordner umbenennen
+                      </DropdownMenuItem>
+                      {/*
+                       * Last, and red: it is the only item in the menu that cannot be
+                       * undone from here, so it sits apart from the ones that can.
+                       */}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => removeFolder(folder, inFolder.length)}
+                        variant="destructive"
+                      >
+                        Ordner löschen
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 {isOpen && inFolder.length > 0 ? (
                   <ul className="mt-0.5 flex flex-col gap-0.5 pl-4">
