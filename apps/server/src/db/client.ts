@@ -149,6 +149,9 @@ export function createDatabase(
 
   const client = new SQL({
     ...addressOf(databaseUrl),
+    // Vercel: DATABASE_URL points at the Supabase transaction pooler (6543), which cannot keep
+    // named prepared statements; idle connections are released so frozen instances do not hold them.
+    ...(process.env.CONNECT_SERVERLESS === "1" ? { prepare: false, idleTimeout: 20 } : {}),
     ...(options.max === undefined ? {} : { max: options.max }),
   });
 

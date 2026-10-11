@@ -87,6 +87,7 @@ import { createDatabase } from "./db/client";
 import { intelligenceChannelMappings } from "./db/schema";
 import { brainTools, callBrainTool } from "./brain/tools";
 import { agentHub, agentHubTools, initAgentHub } from "./agent-hub/service";
+import { startPcBridgeWorker } from "./pc-bridge";
 import { setAgentModelResolver } from "./copilot";
 import { createHostAccessBroker } from "./host-access/broker";
 import { hostAccessTools } from "./host-access/tools";
@@ -319,6 +320,8 @@ const bootAuditStore = createAuditStore(database);
 // Agent Hub: per-agent model, MCP servers (stdio + HTTP/SSE) and own Helium browser for built-in Bots.
 initAgentHub({ database, encryptionKey: config.keyEncryptionKey, credentialStore, auditStore: bootAuditStore });
 setAgentModelResolver(async (agentId) => (await agentHub()?.resolveModel(agentId)) ?? null);
+// Handy-Brücke: der PC holt Aufträge vom Handy über eine ausgehende Verbindung ab (pc-bridge.env).
+if (!serverless) startPcBridgeWorker();
 // One store: the gateway writes through it, a route reads it, and the sweep below takes the old ones out.
 const pageFrameStore = createPageFrameStore(database);
 // Housekeeping on a schedule: audit rows when asked for, screenshots always, one timer. See audit-retention.ts.

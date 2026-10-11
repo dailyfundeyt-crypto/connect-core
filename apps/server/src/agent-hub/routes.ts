@@ -1,4 +1,4 @@
-/**
+﻿/**
  * /api/agent-hub: Verbinder (MCP) catalogue, servers, per-agent model / MCP / browser settings.
  *
  * Loopback only, like the Brain routes: these start local processes and hold model keys, so a
@@ -11,11 +11,14 @@ import type { AppVariables } from "../auth/guards";
 import { agentBrowserDirs, publicCatalog, safeSegment } from "./catalog";
 import { listLinks, setLink } from "./db";
 import { errorText } from "./mcp-manager";
+import { cliStatus, createCliModel, isCliKind, startCliLogin } from "./cli-model";
+import { gbotStatus, importGrokBots, listGrokBotsForUi } from "./gbot-sync";
+import { extraCliProviderStatus } from "./cli-extras";
 import { agentHub, DEFAULT_BASE_URLS, HubError, type ModelProvider, UI_KEY_SLOTS, type UiKeySlot } from "./service";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const LOOPBACK_IP = /^(127\.|::1$|::ffff:127\.)/;
-const PROVIDERS: ModelProvider[] = ["default", "openai", "anthropic", "ollama-local", "ollama-cloud", "openai-compatible"];
+const PROVIDERS: ModelProvider[] = ["default", "openai", "anthropic", "ollama-local", "ollama-cloud", "openai-compatible", "codex-cli", "claude-cli"];
 
 function hostnameOf(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -44,7 +47,16 @@ const localOnly: MiddlewareHandler = async (context, next) => {
 type Ctx = { var: AppVariables };
 const isAdmin = (context: Ctx) => (context.var.actor as { role?: string } | undefined)?.role !== "user";
 
-export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables: AppVariables }>) {
+export function createAgentHubRoutes(
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  options?: {
+    createAgent?: (
+      actor: NonNullable<AppVariables["actor"]>,
+      input: { name: string; title: string; roleDescription: string; visibility: "private"; systemPrompt?: string },
+    ) => Promise<{ id: string; name: string }>;
+    listAgents?: (actor: NonNullable<AppVariables["actor"]>) => Promise<{ id: string; name: string }[]>;
+  },
+) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", localOnly);
   routes.use("*", requireUser);
@@ -52,7 +64,7 @@ export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables:
     if (!agentHub()) return context.json({ error: "Verbinder sind auf diesem Server nicht eingerichtet." }, 503);
     // Everyone keeps their own API keys (/key-vault is per person); the rest is admin-only to change.
     if (context.req.method !== "GET" && !isAdmin(context) && !context.req.path.includes("/key-vault")) {
-      return context.json({ error: "Nur Administratoren dürfen Verbinder ändern." }, 403);
+      return context.json({ error: "Nur Administratoren dÃ¼rfen Verbinder Ã¤ndern." }, 403);
     }
     await next();
   });
@@ -134,7 +146,7 @@ export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables:
     const serverId = context.req.param("serverId");
     const definition = await hub().getDefinition(serverId);
     if (!definition) return context.json({ error: "Server nicht gefunden." }, 404);
-    if (definition.ownerAgentId && definition.ownerAgentId !== agentId) return context.json({ error: "Dieser Browser gehört einem anderen Agent." }, 400);
+    if (definition.ownerAgentId && definition.ownerAgentId !== agentId) return context.json({ error: "Dieser Browser gehÃ¶rt einem anderen Agent." }, 400);
     await setLink(hub().deps.database, agentId, serverId, body?.enabled !== false);
     return context.json({ ok: true });
   });
@@ -165,6 +177,15 @@ export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables:
     const settings = await hub().modelSettings(agentId);
     if (!settings) return context.json({ ok: true, text: "Standardmodell von Connect (globale Einstellung)." });
     const started = Date.now();
+    if (settings.provider === "codex-cli" || settings.provider === "claude-cli") {
+      try {
+        const model = createCliModel({ kind: settings.provider === "codex-cli" ? "codex" : "claude", model: settings.model, agentId });
+        const result = await model.doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "Antworte nur mit dem Wort OK." }] }], abortSignal: AbortSignal.timeout(180_000) });
+        return context.json({ ok: true, text: result.content[0]?.text.trim().slice(0, 200) ?? "", ms: Date.now() - started });
+      } catch (error) {
+        return context.json({ ok: false, error: errorText(error) });
+      }
+    }
     try {
       let key: string | null = settings.credentialId ? await hub().readSecret(settings.credentialId) : null;
       if (settings.provider === "anthropic") {
@@ -199,6 +220,54 @@ export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables:
     }
   });
 
+  /** Anbieter-CLIs (Codex, Claude): installiert? angemeldet? Der Login selbst bleibt bei der CLI. */
+  routes.get("/cli-providers", async (context) => {
+    const providers = [
+      ...(await Promise.all([cliStatus("codex"), cliStatus("claude")])),
+      await gbotStatus(),
+      ...(await extraCliProviderStatus()),
+    ];
+    return context.json({ providers });
+  });
+
+  routes.post("/cli-providers/:kind/login", async (context) => {
+    const kind = context.req.param("kind");
+    if (!isCliKind(kind)) return context.json({ error: "Unbekannter Anbieter." }, 400);
+    return context.json(startCliLogin(kind));
+  });
+
+  /** Grok-Bot-Sync: Liste aus Desktop-Sitzung (keine Secrets). */
+  routes.get("/grok-bots", async (context) => {
+    try {
+      return context.json(await listGrokBotsForUi());
+    } catch (error) {
+      return context.json({ error: errorText(error), bots: [], status: await gbotStatus() }, 500);
+    }
+  });
+
+  /** Ausgewählte Grok Bots als Connect-Agenten anlegen (Quelle grok-bot). */
+  routes.post("/grok-bots/import", async (context) => {
+    const actor = context.var.actor;
+    if (!actor) return context.json({ error: "Anmeldung erforderlich." }, 401);
+    if (!options?.createAgent || !options?.listAgents) {
+      return context.json({ error: "Agent-Anlage ist auf diesem Server nicht verfügbar." }, 503);
+    }
+    const body = (await context.req.json().catch(() => null)) as { ids?: unknown } | null;
+    const ids = Array.isArray(body?.ids) ? body!.ids.filter((id): id is string => typeof id === "string") : [];
+    if (ids.length === 0) return context.json({ error: "Bitte mindestens einen Bot auswählen." }, 400);
+    if (ids.length > 80) return context.json({ error: "Maximal 80 Bots auf einmal." }, 400);
+    try {
+      const result = await importGrokBots(
+        ids,
+        (input) => options.createAgent!(actor, input),
+        () => options.listAgents!(actor),
+      );
+      return context.json(result);
+    } catch (error) {
+      return fail(context, error);
+    }
+  });
+
   routes.get("/ollama/models", async (context) => {
     try {
       const response = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(4_000) });
@@ -228,13 +297,13 @@ export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables:
     const agentId = context.req.param("agentId");
     const servers = await hub().listServers();
     const server = servers.find((candidate) => candidate.catalogKey === "browser" && candidate.ownerAgentId === agentId);
-    if (!server) return context.json({ ok: false, error: "Für diesen Agent ist noch kein Browser eingerichtet." });
+    if (!server) return context.json({ ok: false, error: "FÃ¼r diesen Agent ist noch kein Browser eingerichtet." });
     const text = await hub().callTool(agentId, server.id, "browser_navigate", { url: "https://example.com" });
     return context.json({ ok: /Example Domain/i.test(text), text: text.slice(0, 600) });
   });
 
   /*
-   * Key vault for the UI's API keys (Manus, Browser-Use, ElevenLabs, Ziel AI, Codex — global and per
+   * Key vault for the UI's API keys (Manus, Browser-Use, ElevenLabs, Ziel AI, Codex â€” global and per
    * agent), one entry per signed-in person. The browser still calls those vendors itself, so the
    * person gets their own plaintext back (loopback only); at rest it is encrypted in the credentials
    * table under KEY_ENCRYPTION_KEY.
@@ -254,7 +323,7 @@ export function createAgentHubRoutes(requireUser: MiddlewareHandler<{ Variables:
     if (!slot) return context.json({ error: "Unbekannter Key-Speicher." }, 400);
     const body = (await context.req.json().catch(() => null)) as { value?: unknown } | null;
     const value = typeof body?.value === "string" ? body.value : body?.value == null ? null : JSON.stringify(body.value);
-    if (value && value.length > 256_000) return context.json({ error: "Zu groß." }, 413);
+    if (value && value.length > 256_000) return context.json({ error: "Zu groÃŸ." }, 413);
     try {
       const userId = context.var.actor?.id;
       if (!userId) return context.json({ error: "Anmeldung erforderlich." }, 401);

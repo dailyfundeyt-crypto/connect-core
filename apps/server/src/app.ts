@@ -46,6 +46,7 @@ import type { ThreadIdentity } from "./channels/thread-identity";
 import { createThreadRoutes } from "./channels/thread-routes";
 import { createThreadReader } from "./channels/thread-status";
 import { createCliBridgeRoutes } from "./cli-bridge/routes";
+import { installLocalPcBridgeRoutes, installPcBridgeRoutes, pcQuery } from "./pc-bridge";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
@@ -57,7 +58,9 @@ import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
 import { configuredAuthProviders, type DeploymentConfig } from "./config";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
+import { eq } from "drizzle-orm";
 import type { Database } from "./db/client";
+import { connectWorkspaceKv } from "./db/schema";
 import { withoutStatement } from "./db/query-failure";
 import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import type { HostAccessBroker } from "./host-access/broker";
@@ -1199,16 +1202,87 @@ export function createApp(
   // Settings › Brain: read-only view of the local Brain folder (loopback only, off when serverless).
   app.route("/api/brain", createBrainRoutes(requireUser));
 
-  // Connect Notch voice calls: spoken turns relayed to the open Connect window, plus same-origin
-  // proxies to the local speech services (whisper-local STT, Kokoro TTS). Loopback only.
+  // Connect Notch voice calls + system-wide dispatch menu. Loopback only. Notch auth:
+  // X-Connect-Notch: 1 + CONNECT_SINGLE_USER_ID (see bridge-routes).
   app.route(
     "/api/voice-bridge",
     createVoiceBridgeRoutes({
       requireUser,
       ...(channelStore ? { channelStore } : {}),
+      ...(agentProfileStore
+        ? {
+            listAgents: async (actor) => {
+              const list = await agentProfileStore.list(
+                { id: actor.id, role: actor.role },
+                false,
+              );
+              return list
+                .filter((a) => !(a as { hidden?: boolean }).hidden)
+                .map((a) => ({ id: a.id, name: a.name }));
+            },
+          }
+        : {}),
+      ...(attachmentDatabase
+        ? {
+            listCompanies: async (actor) => {
+              const key = `u:${actor.id}:connect.companies.custom`;
+              const rows = await attachmentDatabase
+                .select()
+                .from(connectWorkspaceKv)
+                .where(eq(connectWorkspaceKv.key, key));
+              let raw: unknown = rows[0]?.value;
+              // Workspace values are sometimes stored as a JSON string of the array.
+              if (typeof raw === "string") {
+                try { raw = JSON.parse(raw); } catch { raw = []; }
+              }
+              const arr = Array.isArray(raw)
+                ? raw
+                : raw && typeof raw === "object" && Array.isArray((raw as { companies?: unknown }).companies)
+                  ? (raw as { companies: unknown[] }).companies
+                  : [];
+              const out: { id: string; name: string; agentIds?: string[] }[] = [];
+              for (const item of arr) {
+                if (!item || typeof item !== "object") continue;
+                const c = item as { id?: unknown; name?: unknown; agentIds?: unknown };
+                const id = typeof c.id === "string" ? c.id : "";
+                const name = typeof c.name === "string" ? c.name : id;
+                if (!id) continue;
+                const agentIds = Array.isArray(c.agentIds)
+                  ? c.agentIds.filter((x): x is string => typeof x === "string")
+                  : undefined;
+                out.push(agentIds ? { id, name, agentIds } : { id, name });
+              }
+              return out;
+            },
+          }
+        : {}),
     }).app,
   );
-  app.route("/api/agent-hub", createAgentHubRoutes(requireUser));
+  app.route(
+    "/api/agent-hub",
+    createAgentHubRoutes(requireUser, {
+      ...(agentProfileStore
+        ? {
+            createAgent: async (actor, input) => {
+              const agentActor = { id: actor.id, role: actor.role === "admin" ? ("admin" as const) : ("user" as const) };
+              const agent = await agentProfileStore.create(agentActor, {
+                name: input.name,
+                title: input.title,
+                roleDescription: input.roleDescription,
+                visibility: input.visibility,
+                ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
+              });
+              return { id: agent.id, name: agent.name };
+            },
+            listAgents: async (actor) => {
+              const agentActor = { id: actor.id, role: actor.role === "admin" ? ("admin" as const) : ("user" as const) };
+              const list = await agentProfileStore.list(agentActor, false);
+              return list.map((agent) => ({ id: agent.id, name: agent.name }));
+            },
+          }
+        : {}),
+    }),
+  );
 
   app.route(
     "/api/cli-bridge",
@@ -1219,6 +1293,13 @@ export function createApp(
         : {}),
     }),
   );
+
+  // Handy-Brücke: online (Vercel) Status + Agent→PC-Verknüpfung, lokal nur der Worker-Status.
+  if (process.env.CONNECT_SERVERLESS === "1") {
+    if (attachmentDatabase) installPcBridgeRoutes(app as never, requireUser as never, pcQuery(attachmentDatabase));
+  } else {
+    installLocalPcBridgeRoutes(app as never, requireUser as never);
+  }
 
   // Settings › Sicherung: verschluesselte Google-Drive-Sicherung (drive.file), Zeitplan + Wiederherstellen.
   if (attachmentDatabase && config.keyEncryptionKey) {
