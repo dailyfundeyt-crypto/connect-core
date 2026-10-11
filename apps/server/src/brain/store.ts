@@ -6,7 +6,13 @@
  * page. The only write is `agents.json` (per-agent scopes) plus one line in `log.md`.
  */
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { readdir, readFile, realpath, rename, stat, writeFile, appendFile, mkdir } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -185,9 +191,21 @@ export async function listVaultMarkdown(root: string): Promise<BrainFile[]> {
    * not carry a narrowing into one, so the inner `path.relative` still saw `string | null`. Naming
    * the narrowed value once here says it in the place the compiler can use.
    */
-  const vault: string = resolvedVault;
-  const realBrain = await realpath(root).catch(() => root);
-  const out: BrainFile[] = [];
+const vault: string = resolvedVault;
+const realBrain = await realpath(root).catch(() => root);
+const realVault = await realpath(vault).catch(() => vault);
+  /*
+   * True only when the Brain is a folder of its own inside the vault.
+   *
+   * Decided once, here, because the walk below needs it for every directory it
+   * meets and the answer cannot change while it runs. Comparing the two resolved
+   * paths rather than the configured ones: the Brain usually arrives through
+   * `CONNECT_BRAIN_PATH` and the vault through `CONNECT_BRAIN_VAULT_PATH`, and
+   * those two strings differ in case or in a trailing separator far more often
+   * than anyone intends.
+   */
+const brainIsSeparate = realBrain !== realVault;
+const out: BrainFile[] = [];
   async function walk(dir: string, depth: number) {
     if (depth > 8 || out.length >= MAX_FILES) return;
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -196,7 +214,24 @@ export async function listVaultMarkdown(root: string): Promise<BrainFile[]> {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         const real = await realpath(full).catch(() => full);
-        if (real === realBrain || isInside(realBrain, real)) continue;
+        /*
+         * Skip the Brain's own subtree — but only when the Brain is genuinely a
+         * folder *inside* the vault.
+         *
+         * The old guard read `isInside(realBrain, real)` alone, which skips
+         * every folder at or below the Brain. That is right for the usual layout —
+         * `Plannung/Brain` beside `Plannung/Projekte` — and wrong the moment the
+         * Brain *is* the vault, which is how a fresh install is configured:
+         * `CONNECT_BRAIN_PATH` and `CONNECT_BRAIN_VAULT_PATH` both point at
+         * `Plannung`. Then every folder is "inside the Brain", the walk skips
+         * them all, and the sidebar shows the 7 root files and nothing else while
+         * 2 000 notes sit unreadable in the subfolders.
+         *
+         * So the guard is: exclude the Brain's subtree only if there *is* a
+         * separate Brain folder to exclude. When brain and vault are the same
+         * directory there is nothing to hide, and skipping nothing is correct.
+         */
+        if (brainIsSeparate && (real === realBrain || isInside(realBrain, real))) continue;
         await walk(full, depth + 1);
       } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
         const info = await stat(full).catch(() => null);
@@ -561,4 +596,129 @@ export async function accessForBot(root: string, botId: string) {
   const file = await readAgents(root);
   const entry = file.agents.find((candidate) => candidate.connectAgentId === botId);
   return entry ? { entry, projects: file.projects } : undefined;
+}
+
+/* ------------------------------------------------------------------ *
+ * Where the Brain lives
+ *
+ * Choosing the folder is a setting, and a setting that only lives in memory is
+ * gone the next time the app restarts. The launcher writes `connect.env` next to
+ * the database on first start, including the generated secrets, so the file has
+ * to be edited in place rather than rebuilt: rewriting it would drop
+ * `KEY_ENCRYPTION_KEY` and lock every stored API key in the app.
+ *
+ * The runtime needs no restart for the choice to take effect — `configuredRoot`
+ * is read per request through `brainRootFor` below, which prefers the saved value
+ * over the environment.
+ * ------------------------------------------------------------------ */
+
+export type BrainLocation = { brainPath: string | null; vaultPath: string | null; source: "saved" | "env" | "default" };
+
+/** Where `connect.env` lives: the same data folder the launcher uses. */
+function envFilePath(): string {
+  const local = process.env.LOCALAPPDATA;
+  const home = os.homedir();
+  const base =
+    local && local.trim().length > 0
+      ? path.join(local, "ConnectApp", "data")
+      : path.join(home, ".connect", "data");
+  return path.join(base, "connect.env");
+}
+
+const BRAIN_KEYS = ["CONNECT_BRAIN_PATH", "CONNECT_BRAIN_VAULT_PATH"] as const;
+
+/**
+ * The Brain path in force right now.
+ *
+ * `configuredRoot` is what the server was started with. A folder chosen in the
+ * settings screen is written to `connect.env` and read back here, so the choice
+ * survives a restart without one — the caller passes the same value back in and
+ * gets the folder they picked.
+ */
+export function brainRootFor(configured: string | null, env: NodeJS.ProcessEnv = process.env): string | null {
+  const saved = readEnvKeys()[0];
+  if (saved) return saved;
+  return brainRootFromEnv(env);
+}
+
+/** The vault in force: the saved one, else the env, else the folder above the Brain. */
+export function vaultPathFor(brainRoot: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const saved = readEnvKeys()[1];
+  if (saved) return path.resolve(saved);
+  return vaultRootFor(brainRoot, env);
+}
+
+/** Reads the two Brain keys without caring about anything else in the file. */
+function readEnvKeys(): [string | null, string | null] {
+  let raw: string;
+  try {
+    raw = readFileSync(envFilePath(), "utf8");
+  } catch {
+    return [null, null];
+  }
+  const found: Record<string, string> = {};
+  for (const line of raw.split(/\r?\n/)) {
+    const match = /^\s*(CONNECT_BRAIN_PATH|CONNECT_BRAIN_VAULT_PATH)\s*=\s*(.*)$/.exec(line);
+    if (match) found[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
+  }
+  return [found.CONNECT_BRAIN_PATH ?? null, found.CONNECT_BRAIN_VAULT_PATH ?? null];
+}
+
+/** What the settings screen shows: the folder in force and where the value came from. */
+export function brainLocation(configured: string | null): BrainLocation {
+  const [savedBrain, savedVault] = readEnvKeys();
+  const brainPath = savedBrain ?? brainRootFromEnv();
+  return {
+    brainPath,
+    vaultPath: savedVault ?? (brainPath ? vaultRootFor(brainPath) : null),
+    source: savedBrain ? "saved" : process.env.CONNECT_BRAIN_PATH ? "env" : "default",
+  };
+}
+
+/**
+ * Saves the folder, replacing only the two Brain lines.
+ *
+ * Every other line is carried over byte for byte, comments included: the file
+ * holds the database password and the encryption key, and a rewrite that dropped
+ * either would make the app forget every stored credential. Writing to a
+ * temporary file and renaming keeps a crash halfway through from truncating it.
+ */
+export function saveBrainLocation(brainPath: string, vaultPath: string | null): BrainLocation {
+  const brain = path.resolve(brainPath.trim());
+  if (!existsSync(brain)) throw new BrainPathError("Ordner nicht gefunden: " + brain);
+  if (!statSync(brain).isDirectory()) throw new BrainPathError("Das ist kein Ordner: " + brain);
+
+  const file = envFilePath();
+  let raw = "";
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    raw = "";
+  }
+
+  const lines = raw.length > 0 ? raw.split(/\r?\n/) : [];
+  const wanted: Record<string, string> = { CONNECT_BRAIN_PATH: brain };
+  if (vaultPath && vaultPath.trim().length > 0) {
+    const vault = path.resolve(vaultPath.trim());
+    if (!existsSync(vault)) throw new BrainPathError("Vault-Ordner nicht gefunden: " + vault);
+    wanted.CONNECT_BRAIN_VAULT_PATH = vault;
+  }
+
+  const kept = lines.filter((line) => !BRAIN_KEYS.some((key) => new RegExp("^\\s*" + key + "\\s*=").test(line)));
+  while (kept.length > 0 && kept[kept.length - 1].trim().length === 0) kept.pop();
+
+  const additions = Object.entries(wanted).map(([key, value]) => `${key}=${value}`);
+  const next = [...kept, ...additions, ""].join("\r\n");
+
+  // Same folder, temporary name, then rename over the original: a reader either
+  // sees the old file or the new one, never a half-written mix.
+  const temp = `${file}.tmp`;
+  writeFileSync(temp, next, "utf8");
+  renameSync(temp, file);
+
+  // Read back through the environment so the running process sees it too.
+  process.env.CONNECT_BRAIN_PATH = brain;
+  if (wanted.CONNECT_BRAIN_VAULT_PATH) process.env.CONNECT_BRAIN_VAULT_PATH = wanted.CONNECT_BRAIN_VAULT_PATH;
+
+  return { brainPath: brain, vaultPath: wanted.CONNECT_BRAIN_VAULT_PATH ?? null, source: "saved" };
 }

@@ -5,6 +5,8 @@ import { backlinksFor, buildGraph, referencedImage } from "./graph";
 import {
   BRAIN_AREAS,
   BrainPathError,
+  brainLocation,
+  brainRootFor,
   brainRootFromEnv,
   gitHead,
   isValidSlug,
@@ -16,6 +18,7 @@ import {
   readMarkdown,
   resolveBrainRoot,
   safeMarkdownPath,
+  saveBrainLocation,
   saveAgentScopes,
   searchMarkdown,
   vaultRootFor,
@@ -71,8 +74,16 @@ export function createBrainRoutes(
   app.use("*", requireUser);
   app.use("*", localOnly);
 
-  const root = () => resolveBrainRoot(configuredRoot);
-  const unavailable = (reason: string) => ({ available: false as const, reason });
+/*
+ * The Brain folder *right now*.
+ *
+ * Read per request instead of captured once, so a folder chosen in the settings
+ * screen takes effect without restarting the backend: `brainRootFor` prefers the
+ * saved value from `connect.env` and falls back to the value the server was
+ * started with.
+ */
+const root = () => resolveBrainRoot(brainRootFor(configuredRoot));
+const unavailable = (reason: string) => ({ available: false as const, reason });
 
   app.get("/status", async (context) => {
     const brain = await root();
@@ -86,6 +97,45 @@ export function createBrainRoutes(
       vaultFiles: all.length - files.length,
       head: await gitHead(brain.root),
     });
+  });
+
+  app.get("/location", (context) => context.json(brainLocation(configuredRoot)));
+
+  /**
+   * Points the Brain at a different folder.
+   *
+   * Writes the two Brain lines into `connect.env` and leaves every other line
+   * alone — that file also holds the database password and the key encryption
+   * key, so a full rewrite would lock the user out of their stored credentials.
+   */
+  app.put("/location", async (context) => {
+    if (!(context.req.header("content-type") ?? "").includes("application/json")) {
+      return context.json({ error: "JSON erwartet." }, 415);
+    }
+    const body = (await context.req.json().catch(() => null)) as
+      | { path?: unknown; vaultPath?: unknown }
+      | null;
+    if (!body || typeof body.path !== "string" || !body.path.trim()) {
+      return context.json({ error: "Pfad fehlt." }, 400);
+    }
+    const vaultPath = typeof body.vaultPath === "string" ? body.vaultPath : null;
+    try {
+      const saved = saveBrainLocation(body.path, vaultPath);
+      /*
+       * The saved folder is read straight back rather than answered from the
+       * request, so a path that resolved to something else than was asked for —
+       * a symlink, a short name — shows up here instead of two requests later.
+       */
+      const brain = await resolveBrainRoot(brainRootFor(configuredRoot));
+      return context.json({
+        available: brain.available,
+        ...saved,
+        files: brain.available ? (await listMarkdown(brain.root)).length : 0,
+      });
+    } catch (error) {
+      if (error instanceof BrainPathError) return context.json({ error: error.message }, 400);
+      throw error;
+    }
   });
 
   app.get("/tree", async (context) => {
