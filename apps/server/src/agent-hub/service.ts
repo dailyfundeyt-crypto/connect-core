@@ -27,8 +27,9 @@ import {
   writeServerState,
 } from "./db";
 import { errorText, type ListedTool, McpManager, type ServerStatus } from "./mcp-manager";
+import { createCliModel } from "./cli-model";
 
-export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible";
+export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible" | "codex-cli" | "claude-cli";
 
 export type AgentModelSettings = {
   provider: ModelProvider;
@@ -326,6 +327,11 @@ class AgentHub {
     }
     const baseURL = settings.baseUrl || DEFAULT_BASE_URLS[settings.provider];
     switch (settings.provider) {
+      // Anbieter-CLI mit dem eigenen Konto-Login (unsichtbar im Hintergrund, kein API-Key).
+      case "codex-cli":
+        return { model: createCliModel({ kind: "codex", model: settings.model, agentId }), apiKey: "cli-login", label };
+      case "claude-cli":
+        return { model: createCliModel({ kind: "claude", model: settings.model, agentId }), apiKey: "cli-login", label };
       case "ollama-local":
         return { model: await openAiChatModel(baseURL ?? "", key || "ollama", settings.model, "ollama"), apiKey: key || "ollama", label };
       case "ollama-cloud":
@@ -429,7 +435,19 @@ function toolName(alias: string, tool: string): string {
 }
 
 async function openAiChatModel(baseURL: string, apiKey: string, model: string, name: string): Promise<unknown> {
-  const { createOpenAI } = (await import("@ai-sdk/openai")) as {
+  /*
+   * SPECIFIED AS A STRING VARIABLE, and that is the whole point rather than a way round the checker.
+   *
+   * This package is not a dependency of the server: it belongs to `code-flow-flux` and
+   * `agent-mastra`, and a deployment that dials an OpenAI-compatible endpoint through this path
+   * installs it there. A literal `import("@ai-sdk/openai")` is resolved at compile time and fails the
+   * build for a package most deployments never need; holding the specifier in a variable leaves it a
+   * runtime lookup, so the import resolves only when this path is actually taken. `@ts-ignore` would
+   * say the same thing and additionally hide every future error on this line, and this file has
+   * none to hide — the shape below is the one this call uses and it is checked at the point of use.
+   */
+  const specifier = "@ai-sdk/openai";
+  const { createOpenAI } = (await import(/* @vite-ignore */ specifier)) as {
     createOpenAI: (options: { baseURL: string; apiKey: string; name?: string }) => { chat: (id: string) => unknown };
   };
   return createOpenAI({ baseURL, apiKey, name }).chat(model);

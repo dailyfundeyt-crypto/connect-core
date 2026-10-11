@@ -1,5 +1,5 @@
 {
-  "extends": "../tsconfig.base.json",
+  "extends": "../../tsconfig.base.json",
   // `scripts` too: the migration runner and the culler entrypoint ship in the image, so they are
   // product code that happens to live outside `src`.
   //

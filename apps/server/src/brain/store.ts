@@ -175,8 +175,17 @@ export async function listMarkdown(root: string): Promise<BrainFile[]> {
 
 /** Every `.md` of the vault outside the Brain, as `Vault/<rel>`. Dot folders and `.bak` copies are skipped. */
 export async function listVaultMarkdown(root: string): Promise<BrainFile[]> {
-  const vault = vaultRootFor(root);
-  if (!vault || !existsSync(vault)) return [];
+  const resolvedVault = vaultRootFor(root);
+  if (!resolvedVault || !existsSync(resolvedVault)) return [];
+  /*
+   * A separate name rather than the `vault` above, and the reason is the checker.
+   *
+   * `vault` is `string | null` because `vaultRootFor` can say "there is no vault", and the guard
+   * above narrows it — but only for code in the same scope. `walk` is a closure, and TypeScript does
+   * not carry a narrowing into one, so the inner `path.relative` still saw `string | null`. Naming
+   * the narrowed value once here says it in the place the compiler can use.
+   */
+  const vault: string = resolvedVault;
   const realBrain = await realpath(root).catch(() => root);
   const out: BrainFile[] = [];
   async function walk(dir: string, depth: number) {
@@ -192,7 +201,15 @@ export async function listVaultMarkdown(root: string): Promise<BrainFile[]> {
       } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
         const info = await stat(full).catch(() => null);
         if (!info) continue;
-        out.push({ path: VAULT_PREFIX + sep(path.relative(vault, full)), size: info.size, mtime: info.mtime.toISOString() });
+        /*
+         * `path.relative` returns null when the two paths are on different Windows volumes, which is
+         * the only way `full` — which came from reading `vault` — can be unreachable from it. A walk
+         * cannot produce that, so this is the type being honest rather than a case worth reporting;
+         * the file is skipped rather than given a path that would not resolve on the next read.
+         */
+        const relative = path.relative(vault, full);
+        if (relative === null) continue;
+        out.push({ path: VAULT_PREFIX + sep(relative), size: info.size, mtime: info.mtime.toISOString() });
         if (out.length >= MAX_FILES) return;
       }
     }
