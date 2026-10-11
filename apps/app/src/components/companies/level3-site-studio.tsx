@@ -1,15 +1,26 @@
 import {
   IconBrandChrome,
   IconBrandGithub,
+  IconFileText,
   IconLoader2,
   IconPencil,
   IconStarFilled,
 } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { BrainNoteReader } from "@/components/brain/brain-note-reader";
+import { NotesPanel } from "@/components/companies/notes-panel";
+import { brainTreeQueryOptions } from "@/lib/brain/queries";
+import {
+  getOpenVaultPath,
+  setOpenVaultPath,
+  subscribeNotes,
+} from "@/lib/companies/notes";
 import {
   getConnection,
   getLevel3Browser,
+  labFolderTree,
   resolveLabApp,
   resolveTabUrl,
   setLabEngine,
@@ -103,7 +114,7 @@ export function Level3SiteStudio({
             url={productUrl}
           />
         ) : (
-          <HeliumTabsPane companyName={companyName} />
+          <NotesOrVaultPane companyId={companyId} />
         )}
       </div>
     );
@@ -118,7 +129,7 @@ export function Level3SiteStudio({
           url={url}
         />
       ) : (
-        <HeliumTabsPane companyName={companyName} />
+        <NotesOrVaultPane companyId={companyId} />
       )}
     </div>
   );
@@ -271,14 +282,89 @@ function ConnectChromePane({
 
 /**
  * Helium / normal browser: Lab apps open as new Helium tabs straight from the sidebar
- * (`openInHeliumTab`). There is no in-app preview or iframe — this pane stays calm and unchanged.
+ * (`openInHeliumTab`). There is no in-app preview or iframe — this pane holds the work log.
  */
-function HeliumTabsPane({ companyName }: { companyName: string }) {
+/*
+ * Which vault file the reader is showing, or `null` for the notes editor.
+ *
+ * The sidebar writes this when a file in the Plannung tree is clicked; this tree
+ * only reads it. Keeping the two apart is what lets the sidebar and the panel
+ * stay in step without either one importing the other.
+ */
+function useOpenVaultPath(companyId: string) {
+  const [path, setPath] = useState<string | null>(() =>
+    getOpenVaultPath(companyId),
+  );
+  useEffect(() => {
+    const sync = () => setPath(getOpenVaultPath(companyId));
+    sync();
+    return subscribeNotes(sync);
+  }, [companyId]);
+  return path;
+}
+
+/**
+ * The notes pane, or the Brain reader when a vault file is open.
+ *
+ * One pane rather than two side by side: a vault file and the notes editor are the
+ * same request from the person using it — "show me that note" — and splitting the
+ * pane would mean choosing which of the two things they just asked for to hide.
+ */
+function NotesOrVaultPane({
+  companyId,
+}: {
+  companyId: string;
+}) {
+  const folders = useMemo(() => {
+    const out: { id: string; label: string }[] = [];
+    const walk = (nodes: ReturnType<typeof labFolderTree>["roots"]) => {
+      for (const node of nodes) {
+        out.push({ id: node.id, label: node.label });
+        walk(node.children);
+      }
+    };
+    walk(labFolderTree(getLevel3Browser(companyId)).roots);
+    return out;
+  }, [companyId]);
+
+  const vaultPath = useOpenVaultPath(companyId);
+  const tree = useQuery(brainTreeQueryOptions());
+  const paths = useMemo(
+    () => (tree.data?.available ? tree.data.files.map((f) => f.path) : []),
+    [tree.data],
+  );
+
+  if (!vaultPath) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <NotesPanel companyId={companyId} folders={folders} />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-[#f5f5f7] px-6 text-center">
-      <p className="max-w-md text-[12px] leading-relaxed text-neutral-400">
-        {companyName} · Apps links öffnen als neuer Helium-Tab.
-      </p>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
+        <IconFileText className="size-3.5 shrink-0" stroke={1.75} />
+        <span className="truncate font-mono" title={vaultPath}>
+          {vaultPath.replace(/^Vault\//, "")}
+        </span>
+        <Button
+          className="ml-auto"
+          onClick={() => setOpenVaultPath(companyId, null)}
+          size="xs"
+          variant="ghost"
+        >
+          Zurück zu den Notizen
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
+        <BrainNoteReader
+          files={paths}
+          onOpen={(next) => setOpenVaultPath(companyId, next)}
+          path={vaultPath}
+        />
+      </div>
     </div>
   );
 }

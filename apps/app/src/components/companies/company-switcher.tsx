@@ -34,29 +34,15 @@ function writeActiveId(id: string) {
   window.dispatchEvent(new Event("connect-active-company"));
 }
 
-/*
- * Brand mark in the rail (helium-companylogo): shows the company the user
- * actually picked. "Home" (or no stored pick) shows the Connect logo again.
- * The Home flag is a UI-only key, so it never changes which company the rest
- * of the app works in.
+/**
+ * Brand mark in the rail (helium-companylogo): the brand mark always reflects the company the
+ * user actually picked. There is no "Home" brand state any more — the Home menu entry that set
+ * it was removed, and with no way to set the flag, the read path reduces to a stored active id.
  */
-const BRAND_HOME_KEY = "connect.companySwitcher.home";
-const BRAND_EVENT = "connect-company-brand";
-
 function readBrandCompanyId(companies: ConnectCompany[]): string | null {
   if (typeof window === "undefined") return null;
-  if (window.localStorage.getItem(BRAND_HOME_KEY) === "1") return null;
   const stored = window.localStorage.getItem(ACTIVE_KEY);
   return stored && companies.some((c) => c.id === stored) ? stored : null;
-}
-
-function setBrandHome(home: boolean) {
-  if (typeof window === "undefined") return;
-  const current = window.localStorage.getItem(BRAND_HOME_KEY) === "1";
-  if (current === home) return;
-  if (home) window.localStorage.setItem(BRAND_HOME_KEY, "1");
-  else window.localStorage.removeItem(BRAND_HOME_KEY);
-  window.dispatchEvent(new Event(BRAND_EVENT));
 }
 
 const DEFAULT_ICON_ATTR = "data-connect-default-href";
@@ -101,20 +87,14 @@ export function CompanySwitcher() {
     const sync = () => setBrandId(readBrandCompanyId(listCompanies()));
     sync();
     const onStorage = (event: StorageEvent) => {
-      if (
-        event.key === null ||
-        event.key === ACTIVE_KEY ||
-        event.key === BRAND_HOME_KEY
-      ) {
+      if (event.key === null || event.key === ACTIVE_KEY) {
         sync();
       }
     };
-    window.addEventListener(BRAND_EVENT, sync);
     window.addEventListener("connect-active-company", sync);
     window.addEventListener("storage", onStorage);
     const off = subscribeCompanies(sync);
     return () => {
-      window.removeEventListener(BRAND_EVENT, sync);
       window.removeEventListener("connect-active-company", sync);
       window.removeEventListener("storage", onStorage);
       off();
@@ -133,7 +113,6 @@ export function CompanySwitcher() {
 
   useEffect(() => {
     if (params.companyId && companies.some((c) => c.id === params.companyId)) {
-      setBrandHome(false);
       writeActiveId(params.companyId);
       setActiveId(params.companyId);
     }
@@ -159,7 +138,6 @@ export function CompanySwitcher() {
   };
 
   const select = (company: ConnectCompany) => {
-    setBrandHome(false);
     writeActiveId(company.id);
     setActiveId(company.id);
     const level = getActiveLevel();
@@ -236,16 +214,6 @@ export function CompanySwitcher() {
         >
           <IconSettings className="size-4" />
           Manage companies
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            setBrandHome(true);
-            closeThen(() => {
-              void navigate({ to: "/" });
-            });
-          }}
-        >
-          Home
         </DropdownMenuItem>
       </DropdownMenuGroup>
     </DropdownMenuContent>

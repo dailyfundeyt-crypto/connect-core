@@ -8,6 +8,7 @@ import {
   IconFolderPlus,
   IconHammer,
   IconLayoutColumns,
+  IconNote,
   IconPencil,
   IconNews,
   IconPlus,
@@ -67,6 +68,8 @@ import {
 } from "@/lib/companies/level3-tools";
 import { openInHeliumTab, openSplitInHelium } from "@/lib/ui/open-window";
 import { NotesSidebarSection } from "@/components/companies/notes-sidebar-section";
+import { NewFolderDialog } from "@/components/companies/notes-sidebar-section";
+import { createNote, createNoteFolder, setOpenNoteId } from "@/lib/companies/notes";
 import { BookmarkTransfer } from "@/components/companies/lab-bookmark-transfer";
 import {
   isDesktopApp,
@@ -215,6 +218,18 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
     const name = window.prompt("Name der Gruppe?");
     if (!name?.trim()) return;
     setState(createTabGroup(companyId, name.trim()));
+  };
+
+  /*
+   * The note actions live in this component, not in `NotesSidebarSection`.
+   *
+   * "Neue Notiz" and "Neuer Notiz-Ordner" sit in the rail's single action row
+   * next to "App hinzufügen" and "Neue Gruppe", so the handlers have to be here
+   * too. The section only draws the list.
+   */
+  const [noteFolderDialogOpen, setNoteFolderDialogOpen] = useState(false);
+  const createNoteAtRoot = () => {
+    setOpenNoteId(companyId, createNote(companyId, null).id);
   };
 
   return (
@@ -429,36 +444,43 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
        * from. They are primary actions for the rail itself, so they belong next to
        * the apps they act on rather than below a list that grows without bound.
        */}
-      <div className="flex flex-col gap-0.5">
-        <button
-          className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-          onClick={() => setAdding(true)}
-          type="button"
-        >
+      <div className="flex flex-wrap items-center gap-0.5 px-0.5">
+        <RailAction label="App hinzufügen" onClick={() => setAdding(true)}>
           <IconPlus className="size-3.5" stroke={1.75} />
-          App hinzufügen
-        </button>
-        <button
-          className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-          onClick={createFolder}
-          type="button"
+        </RailAction>
+        <RailAction label="Neue Gruppe" onClick={() => createFolder()}>
+          <IconFolderPlus className="size-3.5" stroke={1.75} />
+        </RailAction>
+        <RailAction label="Neue Notiz" onClick={() => createNoteAtRoot()}>
+          <IconNote className="size-3.5" stroke={1.75} />
+        </RailAction>
+        <RailAction
+          label="Neuer Notiz-Ordner"
+          onClick={() => setNoteFolderDialogOpen(true)}
         >
           <IconFolderPlus className="size-3.5" stroke={1.75} />
-          Neue Gruppe
-        </button>
+        </RailAction>
         {/*
-           * The bookmark transfer sits with the other rail actions rather than on
-           * its own: it moves apps between this browser and the desktop one, so it
-           * belongs with "App hinzufügen" and "Neue Gruppe" — the three are the same
-           * kind of thing, and splitting them across two rows made the rail read as
-           * two unrelated lists.
-           */}
-          <BookmarkTransfer
-            companyId={companyId}
-            onChange={setState}
-            state={state}
-          />
-        </div>
+         * The bookmark transfer sits with the other rail actions rather than on
+         * its own: it moves apps between this browser and the desktop one, so it
+         * belongs with "App hinzufügen" and "Neue Gruppe" — the three are the same
+         * kind of thing, and splitting them across two rows made the rail read as
+         * two unrelated lists.
+         */}
+        <BookmarkTransfer
+          companyId={companyId}
+          onChange={setState}
+          state={state}
+        />
+        <NewFolderDialog
+          onCreate={(name) => {
+            createNoteFolder(companyId, name);
+            setNoteFolderDialogOpen(false);
+          }}
+          onOpenChange={setNoteFolderDialogOpen}
+          open={noteFolderDialogOpen}
+        />
+      </div>
 
       {/*
        * The notes, as a section of their own.

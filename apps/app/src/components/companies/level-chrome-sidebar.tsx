@@ -34,7 +34,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -42,7 +41,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { signOutMutationOptions } from "@/lib/auth/mutations";
+import { goToSignInAfterSignOut, signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   getLocalProfile,
@@ -193,30 +192,6 @@ export function LevelChromeSidebar(
         {level === 3 && companyId ? (
           <div className="flex min-h-0 flex-1 flex-col gap-2 group-data-[collapsible=icon]:hidden">
             <LabToolsNav companyId={companyId} />
-            <div className="mt-2 border-t border-sidebar-border/40 pt-2">
-              <div className="flex items-center justify-between px-2 mb-1">
-                <SidebarGroupLabel className="h-6 px-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
-                  Agenten
-                </SidebarGroupLabel>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const { isDesktopApp, navigateDesktopBrowser } = await import(
-                      "@/lib/desktop-bridge"
-                    );
-                    if (isDesktopApp()) {
-                      navigateDesktopBrowser("http://localhost:3010/agents");
-                    } else {
-                      void navigate({ to: "/agents" });
-                    }
-                  }}
-                  className="text-[11px] font-medium text-sky-600 hover:text-sky-700 dark:text-sky-400 hover:underline cursor-pointer"
-                >
-                  Übersicht ↗
-                </button>
-              </div>
-              <CompanyAgentsNav searching={false} />
-            </div>
           </div>
         ) : null}
         {level === 3 ? (
@@ -360,13 +335,18 @@ export function LevelChromeSidebar(
                 <DropdownMenuItem
                   disabled={signOut.isPending}
                   onClick={async () => {
-                    await signOut.mutateAsync();
-                    await navigate({ to: "/sign" });
+                    try {
+                      await signOut.mutateAsync();
+                    } catch {
+                      window.alert("Abmelden fehlgeschlagen. Bitte erneut versuchen.");
+                      return;
+                    }
+                    goToSignInAfterSignOut();
                   }}
                   variant="destructive"
                 >
                   <IconLogout />
-                  Log out
+                  Abmelden
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

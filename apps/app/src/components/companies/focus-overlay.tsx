@@ -23,7 +23,7 @@ import {
 import { useStartChannel } from "@/lib/channels/start";
 import { type CompanyLevel, setActiveLevel } from "@/lib/companies/level";
 import { notifyDesktopLevel } from "@/lib/desktop-bridge";
-import { getCompany } from "@/lib/companies/store";
+import { addAgentToCompany, getCompany } from "@/lib/companies/store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -118,6 +118,35 @@ export function FocusOverlay({
   const startTemplate = useCallback(
     async (agentId: string, text: string) => {
       setError(null);
+      /*
+       * Two writes happen here, in order:
+       *  1. Put the bot on this company's roster if it is not on any roster yet. A chat under a
+       *     company whose roster does not contain the bot is a channel that exists without an
+       *     owner — the bot would not appear in the company's sidebar after the user navigates
+       *     back, only when the roster re-emitted. This is the bug the user reported from inside
+       *     Spark: a conversation started with the SEO agent was reachable only as "the agent I
+       *     was talking to", never as "an agent that belongs to my company".
+       *  2. Create the channel and navigate.
+       *
+       * If the roster write fails, the channel is still created — a working channel is more
+       * useful than a refusal. The error message explains what to fix.
+       */
+      if (company && !company.agentIds.includes(agentId)) {
+        try {
+          await addAgentToCompany(company.id, agentId);
+        } catch (err) {
+          console.error(
+            "[focus-overlay] roster assignment failed:",
+            err,
+            { agentId, companyId: company.id },
+          );
+          setError(
+            `Bot konnte nicht zur Firma hinzugefügt werden. Der Chat öffnet trotzdem. ${
+              err instanceof Error ? err.message : ""
+            }`.trim(),
+          );
+        }
+      }
       try {
         await start(agentId, text);
       } catch (caught) {
@@ -128,7 +157,7 @@ export function FocusOverlay({
         );
       }
     },
-    [start],
+    [company, start],
   );
 
   useEffect(() => {

@@ -64,7 +64,7 @@ export type NotesFolder = { id: string; label: string };
  * Local rather than shared because only the sidebar creates folders today; a
  * shared module would be a guess about where else it is needed.
  */
-function NewFolderDialog({
+export function NewFolderDialog({
   open,
   onOpenChange,
   onCreate,
@@ -281,32 +281,16 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
           Notizen
         </SidebarGroupLabel>
         {/*
-         * The folder button sits next to the note button, not inside the folder
-         * list.
+         * No create buttons here any more.
          *
-         * A folder is the thing a note is filed *into*, and the tree above already
-         * owns creating them — but that button lives next to "Gruppen" and reads as
-         * "another App-Ordner", which is a different kind of object. This one is
-         * where a person looks for it, next to the notes it will hold.
+         * "Neue Notiz" and "Neuer Notiz-Ordner" sit in the rail's single action
+         * row, next to "App hinzufügen" and "Neue Gruppe". They used to sit on this
+         * header as well, which meant the same two actions existed twice on screen
+         * in two different styles, and the header pair read as app-folder buttons
+         * because that is what the buttons next to them were. One row, one of each.
+         *
+         * The header keeps its label and the count only.
          */}
-        <button
-          aria-label="Neuer Ordner"
-          className="flex size-6 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          onClick={() => setFolderDialogOpen(true)}
-          title="Neuer Ordner"
-          type="button"
-        >
-          <IconFolderPlus className="size-3.5" stroke={1.75} />
-        </button>
-        <button
-          aria-label="Neue Notiz"
-          className="flex size-6 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          onClick={() => add(null)}
-          title="Neue Notiz"
-          type="button"
-        >
-          <IconPlus className="size-3.5" stroke={1.75} />
-        </button>
       </div>
 
       <NewFolderDialog

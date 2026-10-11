@@ -1,4 +1,4 @@
-import { IconSettings, IconUser } from "@tabler/icons-react";
+import { IconBuilding, IconSettings, IconUser } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -46,6 +46,9 @@ import {
 import {
   getCompany,
   listCompanies,
+  moveAgentToCompany,
+  readActiveCompanyId as readStoredActiveCompanyId,
+  resolveCompanyId,
   subscribeCompanies,
 } from "@/lib/companies/store";
 import {
@@ -56,11 +59,15 @@ import {
 import { setSiteMarkAgent, getSiteMark, subscribeSiteMark } from "@/lib/companies/site-mark";
 import { cn } from "@/lib/utils";
 
-const ACTIVE_KEY = "connect.activeCompanyId";
-
+/*
+ * Read the active company id the same way every write path expects it: normalized, and falling
+ * back to a company that actually exists. This file used its own raw reader, so a JSON-quoted
+ * value in localStorage made `getCompany(...)` miss and the whole Agents section render as empty
+ * while the company was plainly open in the URL bar.
+ */
 function readActiveCompanyId(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACTIVE_KEY);
+  return resolveCompanyId(readStoredActiveCompanyId());
 }
 
 /**
@@ -98,6 +105,13 @@ export function CompanyAgentsNav({
   const [identityTick, setIdentityTick] = useState(0);
   const [orderTick, setOrderTick] = useState(0);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  /**
+   * Which bot is being moved, and where it failed. Both are transient feedback on a mutation that
+   * writes to localStorage: a move can fail because the target company was deleted in another tab,
+   * and a silent no-op here reads as "the drop did not register" rather than as an error.
+   */
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [movingAgentId, setMovingAgentId] = useState<string | null>(null);
   const [level, setLevel] = useState<CompanyLevel>(() => getActiveLevel());
   const [siteAgentId, setSiteAgentId] = useState<string | null>(() =>
     companyId ? getSiteMark(companyId).agentId : null,
@@ -265,6 +279,36 @@ export function CompanyAgentsNav({
     );
   };
 
+  /**
+   * Move this bot to another company's roster.
+   *
+   * Removes it from every company that lists it first — a bot on two rosters has no single owner,
+   * and which one wins would depend on which sidebar happened to be open. Errors are surfaced as
+   * a message rather than logged: the write is localStorage, so a failure leaves the bot exactly
+   * where it was and the user would otherwise think the menu item was broken.
+   */
+  const moveToCompany = async (agentId: string, targetId: string) => {
+    if (!company || targetId === company.id) return;
+    setMovingAgentId(agentId);
+    setMoveError(null);
+    try {
+      await moveAgentToCompany(agentId, targetId);
+    } catch (err) {
+      console.error("[company-agents-nav] move failed:", err);
+      setMoveError(
+        `Konnte nicht zu ${
+          companies.find((c) => c.id === targetId)?.name ?? targetId
+        } verschoben werden.`,
+      );
+    } finally {
+      setMovingAgentId(null);
+    }
+  };
+
+  /** Companies this bot could move to: every company except the one it is on now. */
+  const moveTargets = (agentId: string) =>
+    companies.filter((c) => !c.agentIds.includes(agentId));
+
   const renderRow = (agent: AgentProfile) => {
     const identity = getAgentIdentity(agent.id);
     const handle = formatSlackHandle(identity.slackHandle);
@@ -393,6 +437,17 @@ export function CompanyAgentsNav({
               <IconSettings className="size-4" />
               Agent settings
             </ContextMenuItem>
+            {moveTargets(agent.id).map((target) => (
+              <ContextMenuItem
+                className="gap-2 rounded-lg px-2.5 py-2"
+                disabled={movingAgentId === agent.id}
+                key={target.id}
+                onClick={() => void moveToCompany(agent.id, target.id)}
+              >
+                <IconBuilding className="size-4" />
+                Verschieben nach {target.name}
+              </ContextMenuItem>
+            ))}
           </ContextMenuContent>
         </ContextMenu>
       </SidebarMenuItem>
@@ -407,6 +462,11 @@ export function CompanyAgentsNav({
       <ul className="flex w-full min-w-0 flex-col gap-0.5 group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
         {roster.ungrouped.map(renderRow)}
       </ul>
+      {moveError ? (
+        <p className="mt-1 px-2 text-[11px] text-destructive group-data-[collapsible=icon]:hidden">
+          {moveError}
+        </p>
+      ) : null}
     </div>
   );
 }
