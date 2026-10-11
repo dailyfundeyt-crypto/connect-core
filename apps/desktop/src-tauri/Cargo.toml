@@ -13,6 +13,18 @@ path = "src/lib.rs"
 name = "connect-desktop"
 path = "src/main.rs"
 
+[[bin]]
+name = "sidecar-smoke"
+path = "src/bin/sidecar_smoke.rs"
+
+[[bin]]
+name = "sidecar-echo"
+path = "src/bin/sidecar_echo.rs"
+
+[[bin]]
+name = "sidecar-multi"
+path = "src/bin/sidecar_multi.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -34,6 +46,19 @@ tauri-plugin-single-instance = "2.0.0-rc.5"
 portable-pty = "0.9.0"
 tauri-plugin-opener = "2.5.5"
 tauri-plugin-dialog = "2"
+# Connect Sidecar — WebSocket bridge for the AI CLI providers (codex, claude, …).
+# `tokio` is implicit through tauri 2; we list it explicitly so `tokio-tungstenite`
+# can use the same runtime without a second runtime fighting for the worker pool.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "io-util", "time"] }
+tokio-tungstenite = "0.24"
+# `StreamExt` and `SinkExt` for the WebSocket stream. `futures` is the most
+# portable source for those traits even though `tokio` re-exports some of
+# them under different names; pinning `futures` keeps the imports stable.
+futures = "0.3"
+# Fast mutexes around the per-provider state. `parking_lot::Mutex` is what the
+# rest of the shell already uses for short critical sections; bringing in
+# `std::sync::Mutex` would force every holder to handle the poison case.
+parking_lot = "0.12"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
