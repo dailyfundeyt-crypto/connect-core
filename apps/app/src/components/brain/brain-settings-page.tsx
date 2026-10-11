@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { BrainActivity } from "@/components/brain/brain-activity";
 import { BrainBrowser } from "@/components/brain/brain-browser";
 import { BrainGraph } from "@/components/brain/brain-graph";
+import { BrainLocationEditor } from "@/components/brain/brain-location-editor";
 import { BrainScopeEditor } from "@/components/brain/brain-scope-editor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -20,13 +21,25 @@ import { cn } from "@/lib/utils";
 
 export function BrainUnavailable({ reason }: { reason?: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center" data-testid="brain-unavailable">
-      <IconBrain className="size-8 opacity-40" />
-      <p className="font-medium">Brain nicht verfügbar</p>
-      <p className="max-w-md text-sm text-muted-foreground">
-        {reason ?? "Der Brain-Ordner ist auf diesem Server nicht erreichbar."} Das Brain liegt nur auf Stefans PC
-        und wird nur von der lokalen Connect-Version angezeigt (Pfad über <code>CONNECT_BRAIN_PATH</code> änderbar).
-      </p>
+    <div className="flex flex-col gap-6">
+      {/*
+       * The folder picker comes first, and that is the point.
+       *
+       * "Brain nicht verfügbar" is exactly the state in which somebody needs to
+       * change the folder — a moved vault, a new PC, a wrong path from a restore.
+       * Hiding the only control that fixes the message behind the message would
+       * leave nothing to do but edit `connect.env` by hand.
+       */}
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center" data-testid="brain-unavailable">
+        <IconBrain className="size-8 opacity-40" />
+        <p className="font-medium">Brain nicht verfügbar</p>
+        <p className="max-w-md text-sm text-muted-foreground">
+          {reason ?? "Der Brain-Ordner ist auf diesem Server nicht erreichbar."}{" "}
+          Der Brain liegt nur auf diesem PC und wird nur von der lokalen
+          Connect-Version angezeigt.
+        </p>
+      </div>
+      <BrainLocationEditor />
     </div>
   );
 }
@@ -199,6 +212,13 @@ export function BrainSettingsPage() {
           </span>
         ) : null}
       </section>
+
+      {/*
+       * Where the folder lives is a setting, not a readout, so it sits directly
+       * under the line that reports the folder in force: read the path there,
+       * change it here.
+       */}
+      <BrainLocationEditor />
 
       <section className="flex flex-col gap-3">
         <BrainGraph onOpen={openFromGraph} selected={selected} />

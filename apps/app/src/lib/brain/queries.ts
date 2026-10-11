@@ -104,6 +104,7 @@ const NOT_AVAILABLE = "Brain nicht verfügbar";
 export const brainKeys = {
   all: ["brain"] as const,
   status: () => [...brainKeys.all, "status"] as const,
+  location: () => [...brainKeys.all, "location"] as const,
   tree: () => [...brainKeys.all, "tree"] as const,
   file: (path: string) => [...brainKeys.all, "file", path] as const,
   search: (q: string) => [...brainKeys.all, "search", q] as const,
@@ -194,6 +195,47 @@ export function brainAgentsQueryOptions() {
     queryKey: brainKeys.agents(),
     queryFn: () => brainGet<BrainAgents>("/api/brain/agents", { available: false, agents: [] }),
   });
+}
+
+export type BrainLocation = {
+  brainPath: string | null;
+  vaultPath: string | null;
+  /** `saved` = chosen in this app, `env` = from `connect.env`, `default` = built-in guess. */
+  source: "saved" | "env" | "default";
+};
+
+export function brainLocationQueryOptions() {
+  return queryOptions({
+    queryKey: brainKeys.location(),
+    queryFn: () =>
+      brainGet<BrainLocation>("/api/brain/location", {
+        brainPath: null,
+        vaultPath: null,
+        source: "default",
+      }),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Points the Brain at another folder.
+ *
+ * Every Brain query is invalidated afterwards, not just the location one: the
+ * status, the tree and the graph all read from the folder that just changed, and
+ * leaving them cached would show the old folder's files next to the new path.
+ */
+export function saveBrainLocationMutationOptions(queryClient: QueryClient) {
+  return {
+    mutationFn: async (input: { path: string; vaultPath?: string | null }) =>
+      client<BrainLocation>("/api/brain/location", "commit", {
+        method: "PUT",
+        body: input,
+        fallback: "Ordner konnte nicht gespeichert werden",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    },
+  };
 }
 
 export function saveBrainScopesMutationOptions(queryClient: QueryClient) {
