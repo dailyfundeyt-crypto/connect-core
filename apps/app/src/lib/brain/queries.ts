@@ -165,6 +165,35 @@ export function brainFileQueryOptions(path: string) {
   });
 }
 
+/**
+ * Writes a `.md` file back into the Brain.
+ *
+ * The counterpart to `brainFileQueryOptions`: reading a file that lives on disk and
+ * saving the edits back to the same path is the whole point of showing the vault
+ * here as editable notes rather than as a read-only tree.
+ *
+ * `mode: "create"` refuses to overwrite an existing file, which is what a new note
+ * wants. `mode: "write"` replaces it, which is what saving an edited note wants --
+ * there is nothing to protect there, the file being replaced is the one just read.
+ */
+export function brainSaveNoteMutationOptions(queryClient: QueryClient) {
+  return {
+    mutationFn: async (input: { path: string; content: string; mode: "create" | "write" }) =>
+      client<{ path: string; created: boolean }>("/api/brain/note", "commit", {
+        method: "PUT",
+        body: input,
+        fallback: "Notiz konnte nicht gespeichert werden",
+      }),
+    onSuccess: (result: { path: string; created: boolean }) => {
+      // The saved file, the tree it sits in and the graph all read from disk, so all
+      // three are stale now. Leaving them cached shows the pre-edit text next to the
+      // edit that just landed.
+      void queryClient.invalidateQueries({ queryKey: brainKeys.file(result.path) });
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    },
+  };
+}
+
 export function brainSearchQueryOptions(q: string) {
   return queryOptions({
     queryKey: brainKeys.search(q),
