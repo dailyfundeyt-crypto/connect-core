@@ -3,6 +3,13 @@ import { useMemo, useState } from "react";
 import { IconChevronRight, IconFileText, IconFolder, IconFolderOpen } from "@tabler/icons-react";
 import { SidebarGroupLabel } from "@/components/ui/sidebar";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   brainTreeQueryOptions,
   VAULT_PREFIX,
   type BrainFileInfo,
@@ -96,9 +103,12 @@ function countFiles(nodes: TreeNode[]): number {
 
 export function VaultNotesSection({
   onOpen,
+  onReveal,
   selectedPath,
 }: {
   onOpen: (path: string) => void;
+  /** Shows the path in the Windows Explorer. Optional: the web build has no Explorer. */
+  onReveal?: (path: string) => void;
   selectedPath: string | null;
 }) {
   const tree = useQuery(brainTreeQueryOptions());
@@ -157,23 +167,38 @@ export function VaultNotesSection({
       const active = node.path === selectedPath;
       return (
         <li key={node.path}>
-          <button
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
-              active
-                ? "bg-sidebar-accent text-sidebar-foreground"
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-            )}
-            onClick={() => onOpen(node.path)}
-            style={{ paddingLeft: `${8 + depth * 12}px` }}
-            title={node.path}
-            type="button"
-          >
-            <IconFileText className="size-3.5 shrink-0 opacity-50" stroke={1.75} />
-            <span className="min-w-0 flex-1 truncate text-[12px]">
-              {node.name}
-            </span>
-          </button>
+          <ContextMenu>
+            <ContextMenuTrigger
+              className={cn(
+                "w-full rounded-lg text-left transition-colors",
+                active
+                  ? "bg-sidebar-accent text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+              )}
+              style={{ paddingLeft: `${8 + depth * 12}px` }}
+            >
+              <span className="flex w-full items-center gap-2 py-1.5 pr-2">
+                <IconFileText className="size-3.5 shrink-0 opacity-50" stroke={1.75} />
+                <span className="min-w-0 flex-1 truncate text-[12px]">
+                  {node.name}
+                </span>
+              </span>
+            </ContextMenuTrigger>
+            {/*
+             * The row and the menu are siblings, for the reason the note row already
+             * documents: an interactive element inside the trigger also runs the
+             * trigger's own handler, so the file would open under the menu.
+             */}
+            <ContextMenuContent className="w-56">
+              <ContextMenuItem onClick={() => onOpen(node.path)}>
+                Im Editor öffnen
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onReveal?.(node.path)}>
+                Im Explorer anzeigen
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         </li>
       );
     }
@@ -181,32 +206,46 @@ export function VaultNotesSection({
     const isOpen = !(collapsed[node.path] ?? false);
     return (
       <li key={node.path}>
-        <button
-          aria-expanded={isOpen}
-          className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] font-medium text-sidebar-foreground/55 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          onClick={() =>
-            setCollapsed((prev) => ({ ...prev, [node.path]: !isOpen }))
-          }
-          style={{ paddingLeft: `${8 + depth * 12}px` }}
-          type="button"
-        >
-          <IconChevronRight
-            className={cn(
-              "size-3 shrink-0 transition-transform duration-150",
-              isOpen && "rotate-90",
-            )}
-            stroke={1.75}
-          />
-          {isOpen ? (
-            <IconFolderOpen className="size-3 shrink-0" stroke={1.75} />
-          ) : (
-            <IconFolder className="size-3 shrink-0" stroke={1.75} />
-          )}
-          <span className="min-w-0 flex-1 truncate">{node.name}</span>
-          <span className="shrink-0 tabular-nums opacity-60">
-            {countFiles(node.children)}
-          </span>
-        </button>
+        <ContextMenu>
+          <ContextMenuTrigger className="w-full rounded-lg text-left">
+            <button
+              aria-expanded={isOpen}
+              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] font-medium text-sidebar-foreground/55 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              onClick={() =>
+                setCollapsed((prev) => ({ ...prev, [node.path]: !isOpen }))
+              }
+              style={{ paddingLeft: `${8 + depth * 12}px` }}
+              type="button"
+            >
+              <IconChevronRight
+                className={cn(
+                  "size-3 shrink-0 transition-transform duration-150",
+                  isOpen && "rotate-90",
+                )}
+                stroke={1.75}
+              />
+              {isOpen ? (
+                <IconFolderOpen className="size-3 shrink-0" stroke={1.75} />
+              ) : (
+                <IconFolder className="size-3 shrink-0" stroke={1.75} />
+              )}
+              <span className="min-w-0 flex-1 truncate">{node.name}</span>
+              <span className="shrink-0 tabular-nums opacity-60">
+                {countFiles(node.children)}
+              </span>
+            </button>
+          </ContextMenuTrigger>
+          {/*
+           * A folder opens on its own contents rather than with itself selected:
+           * there is no file to put in front of you, and selecting the folder alone
+           * would show an empty-looking Explorer window.
+           */}
+          <ContextMenuContent className="w-56">
+            <ContextMenuItem onClick={() => onReveal?.(node.path)}>
+              Im Explorer öffnen
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
         {isOpen && node.children.length ? (
           <ul className="mt-0.5 flex flex-col gap-0.5">
             {node.children.map((child) => renderNode(child, depth + 1))}

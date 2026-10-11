@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { RenameFolderDialog } from "@/components/companies/rename-folder-dialog";
+import { revealInExplorer } from "@/lib/brain/queries";
 import {
   Dialog,
   DialogContent,
@@ -168,6 +169,28 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
    * open and rename the wrong thing.
    */
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
+  /*
+   * Why "Im Explorer öffnen" did not happen, or `null` when it did.
+   *
+   * A string in the sidebar rather than a toast: this build has no toast library,
+   * and adding one for one message would be a bigger change than the message. It
+   * clears itself after a few seconds because the common failure is the permanent
+   * one -- running in a browser, where Explorer cannot be started at all -- and
+   * that should not sit in the rail forever.
+   */
+  const [revealError, setRevealError] = useState<string | null>(null);
+
+  const revealVaultPath = (path: string) => {
+    void revealInExplorer(path)
+      .then((reason) => {
+        if (!reason) return;
+        setRevealError(reason);
+        window.setTimeout(() => setRevealError(null), 5000);
+      })
+      .catch(() =>
+        setRevealError("Der Explorer ließ sich nicht öffnen."),
+      );
+  };
   const [collapsedFolders, setCollapsedFolders] = useState<
     Record<string, boolean>
   >({});
@@ -550,8 +573,14 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
        */}
       <VaultNotesSection
         onOpen={onOpenVaultFile}
+        onReveal={revealVaultPath}
         selectedPath={openVaultPath ?? null}
       />
+      {revealError ? (
+        <p className="mt-1 px-2 text-[11px] text-destructive" role="status">
+          {revealError}
+        </p>
+      ) : null}
       </div>
     </>
   );

@@ -1,6 +1,7 @@
 import {
   IconBrandChrome,
   IconBrandGithub,
+  IconColumns2,
   IconFileText,
   IconLoader2,
   IconPencil,
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { BrainNoteReader } from "@/components/brain/brain-note-reader";
 import { NotesPanel } from "@/components/companies/notes-panel";
 import { VaultNoteEditor } from "@/components/companies/vault-note-editor";
+import { cn } from "@/lib/utils";
 import { brainTreeQueryOptions } from "@/lib/brain/queries";
 import {
   getOpenVaultPath,
@@ -47,6 +49,23 @@ export function Level3SiteStudio({
   computerId?: string;
 }) {
   const [state, setState] = useState(() => getLevel3Browser(companyId));
+
+  /*
+   * Whether the browser and the notes sit side by side.
+   *
+   * Local rather than in the level-3 store: this is how one person is looking at
+   * the pane right now, not something a second window needs to agree on. What it
+   * changes is only the arrangement, so putting it in the shared store would make
+   * it travel to windows where it is meaningless.
+   */
+  const [split, setSplit] = useState(false);
+
+  /*
+   * The browser pane goes dark in the desktop app when a site is running, so the
+   * button that brings the notes back beside it would sit on a window that is not
+   * showing. Splitting is only offered where there are two things to show.
+   */
+  const canSplit = !isDesktopApp();
 
   useEffect(() => {
     setState(getLevel3Browser(companyId));
@@ -107,40 +126,102 @@ export function Level3SiteStudio({
             <IconPencil className="size-3.5" />
             Bearbeiten
           </Button>
+          {/*
+           * Top right, beside Bearbeiten, and icon-only: a label would push the
+           * company name into an ellipsis on a 288px header, and the tooltip says
+           * what it does. `aria-pressed` carries the state for a screen reader,
+           * since the icon changes but the control does not.
+           */}
+          <Button
+            aria-label={split ? "Split-Screen schließen" : "Split-Screen öffnen"}
+            aria-pressed={split}
+            className="h-8 w-8 p-0"
+            onClick={() => setSplit((open) => !open)}
+            size="sm"
+            title={split ? "Split-Screen schließen" : "Notizen neben dem Browser"}
+            type="button"
+            variant={split ? "secondary" : "outline"}
+          >
+            <IconColumns2 className="size-3.5" />
+          </Button>
         </header>
-        {isDesktopApp() ? (
-          <ConnectChromePane
-            companyId={companyId}
-            companyName={companyName}
-            url={productUrl}
-          />
-        ) : (
-          <NotesOrVaultPane companyId={companyId} />
-        )}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+          {isDesktopApp() ? (
+            <ConnectChromePane
+              className={split ? "lg:w-1/2 lg:border-r" : undefined}
+              companyId={companyId}
+              companyName={companyName}
+              url={productUrl}
+            />
+          ) : null}
+          {/*
+           * The notes sit beside the site only while the split is on, and otherwise
+           * take the whole pane -- which is the state the app opens in, because a
+           * full-width note is what reading a note wants.
+           */}
+          {canSplit && !split ? (
+            <NotesOrVaultPane companyId={companyId} />
+          ) : null}
+          {split ? (
+            <NotesOrVaultPane className="min-w-0 flex-1" companyId={companyId} />
+          ) : null}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white text-neutral-900">
-      {isDesktopApp() ? (
-        <ConnectChromePane
-          companyId={companyId}
-          companyName={companyName}
-          url={url}
-        />
-      ) : (
-        <NotesOrVaultPane companyId={companyId} />
-      )}
+      {/*
+       * The header exists in this branch only because of the split button: the
+       * other branch has one for "Bearbeiten", and without one here the control
+       * would sit in a different place depending on whether a site happened to be
+       * running. One position, always top right.
+       */}
+      {canSplit ? (
+        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200 px-3">
+          <p className="min-w-0 flex-1 truncate text-sm font-medium">{companyName}</p>
+          <Button
+            aria-label={split ? "Split-Screen schließen" : "Split-Screen öffnen"}
+            aria-pressed={split}
+            className="h-8 w-8 p-0"
+            onClick={() => setSplit((open) => !open)}
+            size="sm"
+            title={split ? "Split-Screen schließen" : "Notizen neben dem Browser"}
+            type="button"
+            variant={split ? "secondary" : "outline"}
+          >
+            <IconColumns2 className="size-3.5" />
+          </Button>
+        </header>
+      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {isDesktopApp() ? (
+          <ConnectChromePane
+            className={split ? "lg:w-1/2 lg:border-r" : undefined}
+            companyId={companyId}
+            companyName={companyName}
+            url={url}
+          />
+        ) : null}
+        {canSplit && !split ? (
+          <NotesOrVaultPane companyId={companyId} />
+        ) : null}
+        {split ? (
+          <NotesOrVaultPane className="min-w-0 flex-1" companyId={companyId} />
+        ) : null}
+      </div>
     </div>
   );
 }
 
 function ConnectChromePane({
+  className,
   companyId,
   companyName,
   url,
 }: {
+  className?: string;
   companyId: string;
   companyName: string;
   url: string;
@@ -193,7 +274,12 @@ function ConnectChromePane({
 
   if (!url) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-white px-6 text-center">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-white px-6 text-center",
+          className,
+        )}
+      >
         <IconBrandChrome className="size-8 text-neutral-400" stroke={1.25} />
         <p className="text-sm font-medium text-neutral-700">
           Connect-Browser · {companyName}
@@ -207,7 +293,12 @@ function ConnectChromePane({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-[#f5f5f7] px-6 text-center">
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-[#f5f5f7] px-6 text-center",
+        className,
+      )}
+    >
       <figure className="w-full max-w-lg overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-black/10 bg-[#ececef] px-3 py-2">
           <span className="flex gap-1">
@@ -312,8 +403,10 @@ function useOpenVaultPath(companyId: string) {
  * pane would mean choosing which of the two things they just asked for to hide.
  */
 function NotesOrVaultPane({
+  className,
   companyId,
 }: {
+  className?: string;
   companyId: string;
 }) {
   const folders = useMemo(() => {
@@ -336,15 +429,15 @@ function NotesOrVaultPane({
   );
 
   if (!vaultPath) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <NotesPanel companyId={companyId} folders={folders} />
-      </div>
-    );
+return (
+    <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
+      <NotesPanel companyId={companyId} folders={folders} />
+    </div>
+  );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
       {/*
        * The reader became an editor.
        *

@@ -247,6 +247,54 @@ export function brainLocationQueryOptions() {
 }
 
 /**
+ * Shows a path in the Windows Explorer.
+ *
+ * Only the desktop app can do this: a browser tab has no way to start Explorer, so
+ * on the web this is a no-op that resolves rather than throwing, and the menu entry
+ * is hidden by the caller. That is the honest outcome rather than a disabled button
+ * that looks broken.
+ *
+ * `path` is relative to the Brain and `brainPath` is that Brain's absolute root, and
+ * they are joined here rather than in Rust on purpose: the Tauri command needs an
+ * absolute path to check against, and the frontend is the only side that knows
+ * both halves. The command still refuses anything that does not resolve inside the
+ * root, so a wrong join fails closed instead of opening an arbitrary folder.
+ *
+ * Returns the reason it could not open, or `null` when it worked.
+ */
+export async function revealInExplorer(path: string): Promise<string | null> {
+  const invoke = (globalThis as { __TAURI_INTERNALS__?: unknown })
+    .__TAURI_INTERNALS__;
+  if (!invoke) return "Nur in der Desktop-App verfügbar.";
+
+  const location = await brainGet<BrainLocation>(
+    "/api/brain/location",
+    { brainPath: null, vaultPath: null, source: "default" },
+  );
+  if (!location.brainPath) return "Kein Brain-Ordner festgelegt.";
+
+  const absolute = path
+    .split(/[\\/]/)
+    .reduce((acc, part) => (part === ".." ? acc : `${acc}/${part}`), "")
+    .replace(/^\/+/, "");
+  const separator = location.brainPath.includes("\\") ? "\\" : "/";
+  const full = `${location.brainPath.replace(/[\\/]+$/, "")}${separator}${absolute.replace(/\//g, separator)}`;
+
+  const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
+  try {
+    await tauriInvoke("reveal_brain_path", {
+      brainRoot: location.brainPath,
+      path: full,
+    });
+    return null;
+  } catch (error) {
+    // The command rejects with a `Problem`, whose message is the sentence worth
+    // showing. Anything else is a genuine surprise and says so in its own words.
+    return error instanceof Error ? error.message : "Explorer ließ sich nicht öffnen.";
+  }
+}
+
+/**
  * Points the Brain at another folder.
  *
  * Every Brain query is invalidated afterwards, not just the location one: the
