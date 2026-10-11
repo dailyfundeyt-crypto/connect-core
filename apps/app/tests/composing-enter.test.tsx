@@ -166,7 +166,12 @@ test("a coworker's name is not saved by the Enter that confirms a composed chara
 
 test("the new-coworker wizard does not move on from the Enter that confirms a composed character", async () => {
   const view = draw(
-    <CreateAgentDialog onClose={() => {}} onCreated={() => {}} open />,
+    <CreateAgentDialog
+      activeCompanyId={null}
+      onClose={() => {}}
+      onCreated={() => {}}
+      open
+    />,
   );
 
   const name = await view.findByLabelText("Name");

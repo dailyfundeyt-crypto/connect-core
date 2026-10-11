@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#09090b" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Connect" />
@@ -19,16 +19,25 @@
       }
       // localStorage throws in some privacy modes; a theme is not worth taking the app down for.
       try {
+        // Connect Premium: beim ersten Start einmalig auf den dunklen Premium-Look umstellen.
+        // Abschalten: localStorage "connect.premium" = "off". Hell/Dunkel bleibt im Menü umschaltbar.
+        const premium = window.localStorage.getItem("connect.premium") !== "off";
+        document.documentElement.classList.toggle("connect-premium", premium);
+        if (premium && window.localStorage.getItem("connect.premium.v1") !== "1") {
+          window.localStorage.setItem("connect-theme", "dark");
+          window.localStorage.setItem("connect.premium.v1", "1");
+        }
         const dark = window.localStorage.getItem("connect-theme") === "dark";
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       } catch {}
     </script>
     <style>
-      #connect-public-intro { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #0f172a; animation: connect-intro-in 0.3s ease-out 0.6s both; }
+      #connect-public-intro { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #e4e4e7; background: #050506; animation: connect-intro-in 0.3s ease-out 0.6s both; }
       #connect-public-intro h1 { margin: 0; font-size: 28px; font-weight: 600; }
-      #connect-public-intro p { max-width: 32rem; margin: 0; color: #475569; line-height: 1.6; font-size: 15px; }
-      #connect-public-intro a { color: #2563eb; }
+      #connect-public-intro p { max-width: 32rem; margin: 0; color: #a1a1aa; line-height: 1.6; font-size: 15px; }
+      #connect-public-intro a { color: #7dd3fc; }
+      html.connect-premium, html.connect-premium body { background: #09090b; }
       html.dark #connect-public-intro { color: #e2e8f0; }
       html.dark #connect-public-intro p { color: #94a3b8; }
       html.dark #connect-public-intro a { color: #60a5fa; }
