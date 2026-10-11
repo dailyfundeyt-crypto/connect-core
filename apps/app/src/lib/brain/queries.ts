@@ -247,50 +247,55 @@ export function brainLocationQueryOptions() {
 }
 
 /**
- * Shows a path in the Windows Explorer.
+ * Copies a file's location to the clipboard, as the absolute path on disk.
  *
- * Only the desktop app can do this: a browser tab has no way to start Explorer, so
- * on the web this is a no-op that resolves rather than throwing, and the menu entry
- * is hidden by the caller. That is the honest outcome rather than a disabled button
- * that looks broken.
+ * This is what "show me where this is" means for the sidebar. It replaced opening
+ * the Windows Explorer, which turned out to be the wrong shape: the Explorer only
+ * exists on the desktop app, it took a Rust command and a new capability to
+ * reach, and it was the kind of thing that breaks the moment the vault lives
+ * somewhere else. A copied path works the same in the browser and in the app, and
+ * it is what you actually want when the next step is pasting it into Obsidian,
+ * into a terminal or into somebody else's chat.
  *
- * `path` is relative to the Brain and `brainPath` is that Brain's absolute root, and
- * they are joined here rather than in Rust on purpose: the Tauri command needs an
- * absolute path to check against, and the frontend is the only side that knows
- * both halves. The command still refuses anything that does not resolve inside the
- * root, so a wrong join fails closed instead of opening an arbitrary folder.
+ * `path` is relative to the Brain, so it is joined onto the configured root here.
+ * The join is done on the client because the frontend is the only side that knows
+ * both halves; a wrong join produces a path that simply does not exist rather than
+ * one that points somewhere real.
  *
- * Returns the reason it could not open, or `null` when it worked.
+ * Returns the reason it failed, or `null` when the path is on the clipboard.
  */
-export async function revealInExplorer(path: string): Promise<string | null> {
-  const invoke = (globalThis as { __TAURI_INTERNALS__?: unknown })
-    .__TAURI_INTERNALS__;
-  if (!invoke) return "Nur in der Desktop-App verfügbar.";
-
+export async function copyBrainPath(path: string): Promise<string | null> {
   const location = await brainGet<BrainLocation>(
     "/api/brain/location",
     { brainPath: null, vaultPath: null, source: "default" },
   );
   if (!location.brainPath) return "Kein Brain-Ordner festgelegt.";
 
-  const absolute = path
-    .split(/[\\/]/)
-    .reduce((acc, part) => (part === ".." ? acc : `${acc}/${part}`), "")
-    .replace(/^\/+/, "");
+  /*
+   * `..` is dropped rather than resolved. It cannot come from the tree -- that is
+   * built from real files -- but a hand-written value should not be able to walk
+   * the join out of the vault before it is pasted somewhere.
+   */
+  const relative = path
+    .split(/[\\/]+/)
+    .filter((part) => part && part !== ".." && part !== ".")
+    .join("/");
   const separator = location.brainPath.includes("\\") ? "\\" : "/";
-  const full = `${location.brainPath.replace(/[\\/]+$/, "")}${separator}${absolute.replace(/\//g, separator)}`;
+  const absolute = relative
+    ? `${location.brainPath.replace(/[\\/]+$/, "")}${separator}${relative.replace(/\//g, separator)}`
+    : location.brainPath;
 
-  const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
   try {
-    await tauriInvoke("reveal_brain_path", {
-      brainRoot: location.brainPath,
-      path: full,
-    });
+    await navigator.clipboard.writeText(absolute);
     return null;
-  } catch (error) {
-    // The command rejects with a `Problem`, whose message is the sentence worth
-    // showing. Anything else is a genuine surprise and says so in its own words.
-    return error instanceof Error ? error.message : "Explorer ließ sich nicht öffnen.";
+  } catch {
+    /*
+     * The clipboard needs a secure context and a user gesture, and this is called
+     * from a menu click, so it should hold. When it does not, saying so beats a
+     * silent no-op that leaves somebody pasting whatever was on the clipboard
+     * before.
+     */
+    return "Pfad konnte nicht kopiert werden.";
   }
 }
 

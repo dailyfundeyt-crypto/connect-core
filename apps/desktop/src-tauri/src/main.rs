@@ -383,81 +383,6 @@ fn windows_blocker_instruction(blocker: win::Blocker) -> String {
     blocker.instruction().to_string()
 }
 
-/// Shows a note in the Windows Explorer, with it selected.
-///
-/// This is the "Im Explorer öffnen" behind the right-click menu on a note in the
-/// sidebar. It is deliberately the narrowest thing that can do the job: the path
-/// has to sit inside the configured Brain folder, and nothing else is accepted.
-///
-/// That check is the whole reason this is a command rather than a `shell.open`
-/// call from the frontend. A path from the sidebar is a string the UI could
-/// tamper with, and handing that straight to Explorer would make this app a
-/// file-browser launcher for the whole disk -- `C:\Windows\System32` would be as
-/// valid a "note" as anything in the vault. Checking here, in the one place the
-/// value crosses into the OS, means a bug in the UI cannot widen it.
-///
-/// A folder opens on its own contents, a file opens with itself selected and its
-/// folder revealed. That is what makes the two menu entries different: for a note
-/// you want the file in front of you, for a folder you want to see what is in it.
-#[tauri::command]
-fn reveal_brain_path<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-    brain_root: String,
-    path: String,
-) -> Result<(), Problem> {
-    let root = std::fs::canonicalize(&brain_root)
-        .map_err(|_| Problem::plain("Der Brain-Ordner ist nicht erreichbar."))?;
-
-    /*
-     * The path is canonicalized before it is compared, so `..` and a symlink out
-     * of the vault resolve to the same place on both sides of the check. Comparing
-     * the raw strings instead would accept `Plannung\..\..\..` outright.
-     */
-    let target = std::fs::canonicalize(&path)
-        .map_err(|_| Problem::plain("Die Datei existiert nicht mehr."))?;
-
-    if !target.starts_with(&root) {
-        return Err(Problem::plain(
-            "Das liegt außerhalb des Brain-Ordners und wird nicht geöffnet.",
-        ));
-    }
-
-    // A folder is opened on itself; a file is opened with itself selected.
-    let is_dir = target.is_dir();
-    #[cfg(target_os = "windows")]
-    {
-        use tauri_plugin_shell::ShellExt;
-        let shell = app.shell();
-        if is_dir {
-            shell
-                .open(format!("explorer.exe \"{}\"", target.display()), None)
-                .map_err(|_| Problem::plain("Der Explorer ließ sich nicht öffnen."))?;
-        } else {
-            // `/select,` reveals the parent and selects the file, which is what
-            // opening a note should mean -- Explorer opening the file itself would
-            // launch whatever program is bound to `.md`.
-            shell
-                .open(
-                    format!(
-                        "explorer.exe /select,\"{}\"",
-                        target.display().to_string().replace('/', "\\")
-                    ),
-                    None,
-                )
-                .map_err(|_| Problem::plain("Der Explorer ließ sich nicht öffnen."))?;
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (app, is_dir);
-        Err(Problem::plain(
-            "Diese Aktion gibt es nur unter Windows.",
-        ))
-    }
-
-    Ok(())
-}
-
 /// Bring the engine up: create the machine if it is missing, start it, then prove it answers.
 ///
 /// Reported step by step rather than as one result, because these take minutes and a window with
@@ -3398,7 +3323,6 @@ fn main() {
             detect_engine,
             windows_blocker,
             windows_blocker_instruction,
-            reveal_brain_path,
             prepare_engine,
             prepare_installation,
             start_stack,

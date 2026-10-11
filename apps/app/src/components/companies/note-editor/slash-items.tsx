@@ -50,7 +50,12 @@ export const SLASH_ITEMS: SlashItem[] = [
   { id: "callout", keywords: ["callout", "hinweis"], label: "Callout", group: "Medien", icon: <span className="text-[13px]">💡</span>, type: "callout" },
   { id: "divider", keywords: ["divider", "trenner", "linie"], label: "Trennlinie", hint: "---", group: "Basis", icon: <IconMath className="size-4" stroke={1.5} />, type: "divider" },
   { id: "code", keywords: ["code", "codeblock"], label: "Codeblock", group: "Medien", icon: <IconCode className="size-4" stroke={1.5} />, type: "code" },
-  { id: "table", keywords: ["table", "tabelle"], label: "Tabelle", group: "Fortgeschritten", icon: <IconTable className="size-4" stroke={1.5} />, type: "table" },
+  /*
+   * "tabellen" alongside "tabelle": the slash filter is a substring match, so both
+   * work either way, but the plural is what somebody types when they are reaching
+   * for the thing rather than looking it up.
+   */
+  { id: "table", keywords: ["table", "tabelle", "tabellen"], label: "Tabelle", group: "Fortgeschritten", icon: <IconTable className="size-4" stroke={1.5} />, type: "table" },
   { id: "image", keywords: ["image", "bild", "foto"], label: "Bild", hint: "Einfügen oder ziehen", group: "Medien", icon: <IconPhoto className="size-4" stroke={1.5} />, type: "image" },
 ];
 

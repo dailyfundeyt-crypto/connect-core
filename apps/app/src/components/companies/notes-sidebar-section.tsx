@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { RenameFolderDialog } from "@/components/companies/rename-folder-dialog";
-import { revealInExplorer } from "@/lib/brain/queries";
+import { copyBrainPath } from "@/lib/brain/queries";
 import {
   Dialog,
   DialogContent,
@@ -170,26 +170,33 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
    */
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   /*
-   * Why "Im Explorer öffnen" did not happen, or `null` when it did.
+   * The path copied to the clipboard, shown for a few seconds.
    *
    * A string in the sidebar rather than a toast: this build has no toast library,
    * and adding one for one message would be a bigger change than the message. It
-   * clears itself after a few seconds because the common failure is the permanent
-   * one -- running in a browser, where Explorer cannot be started at all -- and
-   * that should not sit in the rail forever.
+   * clears itself because the alternative is a label stuck in the rail claiming
+   * something was copied minutes ago.
    */
-  const [revealError, setRevealError] = useState<string | null>(null);
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
-  const revealVaultPath = (path: string) => {
-    void revealInExplorer(path)
-      .then((reason) => {
-        if (!reason) return;
-        setRevealError(reason);
-        window.setTimeout(() => setRevealError(null), 5000);
-      })
-      .catch(() =>
-        setRevealError("Der Explorer ließ sich nicht öffnen."),
-      );
+  /*
+   * Cleared by effect rather than by a timer inside the handler.
+   *
+   * Two clicks in quick succession meant two pending timers, the first of which
+   * wiped the second message while it was still the one on screen -- so a repeat
+   * copy looked like it had failed. Cancelling the timeout on the next message and
+   * on unmount ties the visible text to the newest action.
+   */
+  useEffect(() => {
+    if (!copiedPath) return;
+    const timer = window.setTimeout(() => setCopiedPath(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [copiedPath]);
+
+  const copyVaultPath = (path: string) => {
+    void copyBrainPath(path)
+      .then((reason) => setCopiedPath(reason ?? "Pfad kopiert."))
+      .catch(() => setCopiedPath("Pfad konnte nicht kopiert werden."));
   };
   const [collapsedFolders, setCollapsedFolders] = useState<
     Record<string, boolean>
@@ -573,12 +580,12 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
        */}
       <VaultNotesSection
         onOpen={onOpenVaultFile}
-        onReveal={revealVaultPath}
+        onReveal={copyVaultPath}
         selectedPath={openVaultPath ?? null}
       />
-      {revealError ? (
-        <p className="mt-1 px-2 text-[11px] text-destructive" role="status">
-          {revealError}
+      {copiedPath ? (
+        <p className="mt-1 px-2 text-[11px] text-muted-foreground" role="status">
+          {copiedPath}
         </p>
       ) : null}
       </div>

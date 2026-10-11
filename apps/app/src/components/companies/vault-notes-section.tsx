@@ -175,6 +175,7 @@ export function VaultNotesSection({
                   ? "bg-sidebar-accent text-sidebar-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
               )}
+              onClick={() => onOpen(node.path)}
               style={{ paddingLeft: `${8 + depth * 12}px` }}
             >
               <span className="flex w-full items-center gap-2 py-1.5 pr-2">
@@ -195,7 +196,7 @@ export function VaultNotesSection({
               </ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onReveal?.(node.path)}>
-                Im Explorer anzeigen
+                Pfad kopieren
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -236,13 +237,12 @@ export function VaultNotesSection({
             </button>
           </ContextMenuTrigger>
           {/*
-           * A folder opens on its own contents rather than with itself selected:
-           * there is no file to put in front of you, and selecting the folder alone
-           * would show an empty-looking Explorer window.
+           * A folder has no text to show, so the only thing worth putting on the
+           * clipboard is where it lives.
            */}
           <ContextMenuContent className="w-56">
             <ContextMenuItem onClick={() => onReveal?.(node.path)}>
-              Im Explorer öffnen
+              Pfad kopieren
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
