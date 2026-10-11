@@ -121,6 +121,11 @@ apps/app/dist-dist.bak/
 *.bak-*
 !*.bak.example
 
+# Screenshots and metrics captured while comparing the UI before and after a change.
+# They are the evidence, not the thing itself: 10 files of `after-1440.png` and
+# `metrics.json` that nothing imports and that would grow forever.
+workspace/
+
 .fix-logs/
 
 # --- OpenBot-v2-Helium copy: local-only artifacts, never commit ---
