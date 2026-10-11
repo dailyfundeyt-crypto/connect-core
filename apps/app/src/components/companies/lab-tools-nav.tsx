@@ -396,10 +396,43 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                       >
                         <IconTrash className="size-4" />
                         Gruppe löschen
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                </li>
+</ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                    {/*
+                     * The apps inside this folder.
+                     *
+                     * This block was missing: the row folded the group and showed its
+                     * count and a chevron, the click wrote `collapsed` to the store
+                     * correctly, and then the loop moved straight on to the next
+                     * group. So every folder claimed to hold its apps -- "Tool Stack"
+                     * said 5 -- and clicking it changed nothing, because there was no
+                     * list to reveal. The apps were in the store and in `group.apps`
+                     * the whole time; nothing ever put them on screen.
+                     *
+                     * Guarded by `open` so a folder only spends rows on the rows it
+                     * has, and `group.apps.length` means an empty folder renders
+                     * nothing rather than an empty bordered box.
+                     */}
+                    {open && group.apps.length > 0 ? (
+                      <ul className="mt-0.5 flex flex-col gap-0.5 pl-3">
+                        {group.apps.map((app) => (
+                          <AppRow
+                            app={app}
+                            companyId={companyId}
+                            dragOverId={dragOverId}
+                            groupId={group.id}
+                            key={app.id}
+                            onChange={setState}
+                            onConnect={setConnectId}
+                            onEdit={setEditingId}
+                            setDragOverId={setDragOverId}
+                            state={state}
+                          />
+                        ))}
+                      </ul>
+                    ) : null}
+              </li>
               );
             })}
           </ul>
