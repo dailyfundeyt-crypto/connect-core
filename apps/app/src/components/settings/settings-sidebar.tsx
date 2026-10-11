@@ -36,6 +36,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { useSignOut } from "@/lib/auth/use-sign-out";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 
@@ -52,9 +53,21 @@ type NavGroup = {
   id: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  accent: string;
   items: SubItem[];
 };
+
+/*
+ * The three group icons were blue, violet and green — a different hue per group, on a cream
+ * sidebar. Hue is the loudest thing on a page and it was doing no work here: the groups are already
+ * told apart by their order, their labels, and the bar on the open one. What it actually cost was
+ * the sidebar reading as three unrelated products rather than three sections of one page, and three
+ * coloured tiles pulling the eye off the item list, which is the part actually being read.
+ *
+ * The icon is ink and the tile is a neutral surface, and the accent field is gone from the group
+ * type entirely. The open/closed signal is the bar beside the icon — a dark bar on the open group —
+ * which is the one thing in the sidebar allowed to carry emphasis, because it is the only thing
+ * that changes when a group is clicked.
+ */
 
 // ─── 3 top-level groups ───────────────────────────────────────────────────────
 
@@ -63,7 +76,6 @@ const GROUPS: NavGroup[] = [
     id: "konto",
     label: "Konto & Sicherheit",
     icon: IconUser,
-    accent: "#60a5fa",
     items: [
       { title: "Profil", hash: "profile" },
       { title: "Sitzungen", hash: "security" },
@@ -74,22 +86,22 @@ const GROUPS: NavGroup[] = [
     id: "verbindungen",
     label: "Verbindungen",
     icon: IconPlugConnected,
-    accent: "#a78bfa",
     items: [
       { title: "API-Keys", hash: "api-keys" },
       { title: "Model-Provider", hash: "model-provider" },
-      { title: "MCP-Server", linkTo: "/settings/mcp" },
+      { title: "Anbieter-CLIs", hash: "cli-providers" },
+      { title: "MCP-Server", hash: "mcp" },
       { title: "Connector-Mapping", hash: "connector-mapping" },
       { title: "Browser-Gruppen", hash: "browser-groups" },
       { title: "Ubuntu-Maschinen", hash: "ubuntu-machines" },
       { title: "Voice", hash: "voice" },
+      { title: "Kalender", hash: "calendar" },
     ],
   },
   {
     id: "system",
     label: "System & Hilfe",
     icon: IconSettings,
-    accent: "#34d399",
     items: [
       { title: "Sync & Backup", hash: "sync-backup" },
       { title: "Erweitert", hash: "erweitert" },
@@ -98,13 +110,31 @@ const GROUPS: NavGroup[] = [
       { title: "Donate", hash: "donate" },
       { title: "Deployment Mode", hash: "deployment-mode" },
       { title: "Background", hash: "background" },
-      { title: "Brain", linkTo: "/settings/brain" },
+      { title: "Brain", hash: "brain" },
       { title: "Codex Usage", hash: "codex-usage" },
       { title: "Info", hash: "info" },
       { title: "Datenschutz", hash: "privacy" },
       { title: "Nutzungsbedingungen", hash: "terms" },
     ],
   },
+];
+
+/**
+ * The older inline sections, kept in one place so they can be reached without crowding the
+ * groups above.
+ *
+ * The groups are the primary navigation and read top to bottom; these are the leftovers that the
+ * stack draws itself. Listing them next to their neighbours would have produced entries like
+ * "Konto" directly under "Profil" and "Konnektoren" under "API-Keys" — two names for one screen,
+ * which is the duplication the overview is trying to remove.
+ */
+const INLINE_ITEMS: SubItem[] = [
+  { title: "Konto", hash: "konto" },
+  { title: "Konnektoren", hash: "konnektoren" },
+  { title: "Helium-Shell", hash: "helium-shell" },
+  { title: "Connect-Agenten", hash: "connect-agenten" },
+  { title: "Benachrichtigungen", hash: "benachrichtigungen" },
+  { title: "Über", hash: "uber" },
 ];
 
 // ─── Sub-item row ─────────────────────────────────────────────────────────────
@@ -117,14 +147,36 @@ function SubItemRow({
   activeHash?: string;
 }) {
   const isActive = item.hash ? activeHash === item.hash : false;
+  const { signOut } = useSignOut();
 
+  /*
+   * These rows are the same object as the setting cards in the content pane, and they are now drawn
+   * the same way: one rounded panel, a hairline border, a real background.
+   *
+   * They used to be a transparent row with a `rounded-lg` and no background at all, and the shadcn
+   * default border — `oklch(0.91)`, a very light grey — which on a cream sidebar is a lighter line on
+   * a light field: present in the DOM and invisible on screen. Next to cards that had an edge, the
+   * navigation looked unfinished rather than flat, which is the opposite of what a sidebar is for.
+   *
+   * The colours are the content pane's own, so the two halves of the page are one design: cream
+   * surface, `black/[0.07]` hairline, `white/60` fill, and the active row as the same row with
+   * `black/[0.07]` behind it. The dark pair is carried alongside so the phone keeps the theme it is
+   * built around. Padding matches the cards too, which is why `h-8` is gone — a fixed height cannot
+   * hold the same padding and still keep the rhythm.
+   */
   const content = (
     <SidebarMenuButton
       className={cn(
-        "h-8 rounded-lg px-2 text-[13px] transition-colors",
-        isActive && "bg-white/[0.06] font-medium text-white",
-        !isActive && !item.danger && "text-[#888] hover:bg-white/[0.04] hover:text-[#ccc]",
-        item.danger && "text-red-400/70 hover:text-red-400",
+        "rounded-lg border border-black/[0.07] bg-white/60 px-3.5 py-2.5 text-[13px]",
+        "transition-colors hover:bg-white/80",
+        "dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]",
+        isActive &&
+          "border-black/[0.12] bg-black/[0.07] font-medium text-[#1c1b19] dark:border-white/[0.12] dark:bg-white/[0.06] dark:text-white",
+        !isActive &&
+          !item.danger &&
+          "text-[#4a4741] hover:text-[#1c1b19] dark:text-[#888] dark:hover:text-[#ccc]",
+        item.danger &&
+          "text-red-600 hover:text-red-700 dark:text-red-400/70 dark:hover:text-red-400",
       )}
     >
       <span className="truncate">{item.title}</span>
@@ -134,7 +186,17 @@ function SubItemRow({
   if (item.linkTo) {
     return (
       <SidebarMenuItem key={item.title}>
-        <Link to={item.linkTo}>{content}</Link>
+        <Link
+          onClick={(event) => {
+            if (item.linkTo === "/sign") {
+              event.preventDefault();
+              void signOut();
+            }
+          }}
+          to={item.linkTo}
+        >
+          {content}
+        </Link>
       </SidebarMenuItem>
     );
   }
@@ -145,7 +207,6 @@ function SubItemRow({
         to="/settings"
         hash={item.hash}
         activeOptions={{ exact: false }}
-        activeProps={{ className: "bg-white/[0.06] font-medium text-white" }}
       >
         {content}
       </Link>
@@ -168,49 +229,43 @@ function GroupSection({
 }) {
   return (
     <SidebarGroup className="p-0 py-1">
-      {/* Header row — click to expand/collapse */}
+      {/* Header row — click to expand/collapse. Same card as the items below it, one step
+          quieter: the icon tile and the accent bar are what mark it as the group, so the
+          surface itself does not need to shout. */}
       <button
         className={cn(
-          "flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left",
-          "transition-colors hover:bg-white/[0.04]",
+          "flex w-full items-center gap-2.5 rounded-lg border border-black/[0.07] bg-white/60 px-3.5 py-2.5 text-left",
+          "transition-colors hover:bg-white/80",
+          "dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]",
         )}
         onClick={onToggle}
         type="button"
         aria-expanded={isOpen}
       >
-        {/* Left accent bar when active */}
-        {isOpen && (
-          <div
-            className="absolute left-0 h-6 w-0.5 rounded-full"
-            style={{ backgroundColor: group.accent }}
-          />
-        )}
+        {/* Open/closed bar — the only emphasis in the sidebar, and the only thing that changes. */}
+        {isOpen && <div className="h-6 w-0.5 rounded-full bg-[#1c1b19]/50" />}
 
-        {/* Icon */}
-        <div
-          className="flex size-6 items-center justify-center rounded-md"
-          style={{
-            backgroundColor: `${group.accent}18`,
-            color: group.accent,
-          }}
-        >
+        {/* Icon — ink on a neutral tile. The three tiles now read as one set instead of three
+            unrelated coloured products. */}
+        <div className="flex size-6 items-center justify-center rounded-md bg-black/[0.05] text-[#1c1b19] dark:bg-white/[0.06] dark:text-white/90">
           <group.icon className="size-3.5" />
         </div>
 
-        {/* Label */}
-        <span className="flex-1 truncate text-[13px] font-medium text-white/90">
+        {/* Label — `text-white/90` is the shadcn default and is white on the cream desktop
+            sidebar, so the three group names were the faintest text on the page. */}
+        <span className="flex-1 truncate text-[13px] font-medium text-[#1c1b19] dark:text-white/90">
           {group.label}
         </span>
 
         {/* Count badge */}
-        <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-[#666]">
+        <span className="rounded-full bg-black/[0.07] px-1.5 py-0.5 text-[10px] text-[#6b6862] dark:bg-white/[0.06] dark:text-[#666]">
           {group.items.length}
         </span>
 
         {/* Chevron */}
         <IconChevronDown
           className={cn(
-            "size-3.5 text-[#555] transition-transform duration-150",
+            "size-3.5 text-[#6b6862] transition-transform duration-150 dark:text-[#555]",
             !isOpen && "-rotate-90",
           )}
         />
@@ -223,7 +278,13 @@ function GroupSection({
           isOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0",
         )}
       >
-        <div className="mt-1 flex flex-col gap-px pl-2">
+        {/*
+         * No left padding on the items. The group header is a full-width card, so indenting its
+         * children made the list look like a quotation of the header above it — two shapes nested
+         * for a relationship the accent bar and the icon tile already carry. A 2px left margin is
+         * enough to read as "belongs to".
+         */}
+        <div className="mt-1 ml-0.5 flex flex-col gap-2">
           {group.items.map((item) => (
             <SubItemRow key={item.title} item={item} activeHash={activeHash} />
           ))}
@@ -271,26 +332,31 @@ export function SettingsSidebar({
 
   return (
     <Sidebar {...props}>
-      <SidebarHeader className="h-12 border-b border-[#1f1f1f] p-2">
-        <SidebarMenu>
+      <SidebarHeader className="h-auto border-b border-black/[0.08] p-2 dark:border-[#1f1f1f]">
+        <SidebarMenu className="gap-2">
           {/* Overview link */}
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="rounded-lg text-[13px]"
+              className="rounded-lg border border-black/[0.07] bg-white/60 px-3.5 py-2.5 text-[13px] transition-colors hover:bg-white/80 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
               render={(p) => (
                 <Link to="/settings" {...p}>
-                  <IconSettings className="size-4 shrink-0 text-[#888]" />
-                  <span className="truncate font-medium text-white/80">
+                  <IconSettings className="size-4 shrink-0 text-[#1c1b19] dark:text-[#888]" />
+                  <span className="truncate font-medium text-[#1c1b19] dark:text-white/80">
                     Übersicht
                   </span>
                 </Link>
               )}
             />
           </SidebarMenuItem>
-          {/* Back link */}
+          {/* Back link — this one was #6b6862, the same grey as the placeholder text, on a card
+              that is barely lighter than the sidebar behind it. It is a navigation control, not
+              meta text: the only way out of settings, and the one control a user reaches for when
+              they are lost. At that weight it was the least visible row in the sidebar. Ink, and a
+              border a shade firmer than the other cards so it reads as the exit rather than as a
+              fourth settings group. */}
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="rounded-lg text-[13px] text-[#666] hover:text-[#999]"
+              className="rounded-lg border border-black/[0.12] bg-white/60 px-3.5 py-2.5 text-[13px] font-medium text-[#1c1b19] transition-colors hover:bg-white/90 dark:border-white/[0.12] dark:bg-white/[0.03] dark:text-white dark:hover:bg-white/[0.05]"
               render={(p) => (
                 <Link {...appLinkOptions} {...p}>
                   <IconArrowLeft className="size-4 shrink-0" />
@@ -303,6 +369,23 @@ export function SettingsSidebar({
       </SidebarHeader>
 
       <SidebarContent className="gap-0 px-1.5 py-2">
+        {/*
+         * The sections the inline stack draws itself. They were reachable from nowhere before —
+         * the stack rendered them under the overview, and no link pointed at them — so they get
+         * their own group here rather than being folded into the three above, where "Konto" would
+         * have sat directly under "Profil" and read as a second way to the same screen.
+         */}
+        <SidebarGroup className="mb-1 p-0">
+          <SidebarGroupLabel className="px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8a867e] dark:text-sidebar-foreground/40">
+            Weitere Bereiche
+          </SidebarGroupLabel>
+          <div className="flex flex-col gap-2">
+            {INLINE_ITEMS.map((item) => (
+              <SubItemRow key={item.title} item={item} activeHash={activeHash} />
+            ))}
+          </div>
+        </SidebarGroup>
+
         {/* ── 3 top-level groups (desktop) ── */}
         <div className="hidden md:block">
           {GROUPS.map((group) => (
@@ -322,28 +405,24 @@ export function SettingsSidebar({
             <div key={group.id} className="py-1">
               {/* Accordion trigger */}
               <button
-                className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left transition-colors hover:bg-white/[0.04]"
+                className="flex w-full items-center gap-2.5 rounded-lg border border-black/[0.07] bg-white/60 px-3.5 py-2.5 text-left transition-colors hover:bg-white/80 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
                 onClick={() => toggleMobileGroup(group.id)}
                 type="button"
               >
                 <div
-                  className="flex size-7 items-center justify-center rounded-lg"
-                  style={{
-                    backgroundColor: `${group.accent}18`,
-                    color: group.accent,
-                  }}
+                  className="flex size-7 items-center justify-center rounded-lg bg-black/[0.05] text-[#1c1b19] dark:bg-white/[0.06] dark:text-white/90"
                 >
                   <group.icon className="size-4" />
                 </div>
-                <span className="flex-1 text-[14px] font-medium text-white/90">
+                <span className="flex-1 text-[14px] font-medium text-[#1c1b19] dark:text-white/90">
                   {group.label}
                 </span>
-                <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-[#666]">
+                <span className="rounded-full bg-black/[0.07] px-1.5 py-0.5 text-[10px] text-[#6b6862] dark:bg-white/[0.06] dark:text-[#666]">
                   {group.items.length}
                 </span>
                 <IconChevronDown
                   className={cn(
-                    "size-3.5 text-[#555] transition-transform duration-150",
+                    "size-3.5 text-[#6b6862] transition-transform duration-150 dark:text-[#555]",
                     !isMobileOpen(group.id) && "-rotate-90",
                   )}
                 />
@@ -358,7 +437,7 @@ export function SettingsSidebar({
                     : "max-h-0 opacity-0",
                 )}
               >
-                <div className="mt-1 flex flex-col gap-px px-2">
+                <div className="mt-1 flex flex-col gap-2">
                   {group.items.map((item) => (
                     <SubItemRow
                       key={item.title}
@@ -371,34 +450,6 @@ export function SettingsSidebar({
             </div>
           ))}
         </div>
-
-        {/* ── Footer nav: Skills + Agents ── */}
-        <SidebarGroup className="mt-2 border-t border-white/[0.05] p-0 pt-2">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="rounded-lg text-[13px]"
-                render={(p) => (
-                  <Link to="/skills" {...p}>
-                    <IconBrain className="size-4 shrink-0 text-[#888]" />
-                    <span className="truncate text-[#888]">Skills</span>
-                  </Link>
-                )}
-              />
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="rounded-lg text-[13px]"
-                render={(p) => (
-                  <Link to="/agents" {...p}>
-                    <IconBolt className="size-4 shrink-0 text-[#888]" />
-                    <span className="truncate text-[#888]">Agents</span>
-                  </Link>
-                )}
-              />
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
       </SidebarContent>
 
       <SidebarRail />

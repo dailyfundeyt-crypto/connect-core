@@ -1,5 +1,6 @@
 import * as builtinRoutines from "./builtin-routines";
 import * as composio from "./composio";
+import * as calendarRest from "./google-calendar-rest";
 import * as driveRest from "./google-drive-rest";
 import type { ListedTool, McpCallResult } from "./mcp";
 import * as mcp from "./mcp";
@@ -118,6 +119,7 @@ export type VendorTransport = {
 export type TransportKind =
   | "mcp"
   | "google-drive-rest"
+  | "google-calendar-rest"
   | "builtin-routines"
   | "composio";
 
@@ -143,6 +145,7 @@ export type CuratedTransportKind = Exclude<TransportKind, "composio">;
 const TRANSPORTS: Record<TransportKind, VendorTransport> = {
   mcp,
   "google-drive-rest": driveRest,
+  "google-calendar-rest": calendarRest,
   "builtin-routines": builtinRoutines,
   composio,
 };

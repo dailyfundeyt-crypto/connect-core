@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -23,13 +23,19 @@ import { CodexUsagePanel } from "@/components/settings/codex-usage-panel";
 import { DeploymentModePanel } from "@/components/settings/deployment-mode-panel";
 import { DonatePanel } from "@/components/settings/donate-panel";
 import { DriveBackupPanel } from "@/components/settings/drive-backup-panel";
+import { BrowserGroupsPanel } from "@/components/settings/browser-groups-panel";
 import { McpConnectorMappingPanel } from "@/components/settings/mcp-connector-mapping";
+import { McpSettingsPanel } from "@/components/settings/mcp-settings";
+import { ConnectorGallery } from "@/components/agent-hub/connector-gallery";
+import { BrainSettingsPage } from "@/components/brain/brain-settings-page";
 import { ModelProviderSettingsPanel } from "@/components/settings/model-provider-settings";
+import { CliProvidersSettingsPanel } from "@/components/settings/cli-providers-settings";
 import { ShortcutsPanel } from "@/components/settings/shortcuts-panel";
 import { StandingInstructions } from "@/components/settings/standing-instructions";
 import { SupabaseSyncCard } from "@/components/settings/supabase-sync-card";
 import { UbuntuMachinesPanel } from "@/components/settings/ubuntu-machines-settings";
 import { VoiceSettingsPanel } from "@/components/settings/voice-settings";
+import { CalendarSettingsPanel } from "@/components/calendar/calendar-settings-panel";
 import {
   getLabPrefs,
   subscribeLabPrefs,
@@ -39,7 +45,9 @@ import {
   subscribeLocalProfile,
 } from "@/lib/auth/local-profile";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { useSignOut } from "@/lib/auth/use-sign-out";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
+import { IconChevronLeft } from "@tabler/icons-react";
 
 // ─── Auto-save hook ──────────────────────────────────────────────────────────
 
@@ -62,6 +70,110 @@ function useAutoSave() {
   return { savedAt, triggerSave };
 }
 
+// ─── Inlined pages ────────────────────────────────────────────────────────────
+
+/*
+ * Four sidebar entries used to be separate routes: Brain and MCP were their own `PageShell` pages
+ * under /settings, and Skills and Agents left /settings altogether. Everything else is a hash on
+ * this page, so those four were the only menu items that left the settings screen — a sidebar
+ * where clicking an item can drop you on a different page is a sidebar nobody can learn.
+ *
+ * Their components are page-level by construction: each renders its own heading, description and
+ * `PageSection` spacing, and Brain is `width="wide"` because its graph needs the room. Rendering
+ * them here would stack a second page title inside this one, so each is given the heading it
+ * needs and the page wrapper is dropped. Nothing is reimplemented — the gallery, the MCP rows and
+ * the whole Brain page are the same components the routes mounted, minus their `PageShell`.
+ */
+
+/** The MCP route, without its page shell. */
+function McpSettingsInlinePanel() {
+  return (
+    <>
+      <ConnectorGallery className="mt-2" pageSize={8} />
+      <McpSettingsPanel />
+    </>
+  );
+}
+
+/**
+ * Sync & Backup = Google-Drive-Sicherung + Online-Abgleich (Supabase).
+ * Die Supabase-Karte war importiert, aber nie eingehängt; der Chip "Supabase-Sync" landete
+ * deshalb auf einer Seite ohne Abgleich-Status (helium-mobile4).
+ */
+function SyncBackupPanel() {
+  return (
+    <>
+      <DriveBackupPanel />
+      <div className="mt-10">
+        <SupabaseSyncCard />
+      </div>
+    </>
+  );
+}
+
+/** The Brain route, without its page shell. */
+function BrainInlinePanel() {
+  return <BrainSettingsPage />;
+}
+
+/**
+ * How much this device is holding for the site.
+ *
+ * Replaces a button that pointed at a `storage` hash no panel has ever claimed. `navigator.storage.
+ * estimate()` is the only figure available without a backend, it covers the whole origin rather than
+ * Connect's own keys, and it needs a secure context — so the reading is taken once on mount and the
+ * row falls back to the plain description when the browser will not answer.
+ */
+function LocalStorageUsage() {
+  const [usage, setUsage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    navigator.storage?.estimate?.().then(
+      ({ quota = 0, usage: used = 0 }) => {
+        if (cancelled) return;
+        // A quota of zero is how an unavailable estimate reports, not an empty device.
+        if (!quota) return;
+        setUsage(`${formatBytes(used)} von ${formatBytes(quota)} belegt`);
+      },
+      () => {
+        /* No estimate available — the description stands on its own. */
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Row
+      description={
+        usage
+          ? `Datenbank und Cache auf diesem Gerät — ${usage}`
+          : "Datenbank und Cache auf diesem Gerät"
+      }
+      label="Lokale Daten"
+    >
+      <span className="text-[#888] text-xs">auf diesem Gerät</span>
+    </Row>
+  );
+}
+
+const UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
+
+/** Bytes as a short human string — one decimal below 10, none above, so the number stays scannable. */
+function formatBytes(bytes: number): string {
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < UNITS.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${unit === 0 ? Math.round(value) : value.toFixed(1)} ${UNITS[unit]}`;
+}
+
 // ─── Panel router ─────────────────────────────────────────────────────────────
 //
 // The sidebar (components/settings/settings-sidebar.tsx) links to 19 hashes. Each one now
@@ -79,11 +191,16 @@ const PANELS: Record<string, React.ComponentType | null> = {
   // Verbindungen
   "api-keys": ApiKeysSettingsPanel,
   "model-provider": ModelProviderSettingsPanel,
+  "cli-providers": CliProvidersSettingsPanel,
   "connector-mapping": McpConnectorMappingPanel,
+  "mcp": McpSettingsInlinePanel,
   "ubuntu-machines": UbuntuMachinesPanel,
   voice: VoiceSettingsPanel,
+  calendar: CalendarSettingsPanel,
   // System & Hilfe
-  "sync-backup": DriveBackupPanel,
+  "sync-backup": SyncBackupPanel,
+  "browser-groups": BrowserGroupsPanel,
+  brain: BrainInlinePanel,
   erweitert: ErweitertPanel,
   shortcuts: ShortcutsPanel,
   "standing-instructions": StandingInstructions,
@@ -94,6 +211,155 @@ const PANELS: Record<string, React.ComponentType | null> = {
   privacy: null, // rendered inline below (Datenschutz)
   terms: null, // rendered inline below (Nutzungsbedingungen)
 };
+
+/**
+ * The section ids rendered inline at the bottom of /settings.
+ *
+ * `PANELS` leaves `security`, `info`, `privacy` and `terms` null on purpose — they were always
+ * meant to be drawn by the inline stack, not by a panel component. The other five (`konto`,
+ * `konnektoren`, `helium-shell`, `connect-agenten`, `benachrichtigungen`) had no entry at all,
+ * which is what made their settings read as removed: nothing linked to them and they still took up
+ * 2000px of scroll under the overview.
+ *
+ * A hash in this set makes the inline stack render. A section is therefore reachable as soon as
+ * its id is listed here, and unreachable in no way at all.
+ */
+const INLINE_SECTIONS = new Set([
+  "datenschutz",
+  "security",
+  "info",
+  "privacy",
+  "terms",
+  "konto",
+  "konnektoren",
+  "helium-shell",
+  "connect-agenten",
+  "benachrichtigungen",
+  "uber",
+]);
+
+/**
+ * Alte bzw. doppelte Hashes → echtes Ziel (helium-mobile4). `#backup` kam aus dem Profilblatt der
+ * Handy-Version, `#background` aus der Erweitert-Kachel; beide zeigten eine leere Seite.
+ */
+const HASH_ALIASES: Record<string, string> = {
+  backup: "sync-backup",
+  sync: "sync-backup",
+  background: "erweitert",
+};
+
+/**
+ * Auf dem Handy zeigt ein Hash aus dem Inline-Stapel NUR seinen Abschnitt (eine eigene Seite),
+ * statt alle sieben Abschnitte untereinander. Diese Hashes haben keinen eigenen Abschnitt und
+ * landen im passenden.
+ */
+const PHONE_SECTION_FOR: Record<string, string> = {
+  security: "konto",
+  info: "uber",
+  privacy: "datenschutz",
+  terms: "uber",
+};
+
+/** Titel der Kopfzeile auf dem Handy. */
+const PHONE_TITLES: Record<string, string> = {
+  profile: "Unternehmen & Profil",
+  "api-keys": "API-Keys",
+  "model-provider": "KI-Modelle",
+  "connector-mapping": "Connector-Mapping",
+  mcp: "MCP-Server",
+  "ubuntu-machines": "Ubuntu-Maschinen",
+  voice: "Stimme",
+  "sync-backup": "Sync & Backup",
+  "browser-groups": "Browser-Gruppen",
+  brain: "Brain",
+  erweitert: "Erweitert",
+  shortcuts: "Shortcuts",
+  "standing-instructions": "Standing Instructions",
+  donate: "Feedback & Unterstützen",
+  "deployment-mode": "Deployment",
+  "codex-usage": "Codex-Nutzung",
+  konto: "Konto",
+  konnektoren: "Konnektoren",
+  "helium-shell": "Helium-Shell",
+  "connect-agenten": "Connect-Agenten",
+  benachrichtigungen: "Benachrichtigungen",
+  datenschutz: "Datenschutz",
+  uber: "Über & Rechtliches",
+};
+
+/** Kontext: welcher Inline-Abschnitt auf dem Handy allein sichtbar ist (null = alle). */
+const PhoneSectionContext = React.createContext<string | null>(null);
+
+/**
+ * True when a hash names something the settings page can actually show.
+ *
+ * A hash that is neither a registered panel nor an inline section would render an empty pane, so
+ * this is what the overview checks before it advertises a destination.
+ */
+export function isKnownSettingsHash(hash: string): boolean {
+  return hash in PANELS || INLINE_SECTIONS.has(hash);
+}
+
+/**
+ * The milky desktop surface, and the only colours this page imposes.
+ *
+ * The section list and the sidebar were both written for a near-black pane with every colour
+ * hardcoded: text-[#666] for a label, text-[#888] for a button, border-white/[0.06] for a divider,
+ * and a separate set of shadcn sidebar tokens. Recolouring ~40 call sites by hand is the kind of
+ * edit that silently misses one, and it did — an override that forced every grey to the same value
+ * flattened the hierarchy that made the page readable.
+ *
+ * So the list now carries its own light/dark pairs on the elements that need them (see `Row` and
+ * `Section`), and this stylesheet only does the two things CSS is better at than Tailwind here:
+ * the surface colour, and the sidebar, which is built on tokens rather than literals. Scoping both
+ * to md leaves the phone on the dark theme it is designed around.
+ */
+const DESKTOP_PALETTE = `
+@media (min-width: 768px) {
+  /* The pane itself. */
+  .settings-pane { color: #1c1b19; }
+
+  /*
+   * The sidebar is a token-driven surface, so it takes a token override. Nothing else: every colour
+   * on the rows is a real Tailwind class with a dark: pair, carried in the markup, so the same
+   * markup is right on cream and on the phone's near-black without a stylesheet to keep in step.
+   */
+  .settings-shell {
+    --sidebar: #efece6;
+    --sidebar-foreground: #1c1b19;
+    --sidebar-accent: rgba(28, 27, 25, 0.07);
+    --sidebar-accent-foreground: #1c1b19;
+    --sidebar-border: rgba(28, 27, 25, 0.12);
+  }
+  .settings-shell [data-slot="sidebar"] { background-color: #efece6; }
+  .settings-shell [data-slot="sidebar-header"] { border-color: rgba(28, 27, 25, 0.12); }
+  .settings-shell .bg-\\[\\#0a0a0a\\] { background-color: #e7e4de; }
+  .settings-shell .bg-\\[\\#111\\] { background-color: #e2dfd9; }
+
+  /*
+   * The panel rows inside the pane are Item cards on the shadcn token set, so on cream they keep
+   * the dark theme's transparent background and white border. Both are restored here — the one
+   * place where a token override is right, because these are token-driven, not literal.
+   */
+  .settings-pane [data-slot="item"] {
+    background-color: #fff;
+    border-color: rgba(28, 27, 25, 0.10);
+  }
+  .settings-pane [data-slot="item"]:hover { background-color: #fbfaf8; }
+  .settings-pane [data-slot="item-title"] { color: #1c1b19; }
+  .settings-pane [data-slot="item-description"] { color: #6b6862; }
+  .settings-pane [data-slot="item-actions"] .text-\\[\\#888\\] { color: #4a4741; }
+
+
+  /*
+   * The inline Oeffnen / Bearbeiten buttons are handled by GHOST_BUTTON in the markup, not here:
+   * Tailwind v4 emits their border as a color-mix in oklab, so a rule written against the class name
+   * does not match the element. Their labels still come from these two rules, which do match.
+   */
+  .settings-pane .text-\[\#888\] { color: #4a4741; }
+  .settings-pane .hover\:text-white:hover { color: #1c1b19; }
+}`;
+
 
 function PanelOutlet({ hash }: { hash: string }) {
   const Panel = PANELS[hash];
@@ -117,20 +383,30 @@ function Section({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
+  const phoneOnly = React.useContext(PhoneSectionContext);
 
   return (
-    <section id={id}>
+    <section
+      className={cn("mt-8 first:mt-0", phoneOnly && phoneOnly !== id && "max-md:hidden", phoneOnly === id && "max-md:mt-0")}
+      id={id}
+    >
       <button
         className="flex w-full cursor-pointer items-center gap-2 py-2 text-left"
         onClick={() => setOpen((o) => !o)}
         type="button"
       >
-        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#666]">
+        {/*
+         * The section label is a heading, not a caption. It was `text-[#666]` at 11px, which is a
+         * body-grey at caption size — legible against black, a grey smudge against cream, and the
+         * only thing separating one group of settings from the next. It is now near-black on the
+         * light pane and full white on the dark one, at the weight a heading should carry.
+         */}
+        <span className="text-[11px] font-bold tracking-[0.12em] text-[#1c1b19] uppercase dark:text-white">
           {label}
         </span>
         <svg
           className={cn(
-            "size-3 text-[#444] transition-transform duration-150",
+            "size-3 text-[#6b6862] transition-transform duration-150 dark:text-[#444]",
             !open && "-rotate-90",
           )}
           fill="none"
@@ -147,7 +423,12 @@ function Section({
           open ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0",
         )}
       >
-        <div className="flex flex-col">{children}</div>
+        {/*
+         * The gap lives between the cards, not as a border on them. `gap-2` is the same rhythm the
+         * panel rows use, so a setting looks the same here as it does inside a panel — the two
+         * lists are the same idea drawn at two levels and they should not disagree.
+         */}
+        <div className="flex flex-col gap-2">{children}</div>
       </div>
     </section>
   );
@@ -155,6 +436,34 @@ function Section({
 
 // ─── Row primitives ──────────────────────────────────────────────────────────
 
+/**
+ * The ghost button every control in the section list uses.
+ *
+ * All ~30 of them were the same button written out in full, on the dark theme: a 10% white border
+ * and a #888 label. On the cream pane that border is invisible and the label is light grey on
+ * white, so a control that works looks disabled — and the border could not be fixed from a
+ * stylesheet, because Tailwind v4 emits `border-white/10` as a color-mix in oklab and the class name
+ * in a rule does not match what lands on the element.
+ *
+ * One constant with both themes on it is the fix: `dark:` carries the old values verbatim, so the
+ * phone is unchanged, and the light values are real Tailwind classes that will compile.
+ */
+const GHOST_BUTTON = cn(
+  "border-black/[0.16] text-[#3d3a35] hover:border-black/30 hover:text-[#1c1b19]",
+  "dark:border-white/10 dark:text-[#888] dark:hover:border-white/20 dark:hover:text-white",
+);
+
+/**
+ * One setting: a label, what it means, and the control that changes it.
+ *
+ * This is a card, not a line in a list. It used to be a bare row with a `border-b` at 6% white and
+ * nothing else, which read as a list on a near-black pane and as unlined text on a light one — the
+ * same markup looked finished in one theme and unfinished in the other, and no amount of colour
+ * alone fixes a row that has no edge to be read against.
+ *
+ * The padding is on the card rather than between rows, so the gap does the grouping and a row with
+ * a tall control next to a one-line description still reads as one block.
+ */
 function Row({
   label,
   description,
@@ -169,17 +478,22 @@ function Row({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-4 py-3",
-        border && "border-b border-white/[0.06]",
+        "rounded-lg border border-black/[0.07] bg-white/60 px-4 py-3",
+        "transition-colors hover:bg-white/80 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]",
+        !border && "border-transparent bg-transparent hover:bg-transparent dark:hover:bg-transparent",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-white">{label}</p>
-        {description && (
-          <p className="mt-0.5 text-xs text-[#666]">{description}</p>
-        )}
+      <div className="flex items-center justify-between gap-6">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-[#1c1b19] dark:text-white">{label}</p>
+          {description ? (
+            <p className="mt-0.5 text-[#6b6862] text-xs dark:text-[#666]">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">{children}</div>
       </div>
-      <div className="flex shrink-0 items-center">{children}</div>
     </div>
   );
 }
@@ -196,26 +510,36 @@ function ActionRow({
   danger?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3 border-b border-white/[0.06]">
-      <div className="min-w-0 flex-1">
-        <p className={cn("text-sm font-medium", danger ? "text-red-400" : "text-white")}>
+    <div className="rounded-lg border border-black/[0.07] bg-white/60 px-4 py-3 transition-colors hover:bg-white/80 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
+      <div className="flex items-center justify-between gap-6">
+        <div className="min-w-0 flex-1">
+          <p
+            className={cn(
+              "text-sm font-medium",
+              danger ? "text-red-600 dark:text-red-400" : "text-[#1c1b19] dark:text-white",
+            )}
+          >
+            {label}
+          </p>
+          {description ? (
+            <p className="mt-0.5 text-[#6b6862] text-xs dark:text-[#666]">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          onClick={onClick}
+          size="sm"
+          type="button"
+          variant={danger ? "destructive" : "ghost"}
+          className={cn(
+            !danger &&
+              "border-black/[0.14] text-[#4a4741] hover:border-black/25 hover:text-[#1c1b19] dark:border-white/10 dark:text-[#888] dark:hover:border-white/20 dark:hover:text-white",
+          )}
+        >
           {label}
-        </p>
-        {description && (
-          <p className="mt-0.5 text-xs text-[#666]">{description}</p>
-        )}
+        </Button>
       </div>
-      <Button
-        onClick={onClick}
-        size="sm"
-        type="button"
-        variant={danger ? "destructive" : "ghost"}
-        className={cn(
-          !danger && "border border-white/10 text-[#888] hover:border-white/20 hover:text-white",
-        )}
-      >
-        {label}
-      </Button>
     </div>
   );
 }
@@ -267,19 +591,27 @@ function RouteComponent() {
     return "Strg+Shift+Y";
   });
 
-  // Read hash from URL for sidebar highlighting and panel selection
-  const [hash, setHash] = useState(() =>
-    typeof window !== "undefined" ? window.location.hash.replace("#", "") : "",
-  );
-
-  useEffect(() => {
-    const onHashChange = () => {
-      const h = window.location.hash.replace("#", "");
-      setHash(h);
-    };
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+  /*
+   * Which panel is open, read from the URL.
+   *
+   * This used to be `useState` plus a `hashchange` listener, and the listener was the whole problem:
+   * the sidebar links are TanStack `Link`s, so a click navigates with `history.pushState`, and
+   * `pushState` does not fire `hashchange`. The URL updated, the state never did, and every panel
+   * stayed closed — the sidebar highlighted an item and nothing appeared. A manual listener for a
+   * browser event the router has already handled is also a second source of truth about the URL,
+   * which is the part that goes wrong quietly.
+   *
+   * The router already tracks the hash, and it is the same object that performed the navigation, so
+   * reading it from there cannot disagree with the address bar. Re-navigating to the same hash is
+   * now a no-op rather than a missed update, and a browser back button lands on the previous panel
+   * because the history entry was the router's all along.
+   */
+  const rawHash = useRouterState({
+    select: (s) => s.location.hash.replace(/^#/, ""),
+  });
+  const hash = HASH_ALIASES[rawHash] ?? rawHash;
+  const phoneSection = INLINE_SECTIONS.has(hash) ? (PHONE_SECTION_FOR[hash] ?? hash) : null;
+  const phoneTitle = hash ? (PHONE_TITLES[phoneSection ?? hash] ?? "Einstellungen") : null;
 
   // Scroll to top when the hash changes. The hash now selects a panel (PanelOutlet) instead of
   // anchoring to an in-page section, so the previous scrollIntoView lookup found nothing — every
@@ -317,26 +649,101 @@ function RouteComponent() {
   };
 
   return (
-    <SidebarShell className="h-svh overflow-hidden" width="300px">
+    <SidebarShell
+      className="h-svh overflow-hidden settings-shell"
+      width="300px"
+    >
       {/* Settings sidebar — 3 collapsible groups */}
       <SettingsSidebar activeHash={hash} />
 
-      {/* Content pane */}
-      <div id="settings-scroll" className="min-h-0 flex-1 overflow-y-auto bg-[#000]">
-        {/* When no hash: show the overview */}
-        {!hash && <SettingsOverview />}
+      {/*
+       * The content pane.
+       *
+       * Desktop gets the flat list the settings page has always had — sections one under another,
+       * no cards. `SettingsOverview` is a phone-only affordance now: on a wide screen a grid of
+       * seven tiles and a sidebar both claim to be the navigation, and the two disagree. The
+       * palette follows the same split — the list is the milky desktop surface, the tiles keep the
+       * near-black one, because that contrast is what the phone layout is built around.
+       */}
+      <div
+        id="settings-scroll"
+        className="settings-pane min-h-0 flex-1 overflow-y-auto bg-transparent md:bg-[#f6f5f2]"
+      >
+        {/*
+         * The list was written for a near-black pane: every label, divider and outline is a dark
+         * grey or a translucent white, which on the milky desktop surface means dark text on a
+         * light background and hairline borders that vanish. Recolouring all forty of those
+         * call sites by hand is the kind of edit that silently misses one, so the desktop palette
+         * is applied as overrides scoped to this pane instead — `md:` only, so the phone keeps the
+         * dark theme it is designed for.
+         */}
+        <style>{DESKTOP_PALETTE}</style>
+        {/*
+         * Handy-Kopfzeile (helium-mobile4): Auf dem Handy gibt es keine Seitenleiste, also hatte
+         * ein geöffnetes Panel (Sync & Backup, API-Keys, …) keinen Weg zurück. Jetzt: Zurück zur
+         * Übersicht bzw. zum Start, Titel des Bereichs, im Tech-Look der Handy-Version.
+         */}
+        <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-white/[0.06] bg-[#07080c]/85 px-3 pb-2 pt-[max(0.6rem,env(safe-area-inset-top))] backdrop-blur-xl md:hidden">
+          <Link
+            aria-label={hash ? "Zurück zur Übersicht" : "Zurück"}
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-white active:bg-white/10"
+            to={hash ? "/settings" : "/"}
+          >
+            <IconChevronLeft className="size-6" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-300/70">
+              Einstellungen
+            </p>
+            <p className="truncate text-[17px] font-semibold text-white">
+              {phoneTitle ?? "Übersicht"}
+            </p>
+          </div>
+        </div>
+        {/* Phone: tile grid. Desktop: the section list, with the search field above it. */}
+        <div className="md:hidden">
+          {!hash && <SettingsOverview />}
+        </div>
 
-        {/* Settings panels — always rendered so all hashes are available */}
-        <div
-          className={cn(
-            "mx-auto flex w-full max-w-[560px] flex-col px-6 pb-16",
-            !hash ? "pt-0" : "pt-8",
-          )}
-        >
-          {/* Hash-addressed panel (the sidebar's 19 entries resolve here) */}
-          <PanelOutlet hash={hash} />
-          {/* Back */}
-          <div className="mb-6 flex items-center">
+        {/*
+         * The inline stack is a second, older settings UI — `konto`, `konnektoren`,
+         * `helium-shell`, `connect-agenten`, `benachrichtigungen`, `datenschutz`, `uber` — and
+         * `security`, `info`, `privacy`, `terms`, which PANELS leaves null for.
+         *
+         * It used to render unconditionally, so every visit to /settings stacked all of them under
+         * the overview cards while nothing anywhere linked to them. Two thousand pixels of settings
+         * with no way to reach them is what read as "they removed my options".
+         *
+         * It renders when the hash names one of them, and PanelOutlet renders the registered
+         * panels beside it, so a hash always lands on content. Nothing was deleted; the sections
+         * are just addressable now instead of permanently appended to the overview.
+         */}
+        {/*
+         * The section list — the page itself on desktop.
+         *
+         * On the phone a hash decides whether a single section appears, because a chip on a tile
+         * should feel like a page. On the desktop the list is always on: with no hash it shows
+         * every section, which is where a desktop user looks for them, and a hash then keeps the
+         * list standing so the sidebar highlight and the neighbouring sections stay where the
+         * reader left them.
+         *
+         * The two widths therefore need different conditions, and only CSS cannot express it: on
+         * the phone the list is shown exactly when a hash names one of its sections, and on the
+         * desktop it is shown whenever no registered panel is on screen. A hash that IS a panel
+         * hides it on both — a panel is its own screen, and hanging it below the full list is what
+         * used to bury it.
+         */}
+        {(!PANELS[hash] && (INLINE_SECTIONS.has(hash) || !hash)) ? (
+          <PhoneSectionContext.Provider value={phoneSection}>
+          <div
+            className={cn(
+              "mx-auto flex w-full max-w-[560px] flex-col px-4 pb-16 pt-5 md:px-6 md:pt-8",
+              // Below md the tiles own the empty state; above it the list is the page.
+              !hash && "max-md:hidden",
+            )}
+          >
+            {/* Back (Handy: Kopfzeile oben übernimmt) */}
+            <div className="mb-6 flex items-center max-md:hidden">
             <Button
               render={(props) => (
                 <Link {...props} to="/">
@@ -377,7 +784,7 @@ function RouteComponent() {
                   size="sm"
                   type="button"
                   variant="outline"
-                  className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                  className={GHOST_BUTTON}
                 >
                   Bearbeiten
                 </Button>
@@ -395,7 +802,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Anzeigen
               </Button>
@@ -405,20 +812,12 @@ function RouteComponent() {
               description="Sitzung beenden und zur Anmeldung"
               label="Abmelden"
             >
-              <Button
-                render={(props) => <Link {...props} to="/sign" />}
-                size="sm"
-                type="button"
-                variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
-              >
-                Abmelden
-              </Button>
+              <SignOutRowButton className={GHOST_BUTTON} />
             </Row>
           </Section>
 
           {/* ── 2. Konnektoren ── */}
-          <div className="mt-8 border-t border-white/[0.06]" />
+          <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="konnektoren" label="Konnektoren">
             <Row
               description="IMAP/SMTP für E-Mail-basierte Kanäle"
@@ -428,7 +827,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 <IconPlus className="mr-1 size-3.5" />
                 Hinzufügen
@@ -438,12 +837,12 @@ function RouteComponent() {
             <Row description="Google Drive Backup" label="Cloud-Sync">
               <Button
                 render={(props) => (
-                  <Link {...props} to="/settings" hash="backup" />
+                  <Link {...props} to="/settings" hash="sync-backup" />
                 )}
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Öffnen
               </Button>
@@ -465,7 +864,7 @@ function RouteComponent() {
                   size="sm"
                   type="button"
                   variant="ghost"
-                  className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                  className={GHOST_BUTTON}
                 >
                   <IconRefresh className="mr-1 size-3.5" />
                   Retry
@@ -475,7 +874,7 @@ function RouteComponent() {
           </Section>
 
           {/* ── 3. Helium-Shell ── */}
-          <div className="mt-8 border-t border-white/[0.06]" />
+          <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="helium-shell" label="Helium-Shell">
             <Row
               description="Tastenkürzel zum Öffnen der Shell"
@@ -499,7 +898,7 @@ function RouteComponent() {
                   size="sm"
                   type="button"
                   variant="ghost"
-                  className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                  className={GHOST_BUTTON}
                 >
                   Ändern
                 </Button>
@@ -512,12 +911,12 @@ function RouteComponent() {
             >
               <Button
                 render={(props) => (
-                  <Link {...props} to="/settings" hash="apple-dot" />
+                  <Link {...props} to="/settings" hash="browser-groups" />
                 )}
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Konfigurieren
               </Button>
@@ -534,7 +933,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Bearbeiten
               </Button>
@@ -542,7 +941,7 @@ function RouteComponent() {
           </Section>
 
           {/* ── 4. Connect-Agenten ── */}
-          <div className="mt-8 border-t border-white/[0.06]" />
+          <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="connect-agenten" label="Connect-Agenten">
             <Row
               description="Agent für neue Chats"
@@ -553,7 +952,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Auswählen
               </Button>
@@ -568,7 +967,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Öffnen
               </Button>
@@ -585,7 +984,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Verwalten
               </Button>
@@ -596,11 +995,13 @@ function RouteComponent() {
               label="MCP-Server"
             >
               <Button
-                render={(props) => <Link {...props} to="/settings/mcp" />}
+                render={(props) => (
+                  <Link {...props} hash="mcp" to="/settings" />
+                )}
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Öffnen
               </Button>
@@ -608,7 +1009,7 @@ function RouteComponent() {
           </Section>
 
           {/* ── 5. Benachrichtigungen ── */}
-          <div className="mt-8 border-t border-white/[0.06]" />
+          <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="benachrichtigungen" label="Benachrichtigungen">
             <Row
               description="Desktop-Benachrichtigungen"
@@ -642,7 +1043,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Konfigurieren
               </Button>
@@ -650,24 +1051,20 @@ function RouteComponent() {
           </Section>
 
           {/* ── 6. Datenschutz ── */}
-          <div className="mt-8 border-t border-white/[0.06]" />
+          <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="datenschutz" label="Datenschutz">
-            <Row
-              description="Datenbank und Cache auf diesem Gerät"
-              label="Lokale Daten"
-            >
-              <Button
-                render={(props) => (
-                  <Link {...props} to="/settings" hash="storage" />
-                )}
-                size="sm"
-                type="button"
-                variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
-              >
-                Anzeigen
-              </Button>
-            </Row>
+            {/*
+             * This row used to offer an "Anzeigen" button pointing at a `storage` hash that no panel
+             * has ever claimed, so it scrolled nowhere. There is no storage screen to open, and a
+             * button that leads nowhere is worse than the fact it promised to show.
+             *
+             * The browser's own estimate answers the question the label asks — how much this device
+             * is holding — and it is the number that decides whether anything needs clearing. It is
+             * read on mount because the estimate is async, and it is only a hint in a non-persistent
+             * context, which is why it stays in the description's place rather than becoming a
+             * figure the user is expected to act on.
+             */}
+            <LocalStorageUsage />
             <Row
               description="Anonyme Nutzungsstatistiken"
               label="Telemetrie"
@@ -686,7 +1083,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 <IconDownload className="mr-1 size-3.5" />
                 Export
@@ -701,7 +1098,7 @@ function RouteComponent() {
           </Section>
 
           {/* ── 7. Über ── */}
-          <div className="mt-8 border-t border-white/[0.06]" />
+          <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="uber" label="Über">
             <Row
               description={`Connect App · Build ${import.meta.env.VITE_APP_VERSION ?? "dev"}`}
@@ -729,7 +1126,7 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 Öffnen
               </Button>
@@ -742,20 +1139,71 @@ function RouteComponent() {
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="border border-white/10 text-[#888] hover:border-white/20 hover:text-white"
+                className={GHOST_BUTTON}
               >
                 <IconMail className="mr-1 size-3.5" />
                 Feedback
               </Button>
             </Row>
+            <Row description="Wie Connect deine Daten verarbeitet" label="Datenschutzerklärung">
+              <Button
+                render={(props) => <a {...props} href="/datenschutz" rel="noopener" target="_blank" />}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className={GHOST_BUTTON}
+              >
+                Öffnen
+              </Button>
+            </Row>
+            <Row description="Regeln für die Nutzung von Connect" label="Nutzungsbedingungen">
+              <Button
+                render={(props) => <a {...props} href="/nutzungsbedingungen" rel="noopener" target="_blank" />}
+                size="sm"
+                type="button"
+                variant="ghost"
+                className={GHOST_BUTTON}
+              >
+                Öffnen
+              </Button>
+            </Row>
           </Section>
 
-          {/* ── Erweitert ── */}
-          <ErweitertPanel />
+          {/* ── Erweitert ── (auf dem Handy eigene Seite #erweitert) */}
+          <div className="max-md:hidden">
+            <ErweitertPanel />
+          </div>
 
           {/* Bottom spacer */}
           <div className="h-8" />
         </div>
+          </PhoneSectionContext.Provider>
+      ) : null}
+
+      {/* Handy: unbekannter Hash → statt leerer Seite ein Hinweis mit Weg zurück. */}
+      {hash && !PANELS[hash] && !INLINE_SECTIONS.has(hash) ? (
+        <div className="mx-auto w-full max-w-[560px] px-6 pb-16 pt-8 text-sm text-[#888]">
+          Diesen Bereich gibt es nicht (mehr).{" "}
+          <Link className="text-sky-400 underline-offset-2 hover:underline" to="/settings">
+            Zur Übersicht
+          </Link>
+        </div>
+      ) : null}
+
+      {/*
+       * The registered panels, one at a time. A hash in PANELS renders its component; `null` and an
+       * unknown hash both render nothing, which is correct — the sidebar and the overview only
+       * advertise hashes that resolve.
+       *
+       * On the phone a panel replaces the list entirely, so a chip on a tile is a page of its own.
+       * On the desktop the list is hidden whenever a panel is showing, which is the only case where
+       * the two would stack — the two sets of hashes do not overlap, so nothing is ever cut off.
+       */}
+      {hash && PANELS[hash] ? (
+        <div className="mx-auto w-full max-w-[560px] px-4 pb-16 pt-5 md:px-6 md:pt-8">
+          <PanelOutlet hash={hash} />
+        </div>
+      ) : null}
       </div>
 
       {/* Dialogs */}
@@ -773,5 +1221,23 @@ function RouteComponent() {
         open={profileOpen}
       />
     </SidebarShell>
+  );
+}
+
+/** "Abmelden" in Konto & Sicherheit: really ends the session (it used to only link to /sign,
+ * which bounced straight back because the session was still alive). */
+function SignOutRowButton({ className }: { className?: string }) {
+  const { signOut, isPending } = useSignOut();
+  return (
+    <Button
+      className={className}
+      disabled={isPending}
+      onClick={() => void signOut()}
+      size="sm"
+      type="button"
+      variant="ghost"
+    >
+      {isPending ? "Abmelde…" : "Abmelden"}
+    </Button>
   );
 }

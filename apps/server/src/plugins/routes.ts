@@ -19,6 +19,10 @@ import {
 import { CATALOGUE, catalogueEntry } from "./catalogue";
 import { toolkitOf, vendorSentence } from "./composio";
 import {
+  CalendarRefusedError,
+  fetchEvents as fetchCalendarEvents,
+} from "./google-calendar-rest";
+import {
   authorizationUrlFor,
   type ConnectOrigin,
   challengeFor,
@@ -39,6 +43,26 @@ import {
   PluginRefusedError,
   type PluginStore,
 } from "./store";
+
+/**
+ * The catalogue entry the calendar panel reads through.
+ *
+ * A constant rather than a query parameter, and deliberately: a caller naming its own `serverId`
+ * would make this route a way to read any connected vendor's data through whatever transport answers
+ * for it, wearing the calendar's name. There is one calendar, it is this one, and the browser does
+ * not get a say in which.
+ */
+const CALENDAR_SERVER_ID = "google-calendar";
+
+/**
+ * The widest window this route will fetch.
+ *
+ * A month, with slack, because a month is what the panel draws and asking twice for the same month
+ * in two requests is cheaper than asking for a year and discarding most of it. Capped rather than
+ * truncated: a caller told less than it asked for would draw fewer days than it believes it has,
+ * which for a calendar reads as a wrong answer rather than as a limit.
+ */
+const MAX_CALENDAR_WINDOW_MS = 62 * 24 * 60 * 60 * 1000;
 
 /**
  * Whether the person a consent was started for still has access to this deployment.
@@ -975,6 +999,114 @@ export function createPluginRoutes(
         ? redirectUriFor(connect.publicUrl)
         : null,
     });
+  });
+
+  /**
+   * One person's calendar events for a window of time.
+   *
+   * NOT A TOOL CALL, and the reason it is not is the whole design. Every other route under this
+   * prefix is about a Bot: it names a `botId`, asks `decide()` for a grant, and answers with text a
+   * model reads. This one is a person asking what is on their own day. Routing that through `callTool`
+   * would have meant inventing a Bot to stand in for them, and the grant engine would then be
+   * deciding what somebody may see about their own calendar — a question with an obvious answer that
+   * `decide()` cannot express.
+   *
+   * SO THE SESSION IS THE AUTHORISATION AND THERE IS NO BOT. `context.var.actor.id` is read once
+   * and is the only identity in the call; a `userId` in the body or the query is ignored, which is
+   * what stops this route from becoming a way to read somebody else's week.
+   *
+   * THE WINDOW IS HALF-OPEN AND BOUNDED. `from` is inclusive and `to` exclusive so a caller asking
+   * for two adjacent days twice cannot draw the same event in both. Both are required and must
+   * parse, and the span is capped: this is a panel that draws one month, and an unbounded window
+   * would let one request turn into a very expensive one against somebody's own Google quota.
+   */
+  routes.get("/calendar/events", requireUser, async (context) => {
+    const from = context.req.query("from");
+    const to = context.req.query("to");
+
+    const fromMs = from ? Date.parse(from) : Number.NaN;
+    const toMs = to ? Date.parse(to) : Number.NaN;
+
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
+      return context.json(
+        { error: "Der Zeitraum ist ungültig. Bitte erneut versuchen." },
+        400,
+      );
+    }
+    if (toMs <= fromMs) {
+      return context.json(
+        { error: "Das Ende muss nach dem Beginn liegen." },
+        400,
+      );
+    }
+    // A month is what the calendar panel asks for; a year is what a generous reading of "my
+    // schedule" would ask for. Capped between the two, and refused rather than silently shortened,
+    // because a caller drawing fewer days than it was told it has is worse than being told no.
+    if (toMs - fromMs > MAX_CALENDAR_WINDOW_MS) {
+      return context.json(
+        { error: "Der Zeitraum ist zu groß. Bitte einen Monat anfordern." },
+        400,
+      );
+    }
+
+    const granted = await store.userAccessToken(CALENDAR_SERVER_ID, context.var.actor.id);
+
+    if (!granted.ok) {
+      /*
+       * Three refusals the browser draws differently, so they are not one.
+       *
+       * `not-connected` is the ordinary state and gets a 200 with `connected: false` plus the URL to
+       * start the consent — a panel that rendered "no events" for it would tell a person their day
+       * is empty when nobody has asked Google anything yet. The other two are faults: a server this
+       * build does not know about, and a row whose credential belongs to the deployment rather than
+       * to a person. Both are 500s, because both are this deployment being wrong rather than the
+       * person doing anything.
+       */
+      if (granted.reason === "not-connected") {
+        return context.json({
+          calendar: {
+            connected: false,
+            events: [],
+            connectUrl: connect?.publicUrl
+              ? `/settings/connected-accounts/google-calendar`
+              : null,
+          },
+        });
+      }
+      return context.json(
+        {
+          error:
+            granted.reason === "no-server"
+              ? "Der Google-Kalender ist auf diesem Server nicht eingerichtet."
+              : "Der Google-Kalender ist nicht als persönliche Verbindung eingerichtet.",
+        },
+        500,
+      );
+    }
+
+    try {
+      const events = await fetchCalendarEvents(
+        { url: granted.url, token: granted.token },
+        { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
+      );
+      return context.json({ calendar: { connected: true, events } });
+    } catch (error) {
+      /*
+       * Google's own sentence, kept, and 403 is not an empty day.
+       *
+       * A calendar API that has not been enabled on the OAuth project answers every request with
+       * 403. Returning that as "no events" would show a person an empty week and call it a fact
+       * about their week, so it stays a failure with the vendor's text in it.
+       */
+      if (error instanceof CalendarRefusedError) {
+        const status = error.reason === "not-connected" ? 401 : 502;
+        return context.json({ error: error.message, reason: error.reason }, status);
+      }
+      return context.json(
+        { error: "Der Kalender konnte nicht geladen werden. Bitte erneut versuchen." },
+        502,
+      );
+    }
   });
 
   /**

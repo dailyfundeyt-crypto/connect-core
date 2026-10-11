@@ -222,6 +222,50 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
       "https://developers.google.com/workspace/guides/configure-mcp-servers",
   },
   {
+    key: "google-calendar",
+    title: "Google Calendar",
+    vendor: "Google",
+    summary: "Termine aus dem Kalender, der dich etwas betrifft.",
+    /*
+     * The same host as Drive, one more path, and its OWN entry because it is its own scope.
+     *
+     * Drive's connection cannot answer for the calendar, and that is Google's rule rather than a
+     * choice made here: a token carrying `drive.readonly` is refused by the Calendar API with
+     * `403 insufficient_scope`, whatever the code on this side asks for. Reusing the Drive grant
+     * would mean either widening Drive past reading files or holding two connections anyway, so the
+     * honest shape is a second entry and a second one-time consent.
+     */
+    host: "https://www.googleapis.com",
+    path: "/calendar/v3",
+    transport: "google-calendar-rest",
+    auth: {
+      kind: "user-oauth",
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      revokeUrl: "https://oauth2.googleapis.com/revoke",
+      /*
+       * Read-only, and only the primary calendar.
+       *
+       * `calendar.readonly` sees events, never changes one. The primary calendar is what "my
+       * calendar" means to a person, so it is the default rather than a choice to be made.
+       */
+      scopes: Object.freeze(["https://www.googleapis.com/auth/calendar.readonly"]),
+      // Load-bearing for Google: without `offline` there is no refresh token to keep the connection.
+      authorizationParams: Object.freeze({
+        access_type: "offline",
+        prompt: "consent",
+      }),
+    },
+    /*
+     * Named writes the scope already refuses.
+     *
+     * The same belt-and-braces reason as Drive: the scope stops them, and this list keeps a
+     * boundary written about writes covering them if the scope is ever widened.
+     */
+    writeTools: Object.freeze(["create_event", "update_event", "delete_event"]),
+    docsUrl: "https://developers.google.com/calendar/api/guides/overview",
+  },
+  {
     key: "notion",
     title: "Notion",
     vendor: "Notion",

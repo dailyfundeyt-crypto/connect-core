@@ -1,8 +1,10 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { SecurityGate } from "../components/auth/security-gate";
+import { CalendarDock } from "../components/calendar/calendar-dock";
 import { currentUserQueryOptions, needsOnboarding } from "../lib/auth/queries";
 import { CopilotProvider } from "../lib/copilot/provider";
 import { AppHotkeys } from "../lib/hotkeys/app-hotkeys";
+import { MobileThemeSync } from "../components/mobile/mobile-theme-sync";
 
 export const Route = createFileRoute("/_authed")({
   beforeLoad: async ({ context, location }) => {
@@ -27,7 +29,15 @@ export const Route = createFileRoute("/_authed")({
     <SecurityGate>
       <CopilotProvider>
         <AppHotkeys />
+        <MobileThemeSync />
         <Outlet />
+        {/*
+         * After the Outlet so it stacks above the page rather than under it, and outside it so it
+         * survives the pages that own their own scrolling. Inside the authed boundary for the same
+         * reason the rest of this tree is: the calendar is one person's, and there is nothing to show
+         * somebody who has not signed in.
+         */}
+        <CalendarDock />
       </CopilotProvider>
     </SecurityGate>
   ),

@@ -4697,6 +4697,60 @@ export function createPluginStore(options: PluginStoreOptions) {
      */
     oauthClientFor: storedOAuthClient,
 
+    /**
+     * A usable access token for one person's connection to one `user-oauth` server.
+     *
+     * WHY THIS EXISTS AS A SEPARATE METHOD. `connectionTokenFor` is the same mechanics, but it is
+     * private to this closure because every caller so far was a Bot tool call: those carry a `botId`
+     * and are refused by `decide()` before they reach a vendor. A person asking what is on their own
+     * day is not a Bot and must not be made to look like one to be answered, so this is the same
+     * machinery with the Bot gate left out — and it is deliberately the ONLY way out that does not
+     * mention a Bot.
+     *
+     * It mints and rotates exactly as the tool path does, including persisting a rotated refresh
+     * token, so a connection read through here stays alive rather than quietly expiring.
+     *
+     * `null` means one of three different things and the caller has to say which, so they are kept
+     * apart rather than collapsed: no server with that id, a server that is not `user-oauth` (an
+     * entry whose auth belongs to the deployment answers for nobody personally), or a person with
+     * no connection to it. The refusal the transport raises is only about the last of those.
+     */
+    async userAccessToken(
+      serverId: string,
+      userId: string,
+    ): Promise<{ ok: true; token: string; url: string } | { ok: false; reason: "no-server" | "not-personal" | "not-connected" }> {
+      const { row, entry, access } = await requireServer(serverId);
+
+      if (access.credential !== "person-oauth") {
+        return { ok: false, reason: "not-personal" };
+      }
+
+      const connected = await database
+        .select({ credentialId: mcpUserCredentials.credentialId })
+        .from(mcpUserCredentials)
+        .where(
+          and(
+            eq(mcpUserCredentials.serverId, row.id),
+            eq(mcpUserCredentials.userId, userId),
+          ),
+        )
+        .limit(1);
+
+      if (!connected[0]?.credentialId) {
+        return { ok: false, reason: "not-connected" };
+      }
+
+      const { token } = await connectionTokenFor(
+        { ...row, credentialId: connected[0].credentialId },
+        entry,
+        userId,
+        access,
+      );
+
+      if (!token) return { ok: false, reason: "not-connected" };
+      return { ok: true, token, url: effectiveUrl(row, entry) };
+    },
+
     /** Which `user-oauth` servers this person has connected, for their own settings page. */
     async connectionsFor(
       userId: string,
