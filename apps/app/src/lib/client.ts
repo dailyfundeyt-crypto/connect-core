@@ -26,6 +26,13 @@ export type ClientOptions = {
   fallback?: string;
   /** For the calls a Bot makes on a person's behalf, which are abandoned when the turn is. */
   signal?: AbortSignal;
+  /**
+   * Returns the parsed body instead of the `Response`, for endpoints that answer flat.
+   *
+   * Not sent to the server -- it picks the return shape, nothing more. See the
+   * overloads below.
+   */
+  unwrap?: boolean;
 };
 
 /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
@@ -69,6 +76,22 @@ export async function client<T>(
   key: string,
   options?: ClientOptions,
 ): Promise<T>;
+/**
+ * A request against an endpoint that answers flat, unwrapped.
+ *
+ * Separate from the key form rather than solved by passing a key that does not
+ * exist: `body[key]` on a flat payload is `undefined`, and a caller that trusts it
+ * goes on to read `.path` off nothing. This returns the whole object, typed.
+ *
+ * `unwrap` is what tells the two forms apart at the type level, rather than
+ * argument position. Many callers pass only `{ fallback }` and then call `.json()`
+ * themselves; without a discriminating property TypeScript would have to guess,
+ * and whichever overload it picked would break the other group.
+ */
+export async function client<T>(
+  path: string,
+  options: ClientOptions & { unwrap: true },
+): Promise<T>;
 export async function client(
   path: string,
   options?: ClientOptions,
@@ -82,7 +105,9 @@ export async function client<T>(
   const options =
     (typeof keyOrOptions === "string" ? maybeOptions : keyOrOptions) ?? {};
 
-  const response = await send(path, options);
+  // `unwrap` is dropped here: it selects the return shape, it is not a request field.
+  const { unwrap: _unwrap, ...sent } = options;
+  const response = await send(path, sent);
 
   if (!response.ok) {
     /*
@@ -96,13 +121,19 @@ export async function client<T>(
     throw new Error(message ?? options.fallback ?? "That request failed.");
   }
 
-  if (key === undefined) return response;
+  if (key === undefined && options.unwrap !== true) return response;
 
-  // A 204 or a non-JSON body used to throw a bare SyntaxError, and `null` or an array body threw
-  // a TypeError on property access. Malformed success is a failed request with the fallback.
+  /*
+   * A 204 or a non-JSON body used to throw a bare SyntaxError, and `null` or an array body threw
+   * a TypeError on property access. Malformed success is a failed request with the fallback.
+   *
+   * This is reached by both unwrapping forms, and the difference is only what is
+   * handed back: with a key the caller wants one field, with `unwrap` it wants the
+   * whole object. The body has to be an object either way.
+   */
   const body = (await response.json().catch(() => null)) as unknown;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new Error(options.fallback ?? "That request failed.");
   }
-  return (body as Record<string, T>)[key];
+  return key === undefined ? (body as T) : (body as Record<string, T>)[key];
 }

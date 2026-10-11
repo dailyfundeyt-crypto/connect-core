@@ -521,3 +521,65 @@ export function setOpenVaultPath(
     // Blocked storage: the file still opens, it just is not remembered.
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Migration of the old localStorage notes onto disk.                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The notes this browser used to own, flattened across every company.
+ *
+ * Read straight from storage rather than through `getNotes`, because that one
+ * takes a company id and the data being migrated is spread over all of them --
+ * the key holds a map. The duplicate `"spark"` and `"flux"` entries that show up
+ * here are companies whose id was once written with quotes around it; both keys
+ * are kept, because quietly dropping one of them would drop its notes.
+ */
+function readLegacyNotes(): { companyId: string; note: Note }[] {
+  if (typeof window === "undefined") return [];
+  let all: Record<string, NotesState>;
+  try {
+    all = JSON.parse(window.localStorage.getItem(KEY) ?? "{}") as Record<
+      string,
+      NotesState
+    >;
+  } catch {
+    return [];
+  }
+  const out: { companyId: string; note: Note }[] = [];
+  for (const [companyId, state] of Object.entries(all ?? {})) {
+    for (const note of state?.notes ?? []) out.push({ companyId, note });
+  }
+  return out;
+}
+
+/**
+ * Every note this browser holds, with the company it belonged to.
+ *
+ * Exported for the migration below. There is no other reason to read across all
+ * companies at once, so this stays next to the one caller rather than sitting in
+ * the public surface of the store waiting for a second use.
+ */
+export function legacyNotesForMigration(): { companyId: string; note: Note }[] {
+  return readLegacyNotes();
+}
+
+/**
+ * Empties the note store for every company.
+ *
+ * Only called once the files are on disk and the writes are confirmed, so a
+ * failure part-way through leaves the localStorage copy in place to try again.
+ * Folders are not cleared with it: they are the one thing in the old store worth
+ * keeping, since the new tree is driven by the real directories on disk and these
+ * ids do not correspond to anything there.
+ */
+export function clearLegacyNotes(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify({}));
+    window.dispatchEvent(new Event(EVENT));
+  } catch {
+    // Nothing to do: the files are already written, and a blocked store means the
+    // old copy was never really there to begin with.
+  }
+}

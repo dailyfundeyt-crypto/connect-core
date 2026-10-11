@@ -8,7 +8,7 @@
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { RenameFolderDialog } from "@/components/companies/rename-folder-dialog";
-import { copyBrainPath } from "@/lib/brain/queries";
+import { copyBrainPath, createBrainNote } from "@/lib/brain/queries";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,8 @@ import {
   getNotes,
   getOpenNoteId,
   getOpenVaultPath,
+  legacyNotesForMigration,
+  clearLegacyNotes,
   listNoteFolders,
   listNotes,
   noteLabel,
@@ -59,6 +61,7 @@ import {
   type Note,
   type NoteFolder,
 } from "@/lib/companies/notes";
+import { blocksToMarkdown } from "@/lib/companies/notes-markdown";
 import { DND_NOTE, DND_NOTE_FROM } from "@/lib/companies/level3-tools";
 import { cn } from "@/lib/utils";
 
@@ -178,6 +181,11 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
    * something was copied minutes ago.
    */
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+
+  /** Migration progress, or `null` when there is nothing to migrate. */
+  const [migrating, setMigrating] = useState<{ done: number; total: number } | null>(null);
+  /** How many notes landed on disk, shown for a few seconds afterwards. */
+  const [migrated, setMigrated] = useState(0);
 
   /*
    * Cleared by effect rather than by a timer inside the handler.
@@ -325,6 +333,61 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
   const rename = (folder: NoteFolder) => setRenameFolderId(folder.id);
   const renameFolder = noteFolders.find((f) => f.id === renameFolderId);
 
+  /** How many notes still live in the browser store, so there is something to migrate. */
+  const legacyCount = useMemo(() => legacyNotesForMigration().length, [notes]);
+
+  /*
+   * One-off: move everything the localStorage notes held onto disk, then empty
+   * the store.
+   *
+   * This is what merges the two lists. "Notizen" and "Plannung" were never two
+   * kinds of thing -- both are markdown files, and the only difference was that
+   * one set lived in the browser and the other on disk, which made the notes
+   * invisible to Obsidian and the vault files uneditable from here. Rather than
+   * keep the split and decide per note where it belongs, the local notes are
+   * written into the Brain and the browser store is emptied.
+   *
+   * Order matters. Every file is written and confirmed before `clearLegacyNotes`
+   * is called, so a failure part-way through leaves the localStorage copy intact
+   * and the button can simply be pressed again -- the ones already written come
+   * back as "Datei existiert bereits." and get the next free name, which is why
+   * `createBrainNote` walks the suffix rather than refusing.
+   */
+  const migrate = useCallback(async () => {
+    const legacy = legacyNotesForMigration();
+    if (legacy.length === 0) return;
+
+    setMigrating({ done: 0, total: legacy.length });
+    let written = 0;
+    for (const entry of legacy) {
+      const note = entry.note;
+      const title = (note.title ?? "").trim();
+      /*
+       * A note with no title became a file name from its own first line, and only
+       * then a generic one. The 23 untitled entries here were mostly empty test
+       * notes, and giving 23 of them the name "Notiz" would put 23 near-identical
+       * files next to the 2093 real ones.
+       */
+      const firstLine = blocksToMarkdown(note.blocks ?? []).trim().split("\n")[0] ?? "";
+      const label = title || firstLine.trim();
+      try {
+        await createBrainNote({
+          folder: "00 Inbox",
+          title: label,
+          content: blocksToMarkdown(note.blocks ?? []),
+        });
+        written += 1;
+        setMigrating({ done: written, total: legacy.length });
+      } catch {
+        // Left in localStorage by not calling `clearLegacyNotes` below.
+      }
+    }
+    clearLegacyNotes();
+    setMigrating(null);
+    setMigrated(written);
+    window.setTimeout(() => setMigrated(0), 6000);
+  }, []);
+
   return (
     <>
       {/*
@@ -370,7 +433,43 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
          *
          * The header keeps its label and the count only.
          */}
+        {/*
+         * The merge, offered once and then gone.
+         *
+         * "Notizen" and "Plannung" were the same thing in two places: one set of
+         * markdown in the browser, one on disk. The button exists because choosing
+         * which to keep is the person's decision, not the app's -- but it only
+         * appears while there is something to move, so it is not a permanent
+         * fixture needing an explanation every time somebody looks at the rail.
+         */}
+        {legacyCount > 0 && !migrating ? (
+          <button
+            className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            onClick={() => void migrate()}
+            title={`${legacyCount} Notizen aus diesem Browser in die Plannung schreiben`}
+            type="button"
+          >
+            {legacyCount} übernehmen
+          </button>
+        ) : null}
       </div>
+
+      {/*
+       * Progress and result. A migration writes one file per note, so on a large
+       * batch silence would read as a hang -- the count is the only honest thing
+       * to show while it runs.
+       */}
+      {migrating ? (
+        <p className="px-2 pb-1 text-[11px] text-muted-foreground" role="status">
+          {migrating.done} von {migrating.total} geschrieben…
+        </p>
+      ) : null}
+      {!migrating && migrated > 0 ? (
+        <p className="px-2 pb-1 text-[11px] text-muted-foreground" role="status">
+          {migrated} {migrated === 1 ? "Notiz liegt jetzt" : "Notizen liegen jetzt"} in
+          der Plannung.
+        </p>
+      ) : null}
 
       <NewFolderDialog
         onCreate={(name) => {

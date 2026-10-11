@@ -335,6 +335,26 @@ export async function writeMarkdown(
  * whose parent does not exist. Here the parent is what gets checked: resolve it,
  * make sure it is inside the Brain, then append the file name.
  */
+/*
+ * `isInside` answers whether `target` is under `root`, and its first test is
+ * `rel !== ""`. That is what makes a new file directly in the Brain root
+ * impossible: the root is not inside itself, so `writeMarkdown` rejected
+ * `speichertest.md` with "Ungültiger Pfad." even though nothing was escaping.
+ *
+ * The guard above this one already does the real work -- `..`, absolute paths and
+ * dotfiles are rejected before anything is resolved, and the `realpath` comparison
+ * below catches a symlink pointing out of the vault. Once those have run, a file
+ * sitting directly in the root is as contained as one in a subfolder, so the check
+ * is relaxed here to allow it.
+ *
+ * `isInside` itself is left alone. It is used by the reads too, where "the root is
+ * not a file inside the root" is exactly the right answer.
+ */
+function isWritablePath(root: string, target: string) {
+  const rel = path.relative(root, target);
+  return !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
 async function writableMarkdownPath(root: string, relative: string): Promise<string> {
   if (typeof relative !== "string" || relative.length === 0 || relative.length > 400) {
     throw new BrainPathError("Ungültiger Pfad.");
@@ -351,10 +371,10 @@ async function writableMarkdownPath(root: string, relative: string): Promise<str
   if (relative.startsWith(VAULT_PREFIX)) throw new BrainPathError("Vault ist schreibgeschützt.");
   const parent = path.resolve(root, ...parts.slice(0, -1));
   const fileName = parts[parts.length - 1];
-  if (parent !== root && !isInside(root, parent)) throw new BrainPathError("Ungültiger Pfad.");
+  if (!isWritablePath(root, parent)) throw new BrainPathError("Ungültiger Pfad.");
   const realRoot = await realpath(root).catch(() => root);
   const realParent = await realpath(parent).catch(() => null);
-  if (realParent && !isInside(realRoot, realParent)) throw new BrainPathError("Ungültiger Pfad.");
+  if (realParent && !isWritablePath(realRoot, realParent)) throw new BrainPathError("Ungültiger Pfad.");
   return path.join(realParent ?? parent, fileName);
 }
 

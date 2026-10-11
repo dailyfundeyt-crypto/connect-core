@@ -1,17 +1,17 @@
-import { type QueryClient, queryOptions } from "@tanstack/react-query";
+﻿import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { client } from "@/lib/client";
 
 /** The Brain areas an agent may read or write (see Brain/CONVENTIONS.md). */
 export const BRAIN_AREAS = [
   { id: "Kern", label: "Kern", hint: "AGENTS, hot, index, Regeln, agents.json" },
-  { id: "Shared", label: "Shared", hint: "Geprüfte Fakten für alle" },
-  { id: "Projects", label: "Projekte (alle)", hint: "Alle Projekt-Übersichten und ihre Vault-Notizen" },
+  { id: "Shared", label: "Shared", hint: "GeprÃ¼fte Fakten fÃ¼r alle" },
+  { id: "Projects", label: "Projekte (alle)", hint: "Alle Projekt-Ãœbersichten und ihre Vault-Notizen" },
   { id: "Memory:eigen", label: "Memory (eigen)", hint: "Nur der eigene Ordner" },
   { id: "Memory", label: "Memory (alle)", hint: "Notizen aller Agents" },
-  { id: "Daily", label: "Daily", hint: "Gemeinsamer Tagesüberblick" },
-  { id: "Inbox", label: "Inbox", hint: "Vorschläge für Shared" },
-  { id: "Skills", label: "Skills", hint: "Wiederverwendbare Abläufe" },
-  { id: "log", label: "Log", hint: "Änderungsprotokoll" },
+  { id: "Daily", label: "Daily", hint: "Gemeinsamer TagesÃ¼berblick" },
+  { id: "Inbox", label: "Inbox", hint: "VorschlÃ¤ge fÃ¼r Shared" },
+  { id: "Skills", label: "Skills", hint: "Wiederverwendbare AblÃ¤ufe" },
+  { id: "log", label: "Log", hint: "Ã„nderungsprotokoll" },
 ] as const;
 /** A fixed area or one project: `Projekt:<id>` (projects come from agents.json). */
 export type BrainAreaId = (typeof BRAIN_AREAS)[number]["id"] | `Projekt:${string}`;
@@ -93,13 +93,13 @@ async function brainGet<T>(path: string, fallback: T): Promise<T> {
   const type = response.headers.get("content-type") ?? "";
   const body = type.includes("application/json") ? ((await response.json().catch(() => null)) as unknown) : null;
   if (response.status === 400) {
-    throw new Error((body as { error?: string } | null)?.error ?? "Ungültige Anfrage");
+    throw new Error((body as { error?: string } | null)?.error ?? "UngÃ¼ltige Anfrage");
   }
   if (!response.ok || !body || typeof body !== "object") return fallback;
   return body as T;
 }
 
-const NOT_AVAILABLE = "Brain nicht verfügbar";
+const NOT_AVAILABLE = "Brain nicht verfÃ¼gbar";
 
 export const brainKeys = {
   all: ["brain"] as const,
@@ -178,8 +178,18 @@ export function brainFileQueryOptions(path: string) {
  */
 export function brainSaveNoteMutationOptions(queryClient: QueryClient) {
   return {
+    /*
+     * No envelope key.
+     *
+     * `client(path, key, options)` unwraps `body[key]` and returns `undefined` when the
+     * server did not nest the payload under that name. `PUT /api/brain/note` answers
+     * flat -- `{ available, path, created }` -- so passing a key made every save
+     * resolve with `undefined`, and `onSuccess` then invalidated
+     * `brainKeys.file(result.path)` against a path that was not there. The write
+     * reached disk; the editor just never learned it had succeeded.
+     */
     mutationFn: async (input: { path: string; content: string; mode: "create" | "write" }) =>
-      client<{ path: string; created: boolean }>("/api/brain/note", "commit", {
+      client<{ available: boolean; path: string; created: boolean }>("/api/brain/note", {unwrap: true, 
         method: "PUT",
         body: input,
         fallback: "Notiz konnte nicht gespeichert werden",
@@ -192,6 +202,67 @@ export function brainSaveNoteMutationOptions(queryClient: QueryClient) {
       void queryClient.invalidateQueries({ queryKey: brainKeys.all });
     },
   };
+}
+
+/**
+ * Creates a new file in the Brain and returns where it landed.
+ *
+ * The separate call rather than a `mode` on the save mutation above, because
+ * creating is the step that needs the answer: the caller has to know the path so
+ * it can open the editor on the file it just made. A save returns that too, but
+ * only after the content is already there.
+ *
+ * `folder` is required. The server accepts a file in the Brain root now -- it did
+ * not, which is why a new note needed a folder to be creatable at all -- but a note
+ * landing directly in `Plannung` sits next to 2093 curated files, and
+ * `speichertest.md` there is nobody's idea of tidy. `00 Inbox` is the default the
+ * caller should pass.
+ *
+ * `title` becomes the file name, cleaned: characters Windows will not accept are
+ * replaced, and an empty result becomes `Notiz` rather than `.md`.
+ */
+export async function createBrainNote(input: {
+  folder: string;
+  title: string;
+  content: string;
+}): Promise<{ path: string }> {
+  const clean = input.title
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  const name = clean.length > 0 ? clean : "Notiz";
+  const folder = input.folder.replace(/[\\/]+$/, "");
+
+  /*
+   * The suffix walk is driven by the server's own refusal rather than by asking
+   * whether the file exists first. `GET /api/brain/file` answers 404 for a path
+   * that is not there and 200 for one that is, but the check would be a second
+   * round trip and a race with anyone else writing the same name; the create call
+   * reports "Datei existiert bereits." on its own, and that is the one answer that
+   * matters.
+   */
+  let last: string | null = null;
+  for (let attempt = 1; attempt <= 50; attempt += 1) {
+    const suffix = attempt === 1 ? "" : ` ${attempt}`;
+    const path = `${folder}/${name}${suffix}.md`;
+    try {
+      const written = await client<{ path: string; created: boolean }>(
+        "/api/brain/note",
+        {unwrap: true, 
+          method: "PUT",
+          body: { path, content: input.content, mode: "create" },
+          fallback: "Notiz konnte nicht angelegt werden",
+        },
+      );
+      return { path: written.path };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!message.includes("existiert bereits")) throw error;
+      last = message;
+    }
+  }
+  throw new Error(last ?? "Es gibt schon zu viele Notizen mit diesem Namen.");
 }
 
 export function brainSearchQueryOptions(q: string) {
@@ -309,7 +380,7 @@ export async function copyBrainPath(path: string): Promise<string | null> {
 export function saveBrainLocationMutationOptions(queryClient: QueryClient) {
   return {
     mutationFn: async (input: { path: string; vaultPath?: string | null }) =>
-      client<BrainLocation>("/api/brain/location", "commit", {
+      client<BrainLocation & { available: boolean }>("/api/brain/location", {unwrap: true, 
         method: "PUT",
         body: input,
         fallback: "Ordner konnte nicht gespeichert werden",
@@ -330,11 +401,14 @@ export function saveBrainScopesMutationOptions(queryClient: QueryClient) {
       read: BrainAreaId[];
       write: BrainAreaId[];
     }) =>
-      client<string | null>(`/api/brain/agents/${encodeURIComponent(input.slug)}`, "commit", {
-        method: "PUT",
-        body: input,
-        fallback: "Rechte konnten nicht gespeichert werden",
-      }),
+      client<{ available: boolean }>(
+        `/api/brain/agents/${encodeURIComponent(input.slug)}`,
+        {unwrap: true, 
+          method: "PUT",
+          body: input,
+          fallback: "Rechte konnten nicht gespeichert werden",
+        },
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: brainKeys.all });
     },
@@ -345,10 +419,10 @@ export function saveBrainScopesMutationOptions(queryClient: QueryClient) {
 export function connectAgentSlug(name: string) {
   const base = name
     .toLowerCase()
-    .replace(/ä/g, "ae")
-    .replace(/ö/g, "oe")
-    .replace(/ü/g, "ue")
-    .replace(/ß/g, "ss")
+    .replace(/Ã¤/g, "ae")
+    .replace(/Ã¶/g, "oe")
+    .replace(/Ã¼/g, "ue")
+    .replace(/ÃŸ/g, "ss")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
