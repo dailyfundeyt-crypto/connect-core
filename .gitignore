@@ -99,6 +99,28 @@ projects/**/*.wav
 **/err.txt
 **/out.txt
 
+# Plain logs and one-off SQL written by local server boots. `.err.log` above does not
+# cover these, so `_boot.log` and `dev-3101.log` showed up as untracked and would
+# ride along on a `git add -A`. The `.sql` files are dumps of a real database --
+# rows from it, not schema.
+*.log
+server/_inspect.sql
+server/_backup_*.sql
+_backup_*.sql
+
+# Ad-hoc copies kept next to the file they replace. `*.bak-helium` covers one suffix,
+# not these.
+apps/app/dist-dist.bak/
+
+# Timestamped copies next to the real file. There were 52 of these scattered through
+# the tree -- `foo.js.bak-helium-vnotch`, `foo.ts.bak-helium-3101-20261004-143435` and
+# friends -- each holding a version the git history already has. They are recovery
+# scratch, not source, and leaving them untracked meant every `git status` listed the
+# whole tree as dirty.
+*.bak-helium-*
+*.bak-*
+!*.bak.example
+
 .fix-logs/
 
 # --- OpenBot-v2-Helium copy: local-only artifacts, never commit ---
