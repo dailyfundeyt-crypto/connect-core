@@ -155,9 +155,16 @@ async function probe(url: string): Promise<{ ok: boolean; detail?: unknown }> {
   }
 }
 
+export type BridgeAgentRow = { id: string; name: string };
+export type BridgeCompanyRow = { id: string; name: string; agentIds?: string[] };
+
 export function createVoiceBridgeRoutes(options: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   channelStore?: BridgeChannelStore;
+  /** Optional: list visible agents for the Notch dispatch menu (same people as /api/agents). */
+  listAgents?: (actor: AppVariables["actor"]) => Promise<BridgeAgentRow[]>;
+  /** Optional: list companies (connect.companies.custom) for the Notch dispatch menu. */
+  listCompanies?: (actor: AppVariables["actor"]) => Promise<BridgeCompanyRow[]>;
   hub?: VoiceBridgeHub;
   sttUrl?: string;
   ttsUrl?: string;
@@ -173,9 +180,54 @@ export function createVoiceBridgeRoutes(options: {
     (timer as { unref?: () => void }).unref?.();
   }
 
+  /**
+   * Connect Notch is a native app: it cannot hold the Better Auth cookie that Google login sets
+   * in the browser. On loopback, when the Notch sends `X-Connect-Notch: 1` and CONNECT_SINGLE_USER_ID
+   * is set (Stefan's Google user id), admit that person so voice turns and the dispatch menu reach
+   * the same agents/chats as the Connect App. Browser tabs still use the normal session cookie.
+   */
+  const notchOrUser: MiddlewareHandler<{ Variables: AppVariables }> = async (context, next) => {
+    const notch = (context.req.header("x-connect-notch") ?? "").trim() === "1";
+    const singleId = process.env.CONNECT_SINGLE_USER_ID?.trim();
+    if (notch && singleId) {
+      const host = hostnameOf(context.req.header("host") ?? new URL(context.req.url).host);
+      if (host && LOOPBACK_HOSTS.has(host)) {
+        /*
+         * No fallback on email or name.
+         *
+         * There was a hardcoded address and a real name behind the env vars, which
+         * meant a deployment that forgot to set them silently acted as one specific
+         * person -- admin, no less -- and committed that address to the repository.
+         * Requiring the vars makes the misconfiguration visible: no email, no actor,
+         * request refused. A single-user install has three strings to set.
+         */
+        const email = process.env.CONNECT_SINGLE_USER_EMAIL?.trim();
+        const name = process.env.CONNECT_SINGLE_USER_NAME?.trim();
+        if (!email) {
+          return context.json(
+            {
+              error:
+                "CONNECT_SINGLE_USER_EMAIL fehlt. Ohne sie ist die Notch-Brücke nicht konfiguriert.",
+            },
+            503,
+          );
+        }
+        context.set("actor", {
+          id: singleId,
+          email,
+          name: name || email,
+          role: "admin" as const,
+        });
+        await next();
+        return;
+      }
+    }
+    return options.requireUser(context, next);
+  };
+
   const app = new Hono<{ Variables: AppVariables }>();
-  app.use("*", options.requireUser);
   app.use("*", localOnly);
+  app.use("*", notchOrUser);
 
   /** The agent's last chat (newest activity first), or its direct channel when there is none. */
   async function resolveChannel(actor: AppVariables["actor"], agentId: string): Promise<string | null> {
@@ -193,10 +245,27 @@ export function createVoiceBridgeRoutes(options: {
     const actor = context.var.actor;
     const [stt, tts] = await Promise.all([probe(sttUrl), probe(ttsUrl)]);
     return context.json({
+      ok: true,
+      online: true,
+      actor: { id: actor.id, email: actor.email, name: actor.name ?? null },
       uiClients: hub.clientCount(actor.id),
       stt: { url: sttUrl, ...stt },
       tts: { url: ttsUrl, ...tts },
     });
+  });
+
+  /** Same agent roster the Connect App shows — for the Notch dispatch menu (no browser cookie). */
+  app.get("/agents", async (context) => {
+    if (!options.listAgents) return context.json({ agents: [], error: "Agents list not wired." }, 503);
+    const agents = await options.listAgents(context.var.actor);
+    return context.json({ agents });
+  });
+
+  /** Companies from connect.companies.custom for the Notch dispatch menu. */
+  app.get("/companies", async (context) => {
+    if (!options.listCompanies) return context.json({ companies: [], home: { id: "home", name: "Connect" } });
+    const companies = await options.listCompanies(context.var.actor);
+    return context.json({ companies, home: { id: "home", name: "Connect" } });
   });
 
   // ---- The Connect window's side -------------------------------------------------------------
