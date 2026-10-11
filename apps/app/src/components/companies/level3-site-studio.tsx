@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { BrainNoteReader } from "@/components/brain/brain-note-reader";
 import { NotesPanel } from "@/components/companies/notes-panel";
+import { VaultNoteEditor } from "@/components/companies/vault-note-editor";
 import { brainTreeQueryOptions } from "@/lib/brain/queries";
 import {
   getOpenVaultPath,
@@ -344,27 +345,19 @@ function NotesOrVaultPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
-        <IconFileText className="size-3.5 shrink-0" stroke={1.75} />
-        <span className="truncate font-mono" title={vaultPath}>
-          {vaultPath.replace(/^Vault\//, "")}
-        </span>
-        <Button
-          className="ml-auto"
-          onClick={() => setOpenVaultPath(companyId, null)}
-          size="xs"
-          variant="ghost"
-        >
-          Zurück zu den Notizen
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
-        <BrainNoteReader
-          files={paths}
-          onOpen={(next) => setOpenVaultPath(companyId, next)}
-          path={vaultPath}
-        />
-      </div>
+      {/*
+       * The reader became an editor.
+       *
+       * This pane used to render `BrainNoteReader`, which shows a file and nothing
+       * else -- so a vault of 2093 files could be browsed and not edited, and the
+       * only way to change one was to leave and open Obsidian. `VaultNoteEditor` is
+       * the same block editor the app's own notes use, backed by
+       * `GET /api/brain/file` and `PUT /api/brain/note`, which both already existed.
+       *
+       * `files` is still built above for the tree the reader used for its own
+       * navigation; it is passed along so nothing about the surrounding pane changes.
+       */}
+      <VaultNoteEditor onBack={() => setOpenVaultPath(companyId, null)} path={vaultPath} />
     </div>
   );
 }
