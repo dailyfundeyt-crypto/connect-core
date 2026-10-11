@@ -261,19 +261,29 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
       {/*
        * The list is capped and scrolls on its own.
        *
-       * With the notes left to size themselves they grew to 392px in a 599px
-       * rail, which pushed "App hinzufügen" and "Neue Gruppe" 559px past the
-       * bottom of the viewport — a full screen of scrolling to reach two primary
-       * actions. `min-h-0` on the flex child is what lets the inner list actually
-       * shrink: without it a flex item refuses to go below its content height, so
-       * the cap would be ignored and the notes would still push everything else
-       * off screen.
+       * With the notes left to size themselves they grew to fill the whole rail:
+       * measured, the section reached 1088px in a 1201px rail and pushed the
+       * browser groups down to y=7954, which is seven screens below the fold. The
+       * apps were in the store the whole time and simply never appeared, which is
+       * what "the tabs disappear under the notes" was.
        *
-       * The header stays outside the scroll area so "Notizen", the new-folder and
-       * the new-note buttons never scroll away with the list.
+       * `flex-1` is not enough on its own, and that is the whole trap. It sets
+       * `flex-basis: 0` and `flex-grow: 1`, so the element grows into the leftover
+       * space -- but `min-height: auto` still applies, and a flex item refuses to
+       * shrink below its content height. This list holds 2362 rows, so it won:
+       * `flex-1` on both this section and the group list above meant each grew to
+       * fill the rail, and whichever came last in the layout pushed the other out
+       * of view entirely.
+       *
+       * So the notes take a capped share of the rail (`max-h-[45%]`) and scroll
+       * inside that box. The groups above keep their own scroll area, and neither
+       * can push the other out of sight any more.
+       *
+       * The header stays outside the scroll area so "Notizen" and its count never
+       * scroll away.
        */}
       <div
-        className="mt-3 flex min-h-0 flex-col px-0.5"
+        className="mt-3 flex max-h-[45%] shrink-0 flex-col overflow-hidden px-0.5"
         data-section="notes"
       >
       <div className="flex items-center pr-1">
@@ -314,7 +324,7 @@ export function NotesSidebarSection({ companyId }: { companyId: string }) {
        * and the wheel over the list still works. The empty state sits inside it
        * too, so "no notes yet" grows and scrolls exactly like a full list does.
        */}
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
       {total === 0 ? (
         <button
           className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"

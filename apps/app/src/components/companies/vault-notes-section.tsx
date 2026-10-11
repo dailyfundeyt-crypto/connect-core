@@ -219,14 +219,26 @@ export function VaultNotesSection({
   const total = countFiles(nodes);
 
   return (
-    <div className="mt-3 px-0.5" data-section="vault-notes">
-      <SidebarGroupLabel className="mb-0.5 flex h-7 items-center gap-1 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
+    /*
+     * The vault lists every markdown file the Brain knows about -- 2093 of them
+     * in `Plannung` -- and it rendered them into one flat `<ul>` with no cap. That
+     * is a 72000px block: the browser groups below it sat at y=7954, seven screens
+     * past the fold, and appeared to have vanished. Nothing had been removed; it
+     * was simply below a list that grew without bound.
+     *
+     * So the tree gets its own capped, scrollable box, the same way the notes list
+     * does, and the heading stays outside it so the count is always visible. This
+     * is the last section in the rail, so `flex-1` here is safe: there is nothing
+     * below it to push out.
+     */
+    <div className="mt-3 flex min-h-0 flex-1 flex-col px-0.5" data-section="vault-notes">
+      <SidebarGroupLabel className="mb-0.5 flex h-7 shrink-0 items-center gap-1 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
         Plannung
         <span className="font-semibold tabular-nums text-sidebar-foreground/55">
           {total}
         </span>
       </SidebarGroupLabel>
-      <ul className="mt-0.5 flex flex-col gap-0.5">
+      <ul className="no-scrollbar mt-0.5 min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain">
         {nodes.map((node) => renderNode(node, 0))}
       </ul>
     </div>
