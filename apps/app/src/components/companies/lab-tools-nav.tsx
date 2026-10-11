@@ -66,6 +66,8 @@ import {
   allLabApps,
 } from "@/lib/companies/level3-tools";
 import { openInHeliumTab, openSplitInHelium } from "@/lib/ui/open-window";
+import { NotesSidebarSection } from "@/components/companies/notes-sidebar-section";
+import { BookmarkTransfer } from "@/components/companies/lab-bookmark-transfer";
 import {
   isDesktopApp,
   navigateDesktopBrowser,
@@ -417,6 +419,22 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
         ) : null}
       </div>
 
+      {/*
+       * The notes, as a section of their own.
+       *
+       * They sit *below* the browser section rather than replacing any part of
+       * it. The first attempt at this put the notes where the "App hinzufügen"
+       * and "Neue Gruppe" buttons live, which read as though the whole sidebar
+       * had been turned into a notes app: the two buttons, the tab groups, the
+       * bookmark transfer and the grouping all disappeared at once, and nothing
+       * in the new section said they had. A section that is added has to leave
+       * the sections around it where they were.
+       *
+       * `NotesSidebarSection` owns its own `<div className="mt-3">`, so this only
+       * needs to sit in normal flow after the browser block.
+       */}
+      <NotesSidebarSection companyId={companyId} />
+
       <div className="flex flex-col gap-0.5">
           <button
             className="mx-0.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
@@ -434,6 +452,18 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
             <IconFolderPlus className="size-3.5" stroke={1.75} />
             Neue Gruppe
           </button>
+          {/*
+           * The bookmark transfer sits with the other rail actions rather than on
+           * its own: it moves apps between this browser and the desktop one, so it
+           * belongs with "App hinzufügen" and "Neue Gruppe" — the three are the same
+           * kind of thing, and splitting them across two rows made the rail read as
+           * two unrelated lists.
+           */}
+          <BookmarkTransfer
+            companyId={companyId}
+            onChange={setState}
+            state={state}
+          />
         </div>
       {connectId ? (
         <ConnectInline
@@ -907,6 +937,34 @@ export function LabIconRail({
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function RailAction({
+  children,
+  label,
+  onClick,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            aria-label={label}
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            onClick={onClick}
+            type="button"
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
