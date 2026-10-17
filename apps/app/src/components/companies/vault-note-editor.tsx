@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconCheck, IconDeviceFloppy, IconLoader2 } from "@tabler/icons-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { IconBrain, IconCheck, IconLoader2 } from "@tabler/icons-react";
+import { SparkLogo } from "@/components/brand/spark-logo";
+import { useNavigate } from "@tanstack/react-router";
 import { NoteBlockEditor } from "@/components/companies/note-editor/note-block-editor";
+import { NoteTableOfContents } from "@/components/companies/note-table-of-contents";
+import { VaultExportButton } from "@/components/companies/vault-export-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   brainFileQueryOptions,
@@ -13,6 +16,46 @@ import {
   markdownToBlocks,
 } from "@/lib/companies/notes-markdown";
 import type { NoteBlock } from "@/lib/companies/notes";
+
+/**
+ * YAML-Frontmatter (`---\n…\n---`) wird vor dem Block-Editor abgetrennt und Byte fuer Byte
+ * unveraendert gehalten. Der Block-Editor kennt kein YAML: frueher wurde `---` zur Trennlinie und
+ * jede Zeile zu einem Absatz, Listen verloren die Einrueckung. Beim Speichern wird der Kopf exakt
+ * wieder vorangestellt; bearbeitbar ist er nur als Rohtext.
+ */
+export function splitFrontmatter(text: string): { frontmatter: string; body: string } {
+  const match = /^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  return match ? { frontmatter: match[0], body: text.slice(match[0].length) } : { frontmatter: "", body: text };
+}
+
+function FrontmatterField({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const lines = value.replace(/\r?\n$/, "").split(/\r?\n/).length - 2;
+  const valid = splitFrontmatter(value).frontmatter === value;
+  return (
+    <div className="mb-6" data-testid="frontmatter-field">
+      <button
+        className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 font-mono text-[11px] text-neutral-500 hover:text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+        onClick={() => setOpen((o) => !o)}
+        type="button"
+      >
+        Eigenschaften (YAML) · {lines} Zeilen · geschuetzt {open ? "▾" : "▸"}
+      </button>
+      {open ? (
+        <>
+          <textarea
+            className="mt-2 block w-full rounded-lg border border-neutral-200 bg-neutral-50 p-3 font-mono text-[12px] leading-5 text-neutral-800 outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200"
+            onChange={(e) => onChange(e.target.value)}
+            rows={Math.min(18, lines + 3)}
+            spellCheck={false}
+            value={value}
+          />
+          {!valid ? <p className="mt-1 text-[11px] text-amber-600">Muss mit einer Zeile „---“ beginnen und enden, sonst liest Obsidian die Eigenschaften nicht.</p> : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * A markdown file from the Brain, edited as a note.
@@ -38,18 +81,26 @@ import type { NoteBlock } from "@/lib/companies/notes";
 export function VaultNoteEditor({
   path,
   onBack,
+  companyId,
 }: {
   path: string;
   onBack?: () => void;
+  /** Firma, in deren Arbeitsbereich die Datei offen ist - fuer "Im Brain zeigen" und zurueck. */
+  companyId?: string;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const file = useQuery(brainFileQueryOptions(path));
   const save = useMutation(brainSaveNoteMutationOptions(queryClient));
 
   const [blocks, setBlocks] = useState<NoteBlock[] | null>(null);
   /** The blocks as they were when the file was loaded -- the baseline for "is this dirty". */
   const baseline = useRef<string>("");
+  /** Frontmatter wie geladen, und wie gerade bearbeitet. */
+  const fmBase = useRef<string>("");
+  const [fm, setFm] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   /*
    * Load once per path.
@@ -59,8 +110,22 @@ export function VaultNoteEditor({
    * mid-edit. A path change is a different file and does reset.
    */
   useEffect(() => {
+    /*
+     * Cleared on every path change, before the guard below.
+     *
+     * This is the second half of the blank panel. Without it, clicking a second
+     * file kept `blocks` pointing at the first file's document while the effect
+     * waited on `file.data` to catch up, so the sidebar highlighted the new file and
+     * the panel showed the old one — which read as "the wrong file opened, and its
+     * content is missing". Resetting first makes the panel honest about not having
+     * the new file yet, and the skeleton above says so.
+     */
+    setBlocks(null);
     if (!file.data) return;
-    const loaded = markdownToBlocks(file.data.content);
+    const parts = splitFrontmatter(file.data.content);
+    fmBase.current = parts.frontmatter;
+    setFm(parts.frontmatter);
+    const loaded = markdownToBlocks(parts.body);
     setBlocks(loaded);
     baseline.current = blocksToMarkdown(loaded);
     setSavedAt(null);
@@ -71,30 +136,55 @@ export function VaultNoteEditor({
 
   const dirty = useMemo(() => {
     if (!blocks) return false;
-    return blocksToMarkdown(blocks) !== baseline.current;
-  }, [blocks]);
+    return blocksToMarkdown(blocks) !== baseline.current || fm !== fmBase.current;
+  }, [blocks, fm]);
 
-  const onSave = useCallback(() => {
+  // Debounced auto-save
+  useEffect(() => {
     if (!blocks || !dirty) return;
-    save.mutate(
-      { path, content: blocksToMarkdown(blocks), mode: "write" },
-      {
-        onSuccess: () => {
-          baseline.current = blocksToMarkdown(blocks);
-          setSavedAt(new Date().toLocaleTimeString("de-DE", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }));
+    const currentMarkdown = blocksToMarkdown(blocks);
+    const timer = setTimeout(() => {
+      save.mutate(
+        { path, content: fm + currentMarkdown, mode: "write" },
+        {
+          onSuccess: () => {
+            baseline.current = currentMarkdown;
+            fmBase.current = fm;
+            setSavedAt(
+              new Date().toLocaleTimeString("de-DE", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            );
+          },
         },
-      },
-    );
-  }, [blocks, dirty, path, save]);
+      );
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [blocks, dirty, fm, path, save]);
+
+  // Save on unmount if dirty
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+  const pathRef = useRef(path);
+  pathRef.current = path;
+  const fmRef = useRef(fm);
+  fmRef.current = fm;
+
+  useEffect(() => {
+    return () => {
+      if (blocksRef.current) {
+        const md = blocksToMarkdown(blocksRef.current);
+        if (md !== baseline.current || fmRef.current !== fmBase.current) {
+          save.mutate({ path: pathRef.current, content: fmRef.current + md, mode: "write" });
+        }
+      }
+    };
+  }, [save]);
 
   /*
-   * Unsaved edits are the one thing here worth losing attention over -- everything
-   * else in the app is localStorage and cheap to redo. The editor is a whole
-   * document rather than a field, so the browser's beforeunload is the only guard
-   * that fires on tab close and on a reload, both of which skip React entirely.
+   * Warn on browser tab close/reload if there are pending unsaved changes.
    */
   useEffect(() => {
     if (!dirty) return;
@@ -132,53 +222,81 @@ export function VaultNoteEditor({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/*
-       * The bar stays put and the document scrolls under it, so "is this saved" is
-       * answerable without scrolling back up through a long note.
-       */}
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-        <IconCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.75} />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={path}>
-          {path}
-        </span>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-neutral-950">
 
-        {save.isError ? (
-          <span className="shrink-0 text-xs text-destructive">
-            Nicht gespeichert – erneut versuchen
-          </span>
-        ) : savedAt && !dirty ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <IconCheck className="size-3.5" stroke={1.75} />
-            Gespeichert
-          </span>
-        ) : null}
-
-        {onBack ? (
-          <Button className="ml-auto shrink-0" onClick={onBack} size="xs" variant="ghost">
-            Zurück zu den Notizen
-          </Button>
-        ) : null}
-
-        <Button
-          disabled={!dirty || save.isPending}
-          onClick={onSave}
-          size="xs"
-          variant="outline"
+      <div className="flex min-h-0 flex-1 gap-2 overflow-hidden bg-white dark:bg-neutral-950">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto bg-white dark:bg-neutral-950"
+          ref={scrollerRef}
         >
-          {save.isPending ? (
-            <IconLoader2 className="size-3.5 animate-spin" stroke={1.75} />
-          ) : (
-            <IconDeviceFloppy className="size-3.5" stroke={1.75} />
-          )}
-          Speichern
-        </Button>
-      </div>
+          <div className="mx-auto max-w-[760px] w-full px-6 py-10 pb-40 md:px-12">
+          {blocks ? (
+            <>
+              {/* Document header with clean Notion/Obsidian look */}
+              <div className="mb-7">
+                {blocks[0]?.type !== "heading1" ? (
+                  <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 sm:text-4xl dark:text-neutral-100 mb-3">
+                    {path.split("/").pop()?.replace(/\.md$/i, "") ?? "Notiz"}
+                  </h1>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-block rounded border border-rose-200/60 bg-rose-50 px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-rose-500 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-400">
+                    {path.split("/").pop() ?? path}
+                  </span>
+                  {blocks ? (
+                    <VaultExportButton
+                      content={fm + (blocks ? blocksToMarkdown(blocks) : "")}
+                      path={path}
+                    />
+                  ) : null}
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded border border-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-500 transition hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:text-white"
+                    data-testid="show-in-brain"
+                    onClick={() => void navigate({ to: "/brain", search: { focus: path, from: companyId } })}
+                    title="Diese Datei im Spark-Graph zeigen (Rechte, Links, Bereich)"
+                    type="button"
+                  >
+                    <SparkLogo size={13} />
+                    Im Spark zeigen
+                  </button>
+                  {save.isPending ? (
+                    <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground/60">
+                      <IconLoader2 className="size-3 animate-spin" />
+                      Speichert...
+                    </span>
+                  ) : dirty ? (
+                    <span className="font-mono text-[11px] text-amber-500/80">
+                      Ungespeichert...
+                    </span>
+                  ) : savedAt ? (
+                    <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground/50">
+                      <IconCheck className="size-3 text-emerald-500" stroke={2.5} />
+                      Automatisch gespeichert
+                    </span>
+                  ) : file.data?.mtime ? (
+                    <span className="text-[11px] text-muted-foreground/50">
+                      {new Date(file.data.mtime).toLocaleDateString("de-DE", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
-        {blocks ? (
-          <NoteBlockEditor blocks={blocks} onBlocksChange={setBlocks} />
-        ) : null}
+              {fm ? <FrontmatterField onChange={setFm} value={fm} /> : null}
+              <NoteBlockEditor blocks={blocks} onBlocksChange={setBlocks} />
+            </>
+          ) : (
+            <div className="flex items-center gap-2 py-12 text-sm text-muted-foreground">
+              <IconLoader2 className="size-4 animate-spin" stroke={1.75} />
+              Datei wird geladen ...
+            </div>
+          )}
+          </div>
+        </div>
+        {blocks ? <NoteTableOfContents blocks={blocks} containerRef={scrollerRef} /> : null}
       </div>
     </div>
   );

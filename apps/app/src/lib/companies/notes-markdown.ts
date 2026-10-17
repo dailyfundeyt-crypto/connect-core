@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Markdown in both directions for note blocks.
  *
  * This is the one place that knows the block shape, which is what makes it possible to export a
@@ -38,6 +38,12 @@ function applyMark(text: string, mark: NoteMark): string {
       // The target id lives on the mark, but Markdown only carries the title. Writing the id here
       // would make an exported note unreadable, so the id is restored by `resolve` on import.
       return `[[${text}]]`;
+    case "color":
+      // Native Markdown has no text colour. An inline `<span>` survives Obsidian and GitHub
+      // because both render raw HTML inside a paragraph.
+      return `<span style="color:${escapeHtml(mark.value)}">${text}</span>`;
+    case "bg":
+      return `<span style="background-color:${escapeHtml(mark.value)}">${text}</span>`;
   }
 }
 
@@ -116,7 +122,7 @@ function parseInline(text: string, resolve?: WikilinkResolver): NoteSpan[] {
    * link written right after a link would be swallowed.
    */
   const pattern =
-    /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*]+\*)|(~~[^~]+~~)|(<u>[^<]+<\/u>)|(\[\[[^\]]+\]\])|(\[(?:[^\][]|\[[^\]]*\])+\]\([^)]+\))/g;
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*]+\*)|(~~[^~]+~~)|(<u>[^<]+<\/u>)|(<span\s+style="[^"]+"[^>]*>([^<]*)<\/span>)|(\[\[[^\]]+\]\])|(\[(?:[^\][]|\[[^\]]*\])+\]\([^)]+\))/g;
 
   let last = 0;
   let match: RegExpExecArray | null;
@@ -126,8 +132,14 @@ function parseInline(text: string, resolve?: WikilinkResolver): NoteSpan[] {
     }
     if (match[0].startsWith("[[")) {
       spans.push(wikilinkSpan(match[0], resolve));
+    } else if (match[0].startsWith("<span")) {
+      // The inner group (match[8]) holds the text *inside* the span. Without
+      // it the span tag itself would leak into the visible text and the
+      // round-trip would double-print `<span style=...>wichtig</span>`.
+      const inner = unescapeMarkdown(match[8] ?? "");
+      spans.push({ text: inner, marks: marksFor(match[0]) });
     } else {
-      spans.push({ text: match[0], marks: marksFor(match[0]) });
+      spans.push({ text: unescapeMarkdown(match[0].replace(/^`+|`+$/g, "").replace(/^[*_~]+|[*_~]+$/g, "").replace(/^<u>|<\/u>$/g, "")), marks: marksFor(match[0]) });
     }
     last = match.index + match[0].length;
   }
@@ -143,6 +155,21 @@ function marksFor(token: string): NoteMark[] {
     return [{ type: "bold" }];
   if (token.startsWith("<u>")) return [{ type: "underline" }];
   if (token.startsWith("~~")) return [{ type: "strike" }];
+  if (token.startsWith("<span")) {
+    /*
+     * Look only at the leading style attribute and only for the keys that
+     * actually map to a mark. `background-color` is the substring that
+     * triggers the bg regex, so the color regex is anchored to a
+     * word boundary to avoid matching the "color" in "background-color".
+     */
+    const style = /style="([^"]+)"/i.exec(token)?.[1] ?? "";
+    const color = /(?:^|;)\s*color\s*:\s*([^;"]+)/i.exec(style)?.[1]?.trim();
+    const bg = /background-color\s*:\s*([^;"]+)/i.exec(style)?.[1]?.trim();
+    const out: NoteMark[] = [];
+    if (color) out.push({ type: "color", value: color });
+    if (bg) out.push({ type: "bg", value: bg });
+    return out;
+  }
   if (token.startsWith("[")) {
     const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
     return [{ type: "link", href: link?.[2] ?? "" }];
@@ -152,6 +179,15 @@ function marksFor(token: string): NoteMark[] {
 
 function unescapeMarkdown(text: string): string {
   return text.replace(/\\([\\`[\]<>])/g, "$1");
+}
+
+/** Inside an HTML attribute (colour value), these are the only entities that matter. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /* ------------------------------------------------------------------ blocks */
@@ -204,20 +240,53 @@ function renderBlock(block: NoteBlock, out: string[]): void {
     case "quote":
       out.push(`${pad}> ${text}`);
       break;
-    case "callout":
-      out.push(`${pad}> ${block.emoji ?? "\u{1F4A1}"} ${text}`);
+    case "callout": {
+      const emoji = block.emoji ?? "💡";
+      const tone = block.color ? `<!-- cb:callout-tone color=${escapeHtml(block.color)} -->` : "";
+      out.push(`${pad}> ${emoji} ${text}`);
+      if (tone) out.push(tone);
+      if (block.children && block.children.length) {
+        // Wrap the children in a fence so the parser can attach them to the
+        // callout block, even when the callout's first line is empty.
+        out.push(`${pad}<!-- cb:callout-children -->`);
+        for (const child of block.children) {
+          renderBlock(child, out);
+        }
+        out.push(`${pad}<!-- /cb:callout-children -->`);
+      }
       break;
+    }
     case "code":
       out.push(`${pad}\`\`\`${block.language ?? ""}`);
       out.push(block.spans?.[0]?.text ?? "");
       out.push(`${pad}\`\`\``);
       break;
-    case "divider":
-      out.push(`${pad}---`);
+    case "divider": {
+      if (!block.dividerStyle && !block.dividerAccent) {
+        out.push(`${pad}---`);
+        break;
+      }
+      // Style + accent do not exist in core Markdown. An HTML `<hr>` survives every renderer
+      // and carries the visual hint back to the next save. The fence is closed so the
+      // region parser can rebuild the divider block losslessly on import.
+      const bits: string[] = [];
+      if (block.dividerStyle) bits.push(`style=${block.dividerStyle}`);
+      if (block.dividerAccent) bits.push(`color=${escapeHtml(block.dividerAccent)}`);
+      out.push(`${pad}<!-- cb:divider ${bits.join(" ")} -->`);
+      out.push(`${pad}<hr ${bits.map((b) => `data-cb-${b.split("=")[0]}="${escapeHtml(b.split("=")[1] ?? "")}"`).join(" ")} />`);
+      out.push(`${pad}<!-- /cb:divider -->`);
       break;
-    case "image":
-      out.push(`${pad}![${block.caption ?? ""}](${block.url ?? ""})`);
+    }
+    case "image": {
+      const url = block.url ?? "";
+      if (url && !url.startsWith("http") && !url.startsWith("data:") && !url.startsWith("/")) {
+        const extra = block.width ? `|${block.width}` : block.caption ? `|${block.caption}` : "";
+        out.push(`${pad}![[${url}${extra}]]`);
+      } else {
+        out.push(`${pad}![${block.caption ?? ""}](${url})`);
+      }
       break;
+    }
     case "toggle":
       out.push(`${pad}- ${text}`);
       break;
@@ -235,6 +304,71 @@ function renderBlock(block: NoteBlock, out: string[]): void {
       for (const row of rows.slice(1)) {
         out.push(`${pad}| ${cells(row).join(" | ")} |`);
       }
+      const rowBg = block.table?.rowBg ?? [];
+      const cellBg = block.table?.cellBg ?? [];
+      if (rowBg.some((c) => Boolean(c)) || cellBg.some((c) => Boolean(c))) {
+        // Lossless serialisation: a fence below the table carries the colours. Import
+        // rebuilds the same table without disturbing the data rows.
+        out.push(
+          `${pad}<!-- cb:table-style rows=${rowBg.length} cells=${cellBg.length} -->`,
+        );
+        if (rowBg.some((c) => Boolean(c))) {
+          out.push(`${pad}<!-- cb:row-bg ${rowBg.map((c) => c ?? "").join("|")} -->`);
+        }
+        if (cellBg.some((c) => Boolean(c))) {
+          out.push(`${pad}<!-- cb:cell-bg ${cellBg.join("|")} -->`);
+        }
+      }
+      break;
+    }
+    case "audio": {
+      const src = block.url ?? "";
+      const label = block.caption ? `|${block.caption}` : "";
+      const assetAttr = block.assetName ? ` asset="${escapeHtml(block.assetName)}"` : "";
+      if (!src) {
+        /*
+         * A freshly inserted audio block has no source yet. The fence is
+         * self-closing so the editor can recover the block on reload, but
+         * nothing is written to disk that another Markdown tool would
+         * misread as an asset reference.
+         */
+        out.push(`${pad}<!-- cb:audio${assetAttr} label="${escapeHtml(block.caption ?? "")}" -->`);
+        out.push(`${pad}<!-- /cb:audio -->`);
+      } else if (src.startsWith("http") || src.startsWith("data:") || src.startsWith("/")) {
+        out.push(`${pad}<!-- cb:audio src="${escapeHtml(src)}" label="${escapeHtml(block.caption ?? "")}"${assetAttr} -->`);
+        out.push(`${pad}[🔊 ${block.caption ?? "Audio"}](${src}${label})`);
+        out.push(`${pad}<!-- /cb:audio -->`);
+      } else {
+        out.push(`${pad}![[${src}${label}]]`);
+      }
+      break;
+    }
+    case "iframe": {
+      const src = block.url ?? "";
+      const provider = block.iframeProvider ?? "generic";
+      const title = block.iframeTitle ?? "";
+      // `iframe` has no native Markdown form. A plain link with a fence keeps the
+      // URL visible in any reader while the editor rebuilds the embedded block.
+      out.push(`${pad}<!-- cb:iframe provider=${provider} title="${escapeHtml(title)}" -->`);
+      out.push(`${pad}[${title || src}](${src})`);
+      out.push(`${pad}<!-- /cb:iframe -->`);
+      break;
+    }
+    case "columns": {
+      const cols = block.columns ?? [];
+      if (!cols.length) break;
+      const width = cols.length;
+      // Open + per-column width fence. Markdown renderers ignore HTML comments, so
+      // pasting this into Obsidian / GitHub shows nothing, but the editor rebuilds
+      // the columns losslessly on next load.
+      out.push(`${pad}<!-- cb:columns width=${width} -->`);
+      for (let i = 0; i < cols.length; i += 1) {
+        const col = cols[i]!;
+        out.push(`${pad}<!-- cb:col ${i + 1} -->`);
+        for (const child of col.blocks) renderBlock(child, out);
+        out.push(`${pad}<!-- /cb:col -->`);
+      }
+      out.push(`${pad}<!-- /cb:columns -->`);
       break;
     }
     case "paragraph":
@@ -243,8 +377,11 @@ function renderBlock(block: NoteBlock, out: string[]): void {
   }
 
   // Toggle children live in the block, so they are written as an indented list underneath it.
-  for (const child of block.children ?? []) {
-    renderBlock(child, out);
+  // Callout children were already rendered inline above; do not double-render them here.
+  if (block.type !== "callout" && block.type !== "columns") {
+    for (const child of block.children ?? []) {
+      renderBlock(child, out);
+    }
   }
 }
 
@@ -322,6 +459,93 @@ function blockId(): string {
 }
 
 /**
+ * Pre-processes the lines into a stream that the main parser can step through.
+ *
+ * The custom `<!-- cb:* -->` fences carry what Markdown cannot (column layouts,
+ * divider style, table cell colours, audio / iframe sources, callout tones). A
+ * reader that does not know them shows nothing — they are HTML comments — and
+ * the editor rebuilds the same blocks losslessly on the next save.
+ *
+ * Returns one entry per consumed line. Plain lines come back as `{ plain: line }`;
+ * a region between two fences comes back as `{ region: <lines> }` whose first line is
+ * the opening fence and whose last line is the closing fence.
+ */
+type ParsedSegment =
+  | { kind: "line"; line: string }
+  | { kind: "region"; lines: string[]; name: string; attrs: Record<string, string> };
+
+function segmentFences(lines: string[]): ParsedSegment[] {
+  const out: ParsedSegment[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const open = /^<!--\s*cb:([a-z-]+)([^>]*)-->\s*$/.exec(line.trim());
+    if (!open) {
+      out.push({ kind: "line", line });
+      i += 1;
+      continue;
+    }
+    const name = open[1]!;
+    const attrs = parseFenceAttrs(open[2] ?? "");
+    /*
+     * Match the close fence with the same `cb:` prefix the renderer writes.
+     * Without that prefix, a `<!-- /cb:col -->` line was treated as plain
+     * text and the columns block was lost on the next load.
+     */
+    const close = `<!-- /cb:${name} -->`;
+    let j = i + 1;
+    while (j < lines.length && lines[j]!.trim() !== close) j += 1;
+    if (j >= lines.length) {
+      /*
+       * Self-closing fence. The renderer writes a single-line fence (e.g.
+       * `<!-- cb:callout-tone color=... -->`) where the attribute lives on
+       * the same line as the opening marker and no close follows. Treat the
+       * line itself as the region so the parser can pick it up.
+       */
+      out.push({ kind: "region", lines: [line], name, attrs });
+      i += 1;
+      continue;
+    }
+    out.push({ kind: "region", lines: lines.slice(i, j + 1), name, attrs });
+    i = j + 1;
+  }
+  return out;
+}
+
+function parseFenceAttrs(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  // `key=value key="quoted value"`
+  const re = /([a-zA-Z-]+)=("([^"]*)"|(\S+))/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    out[m[1]!] = m[3] ?? m[4] ?? "";
+  }
+  return out;
+}
+
+/** Reads `<!-- cb:col N -->` / `<!-- /cb:col -->` pairs into the contained block lines. */
+function splitColumnRegions(
+  region: string[],
+): { blocks: string[] }[] {
+  const cols: { blocks: string[] }[] = [];
+  let i = 1; // skip `<!-- cb:columns width=N -->`
+  while (i < region.length - 1) {
+    const head = region[i]!.trim();
+    const open = /^<!--\s*cb:col\s+(\d+)\s*-->\s*$/.exec(head);
+    if (!open) {
+      i += 1;
+      continue;
+    }
+    const close = "<!-- /cb:col -->";
+    let j = i + 1;
+    while (j < region.length && region[j]!.trim() !== close) j += 1;
+    cols.push({ blocks: region.slice(i + 1, j) });
+    i = j + 1;
+  }
+  return cols;
+}
+
+/**
  * Markdown to blocks.
  *
  * Covers what the editor writes. Anything it does not recognise becomes a paragraph, which is the
@@ -333,10 +557,110 @@ export function markdownToBlocks(
   resolve?: WikilinkResolver,
 ): NoteBlock[] {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const segments = segmentFences(lines);
   const blocks: NoteBlock[] = [];
   /** Stack of open lists, so `indent` comes from the leading spaces. */
   let listDepth = 0;
   const indentStack: number[] = [0];
+
+  /**
+   * Handle a region between two fences. Returns true if the region was consumed and
+   * the main loop should advance to the next segment.
+   */
+  const handleRegion = (region: { name: string; attrs: Record<string, string>; lines: string[] }) => {
+    if (region.name === "columns") {
+      const cols = splitColumnRegions(region.lines).map((col, index) => ({
+        width: 1,
+        blocks: markdownToBlocks(col.blocks.join("\n"), resolve),
+      }));
+      blocks.push({
+        id: blockId(),
+        type: "columns",
+        spans: [],
+        columns: cols,
+      });
+      return true;
+    }
+    if (region.name === "audio") {
+      const src = region.attrs.src ?? "";
+      const label = region.attrs.label ?? "";
+      const assetName = region.attrs.asset ?? "";
+      blocks.push({
+        id: blockId(),
+        type: "audio",
+        url: src,
+        caption: label || undefined,
+        assetName: assetName || undefined,
+        spans: [],
+      });
+      return true;
+    }
+    if (region.name === "iframe") {
+      // The closing `<!-- /cb:iframe -->` is followed by the link line; pull the URL from there.
+      const linkLine = region.lines[region.lines.length - 2] ?? "";
+      const linkMatch = /^\[(.*)\]\((.*)\)\s*$/.exec(linkLine.trim());
+      const title = region.attrs.title ?? linkMatch?.[1] ?? "";
+      const url = linkMatch?.[2] ?? "";
+      const provider = (region.attrs.provider ?? "generic") as
+        | "youtube"
+        | "loom"
+        | "figma"
+        | "excalidraw"
+        | "pdf"
+        | "generic";
+      blocks.push({
+        id: blockId(),
+        type: "iframe",
+        url,
+        iframeProvider: provider,
+        iframeTitle: title,
+        spans: [],
+      });
+      return true;
+    }
+    if (region.name === "callout-tone") {
+      // Belt and braces — the tone also lives on the previous callout's color field.
+      const prev = blocks[blocks.length - 1];
+      if (prev?.type === "callout") {
+        prev.color = region.attrs.color ?? prev.color;
+      }
+      return true;
+    }
+    if (region.name === "callout-children") {
+      // The renderer wraps nested blocks in a fence so an empty callout (no
+      // first-line text) still knows where its children live.
+      const prev = blocks[blocks.length - 1];
+      if (prev?.type !== "callout") return true;
+      const childLines = region.lines.slice(1, -1).join("\n");
+      prev.children = markdownToBlocks(childLines, resolve);
+      return true;
+    }
+    if (region.name === "divider") {
+      blocks.push({
+        id: blockId(),
+        type: "divider",
+        spans: [],
+        dividerStyle: (region.attrs.style as "solid" | "dashed" | "dotted" | "double" | undefined) ?? undefined,
+        dividerAccent: region.attrs.color ?? undefined,
+      });
+      return true;
+    }
+    if (region.name === "table-style" || region.name === "row-bg" || region.name === "cell-bg") {
+      const prev = blocks[blocks.length - 1];
+      if (prev?.type !== "table") return true;
+      const values = region.lines[0]
+        ?.replace(/^<!--\s*cb:[a-z-]+\s*/, "")
+        .replace(/\s*-->$/, "")
+        .split("|") ?? [];
+      if (region.name === "row-bg") {
+        prev.table = { ...(prev.table ?? { rows: [], headerRow: true }), rowBg: values };
+      } else if (region.name === "cell-bg") {
+        prev.table = { ...(prev.table ?? { rows: [], headerRow: true }), cellBg: values };
+      }
+      return true;
+    }
+    return false;
+  };
 
   const flushCode = (language: string, body: string[]) => {
     blocks.push({
@@ -347,19 +671,39 @@ export function markdownToBlocks(
     });
   };
 
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
+  for (let s = 0; s < segments.length; s += 1) {
+    const segment = segments[s]!;
+    if (segment.kind === "region") {
+      const handled = handleRegion({
+        name: segment.name,
+        attrs: segment.attrs,
+        lines: segment.lines,
+      });
+      if (handled) continue;
+      // Unknown fence → drop silently and move on.
+      continue;
+    }
+    const line = segment.line;
     const trimmed = line.trim();
 
     if (trimmed.startsWith("```")) {
       const language = trimmed.slice(3).trim();
       const body: string[] = [];
-      i += 1;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
-        body.push(lines[i]);
-        i += 1;
+      // Consume following plain-line segments as the code body.
+      let k = s + 1;
+      while (k < segments.length) {
+        const next = segments[k]!;
+        if (next.kind !== "line") break;
+        if (next.line.trim().startsWith("```")) {
+          k += 1;
+          break;
+        }
+        body.push(next.line);
+        k += 1;
       }
       flushCode(language, body);
+      // Jump past the consumed body and the closing fence line.
+      s = k - 1;
       continue;
     }
 
@@ -387,7 +731,18 @@ export function markdownToBlocks(
     }
 
     // A table is a row starting with a pipe, and needs a delimiter row under the first one.
-    if (trimmed.startsWith("|") && lines[i + 1]?.trim().match(/^\|[\s:|-]+\|$/)) {
+    // We look at the next two plain segments rather than indexing the raw line array.
+    const nextLineSegment = (offset: number): string | null => {
+      let count = 0;
+      for (let k = s + 1; k < segments.length; k += 1) {
+        const seg = segments[k]!;
+        if (seg.kind !== "line") continue;
+        if (count === offset) return seg.line;
+        count += 1;
+      }
+      return null;
+    };
+    if (trimmed.startsWith("|") && nextLineSegment(0)?.trim().match(/^\|[\s:|-]+\|$/)) {
       const rows: string[][] = [];
       const readRow = (value: string) =>
         value
@@ -397,12 +752,18 @@ export function markdownToBlocks(
           .split("|")
           .map((cell) => cell.trim().replace(/\\\|/g, "|"));
       rows.push(readRow(trimmed));
-      i += 2;
-      while (i < lines.length && lines[i].trim().startsWith("|")) {
-        rows.push(readRow(lines[i]));
-        i += 1;
+      // Skip past the first row *and* the delimiter row that GFM requires under
+      // the header. Without the +1 the delimiter `| --- | --- |` would be
+      // recorded as a data row and the table would grow by one phantom row on
+      // every round trip.
+      let k = s + 2;
+      while (true) {
+        const candidate = segments[k];
+        if (!candidate || candidate.kind !== "line") break;
+        if (!candidate.line.trim().startsWith("|")) break;
+        rows.push(readRow(candidate.line));
+        k += 1;
       }
-      i -= 1;
       const width = Math.max(...rows.map((row) => row.length));
       blocks.push({
         id: blockId(),
@@ -416,6 +777,7 @@ export function markdownToBlocks(
           headerRow: true,
         },
       });
+      s = k - 1;
       continue;
     }
 
@@ -453,6 +815,26 @@ export function markdownToBlocks(
         });
       }
       continue;
+    }
+
+    // Obsidian wiki embed: ![[filename.png]] or ![[filename.png|300]] or ![[filename.png|caption]]
+    const wikiEmbed = /^!\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\\?\|([^\]]*))?\]\]$/.exec(trimmed);
+    if (wikiEmbed) {
+      const target = wikiEmbed[1].trim();
+      const label = (wikiEmbed[2] ?? "").trim();
+      const isMedia = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|webm|mov)$/i.test(target);
+      if (isMedia) {
+        const isWidth = /^\d+(x\d+)?%?$/.test(label);
+        blocks.push({
+          id: blockId(),
+          type: "image",
+          url: target,
+          caption: label && !isWidth ? label : undefined,
+          width: isWidth ? label : undefined,
+          spans: [],
+        });
+        continue;
+      }
     }
 
     const image = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(trimmed);

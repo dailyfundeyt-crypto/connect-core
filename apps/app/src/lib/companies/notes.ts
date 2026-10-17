@@ -51,7 +51,11 @@ export type NoteMark =
   | { type: "strike" }
   | { type: "code" }
   | { type: "link"; href: string }
-  | { type: "wikilink"; noteId: string };
+  | { type: "wikilink"; noteId: string }
+  /** Textfarbe. Hex (#rrggbb) oder CSS-Token (`var(--accent)`). */
+  | { type: "color"; value: string }
+  /** Texthintergrund, gleiches Format wie `color`. */
+  | { type: "bg"; value: string };
 
 /** A styled run of text. `text` is plain — nesting one styled span inside another is not a thing. */
 export type NoteSpan = { text: string; marks?: NoteMark[] };
@@ -70,7 +74,13 @@ export type NoteBlockType =
   | "code"
   | "divider"
   | "image"
-  | "table";
+  | "table"
+  /** Mehrspaltiges Layout. Jede Spalte ist ein eigenständiges Block-Array. */
+  | "columns"
+  /** Audio-Player. Quelle: Vault-Asset, http(s) oder data:URL. */
+  | "audio"
+  /** Eingebettete Seite (YouTube / Loom / Excalidraw / PDF …). Whitelist + externer Fallback. */
+  | "iframe";
 
 export type NoteBlock = {
   id: string;
@@ -80,22 +90,60 @@ export type NoteBlock = {
   indent?: number;
   /** `todo` only. */
   checked?: boolean;
-  /** `toggle` only: the children live in the block itself so folding is one field. */
+  /** `toggle` and `callout`: the children live in the block itself so folding is one field. */
   collapsed?: boolean;
   children?: NoteBlock[];
   /** `callout` only, an emoji. */
   emoji?: string;
+  /** `callout` only, a background color in CSS color syntax. */
+  color?: string;
   /** `code` only, a language hint for the label. */
   language?: string;
-  /** `image` only: a data URL or a remote URL. */
+  /** `image` / `audio` only: a data URL, remote URL, or vault filename. */
   url?: string;
   caption?: string;
+  width?: string;
+  align?: "left" | "center" | "right";
+  /**
+   * `divider` only.
+   *
+   * `style` = how the line looks (`solid`, `dashed`, `dotted`, `double`).
+   * `accent` = colour in CSS color syntax (CSS variable or hex).
+   */
+  dividerStyle?: "solid" | "dashed" | "dotted" | "double";
+  dividerAccent?: string;
+  /**
+   * `iframe` only.
+   *
+   * `provider` is a coarse bucket (`youtube`, `loom`, `figma`, `excalidraw`,
+   * `pdf`, `generic`). The renderer keeps the original URL too, because the
+   * provider is best-effort and the URL is what the user pasted.
+   */
+  iframeProvider?: "youtube" | "loom" | "figma" | "excalidraw" | "pdf" | "generic";
+  iframeTitle?: string;
+  /** `audio` / `video` / `image`: a vault-relative filename for the asset (lossless round-trip). */
+  assetName?: string;
   /** `table` only. */
   table?: {
     /** First row is the header and is rendered as one. */
     rows: string[][];
     headerRow: boolean;
+    /** Optional row-by-row background colour (CSS color syntax). */
+    rowBg?: string[];
+    /** Optional per-cell background colour. Flat row-major, padded to `rows.flat.length`. */
+    cellBg?: string[];
   };
+  /**
+   * `columns` only.
+   *
+   * 2 oder 3 Spalten, jede Spalte ein unabhängiges Block-Array. Eine Spalte
+   * darf wieder `columns` enthalten (geschachtelte Layouts).
+   */
+  columns?: { width?: number; blocks: NoteBlock[] }[];
+  /**
+   * Cell `data-color` für Tabellen-Zellen — gespeichert im Block, weil der
+   * Inline-Editor keine farbigen Spans in Tabellenzellen kennt.
+   */
 };
 
 export type NotesState = {

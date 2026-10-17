@@ -1,19 +1,48 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { IconChevronRight, IconFileText, IconFolder, IconFolderOpen } from "@tabler/icons-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import {
+  IconChevronRight,
+  IconFileText,
+  IconFolder,
+  IconFolderOpen,
+  IconFolderPlus,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { SidebarGroupLabel } from "@/components/ui/sidebar";
+import { VaultQuickSearch } from "@/components/companies/vault-quick-search";
+import { VaultTemplatePicker } from "@/components/companies/vault-template-picker";
+import { VaultImportButton } from "@/components/companies/vault-import-button";
+import { matchesHotkey, getHotkey } from "@/lib/hotkeys/hotkeys";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconTemplate } from "@tabler/icons-react";
 import {
+  brainKeys,
   brainTreeQueryOptions,
+  createBrainFolder,
+  createBrainNote,
+  deleteBrainFolder,
   VAULT_PREFIX,
   type BrainFileInfo,
 } from "@/lib/brain/queries";
+import {
+  DND_VAULT_NOTE,
+  getLevel3Browser,
+  linkVaultNoteToGroup,
+  subscribeLevel3Browser,
+} from "@/lib/companies/level3-tools";
+import { NewFolderDialog } from "@/components/companies/notes-sidebar-section";
+import { DeleteConfirmDialog } from "@/components/settings/delete-confirm-dialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -102,41 +131,113 @@ function countFiles(nodes: TreeNode[]): number {
 }
 
 export function VaultNotesSection({
+  companyId,
   onOpen,
   onReveal,
   selectedPath,
 }: {
+  companyId?: string;
   onOpen: (path: string) => void;
   /** Shows the path in the Windows Explorer. Optional: the web build has no Explorer. */
   onReveal?: (path: string) => void;
   selectedPath: string | null;
 }) {
+  const queryClient = useQueryClient();
   const tree = useQuery(brainTreeQueryOptions());
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [targetParentFolder, setTargetParentFolder] = useState("");
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<{ path: string; name: string } | null>(null);
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [sort, setSort] = useState<"alpha" | "mtime">("alpha");
+  const [tabGroups, setTabGroups] = useState(() =>
+    companyId ? getLevel3Browser(companyId).tabGroups : [],
+  );
+
+  useEffect(() => {
+    if (!companyId) return;
+    setTabGroups(getLevel3Browser(companyId).tabGroups);
+    return subscribeLevel3Browser(() => {
+      setTabGroups(getLevel3Browser(companyId).tabGroups);
+    });
+  }, [companyId]);
+
+  /*
+   * Cmd/Ctrl+K opens the quick-search palette from anywhere on the page — even
+   * when focus is inside the editor or an input — so the user does not have
+   * to first move the cursor back to the sidebar. `getHotkey` is what the
+   * Settings panel renders, so the combo stays in sync with whatever the
+   * user re-binds there.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!matchesHotkey(event, getHotkey("vault-search").combo)) return;
+      event.preventDefault();
+      setQuickSearchOpen((open) => !open);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  const handleDeleteFolder = async () => {
+    if (!deleteFolderTarget) return;
+    try {
+      await deleteBrainFolder(deleteFolderTarget.path);
+      setDeleteFolderTarget(null);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    } catch (err) {
+      console.error("[Ordner löschen] Fehler:", err);
+    }
+  };
+
+  const createNoteInFolder = async (folder: string = "00 Inbox") => {
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+    try {
+      const { path } = await createBrainNote({
+        folder,
+        title: stamp,
+        content: "",
+      });
+      onOpen(path);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    } catch (err) {
+      console.error("[Neue Notiz] Fehler:", err);
+    }
+  };
+
+  const handleCreateFolder = async (name: string) => {
+    try {
+      await createBrainFolder({ parent: targetParentFolder, name });
+      setFolderDialogOpen(false);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    } catch (err) {
+      console.error("[Neuer Ordner] Fehler:", err);
+    }
+  };
+
+  const sortedFiles = useMemo(() => {
+    if (!tree.data?.available) return [] as BrainFileInfo[];
+    const files = [...tree.data.files];
+    files.sort((a, b) => {
+      if (sort === "mtime") return b.mtime.localeCompare(a.mtime);
+      return a.path.localeCompare(b.path);
+    });
+    return files;
+  }, [tree.data, sort]);
+
+  const filteredFiles = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return sortedFiles;
+    return sortedFiles.filter((file) => file.path.toLowerCase().includes(needle));
+  }, [sortedFiles, filter]);
 
   const nodes = useMemo(() => {
-    if (!tree.data?.available) return [];
-    /*
-     * Every markdown file the Brain knows about, not just the `Vault/`-prefixed
-     * half.
-     *
-     * The sidebar lists two things that are one thing on disk. The notes this
-     * browser owns live in their own folders and are listed above; the vault
-     * holds the rest of `Plannung` and is listed here. Which is which is decided
-     * on the server by whether a path is inside the Brain folder, and when the
-     * Brain *is* the vault — `Plannung` with no `.obsidian` above it, which is how
-     * a fresh install is configured — there is no such split: every file comes
-     * back once, without a `Vault/` marker. Filtering on that marker then matched
-     * nothing and the section rendered empty, which is where "the notes do not
-     * load" came from.
-     *
-     * So the marker is treated as optional rather than required: files that carry
-     * it are shown without it, and files that do not are shown as they are. The
-     * Brain-side list already owns its folders, so anything still reaching here
-     * is what belongs under the vault heading.
-     */
-    return buildTree(tree.data.files);
-  }, [tree.data]);
+    return buildTree(filteredFiles);
+  }, [filteredFiles]);
+
+  const visibleTotal = filter.trim() ? countFiles(nodes) : sortedFiles.length;
 
   if (tree.isPending) {
     return (
@@ -149,7 +250,7 @@ export function VaultNotesSection({
   if (!tree.data?.available) {
     return (
       <p className="mt-2 px-2 text-[11px] text-sidebar-foreground/40">
-        Kein Brain verbunden — Ordner nicht verfügbar.
+        Kein Spark verbunden — Ordner nicht verfügbar.
       </p>
     );
   }
@@ -170,12 +271,21 @@ export function VaultNotesSection({
           <ContextMenu>
             <ContextMenuTrigger
               className={cn(
-                "w-full rounded-lg text-left transition-colors",
+                "group/note-row flex w-full cursor-grab items-center rounded-lg text-left transition-colors active:cursor-grabbing",
                 active
-                  ? "bg-sidebar-accent text-sidebar-foreground"
+                  ? "bg-sidebar-accent font-medium text-sidebar-foreground shadow-[inset_0_0_0_1px_var(--sidebar-border)]"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
               )}
+              draggable
               onClick={() => onOpen(node.path)}
+              onDragStart={(event) => {
+                event.dataTransfer.setData(
+                  DND_VAULT_NOTE,
+                  JSON.stringify({ path: node.path, name: node.name }),
+                );
+                event.dataTransfer.setData("text/plain", node.name);
+                event.dataTransfer.effectAllowed = "copy";
+              }}
               style={{ paddingLeft: `${8 + depth * 12}px` }}
             >
               <span className="flex w-full items-center gap-2 py-1.5 pr-2">
@@ -185,15 +295,32 @@ export function VaultNotesSection({
                 </span>
               </span>
             </ContextMenuTrigger>
-            {/*
-             * The row and the menu are siblings, for the reason the note row already
-             * documents: an interactive element inside the trigger also runs the
-             * trigger's own handler, so the file would open under the menu.
-             */}
             <ContextMenuContent className="w-56">
               <ContextMenuItem onClick={() => onOpen(node.path)}>
                 Im Editor öffnen
               </ContextMenuItem>
+              {tabGroups.length > 0 ? (
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger className="gap-2">
+                    <IconFolder className="size-3.5 opacity-60" />
+                    In Gruppe verlinken
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent className="w-52">
+                    {tabGroups.map((g) => (
+                      <ContextMenuItem
+                        key={g.id}
+                        onClick={() => {
+                          if (companyId) {
+                            linkVaultNoteToGroup(companyId, node.path, node.name, g.id);
+                          }
+                        }}
+                      >
+                        <span className="truncate">{g.label}</span>
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              ) : null}
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onReveal?.(node.path)}>
                 Pfad kopieren
@@ -207,47 +334,79 @@ export function VaultNotesSection({
     const isOpen = !(collapsed[node.path] ?? false);
     return (
       <li key={node.path}>
-        <ContextMenu>
-          <ContextMenuTrigger className="w-full rounded-lg text-left">
-            <button
-              aria-expanded={isOpen}
-              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] font-medium text-sidebar-foreground/55 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              onClick={() =>
-                setCollapsed((prev) => ({ ...prev, [node.path]: !isOpen }))
-              }
-              style={{ paddingLeft: `${8 + depth * 12}px` }}
-              type="button"
-            >
-              <IconChevronRight
-                className={cn(
-                  "size-3 shrink-0 transition-transform duration-150",
-                  isOpen && "rotate-90",
+        <div className="group/folder-row relative flex items-center">
+          <ContextMenu>
+            <ContextMenuTrigger className="min-w-0 flex-1">
+              <button
+                aria-expanded={isOpen}
+                className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] font-medium text-sidebar-foreground/55 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                onClick={() =>
+                  setCollapsed((prev) => ({ ...prev, [node.path]: !isOpen }))
+                }
+                style={{ paddingLeft: `${8 + depth * 12}px` }}
+                type="button"
+              >
+                <IconChevronRight
+                  className={cn(
+                    "size-3 shrink-0 transition-transform duration-150",
+                    isOpen && "rotate-90",
+                  )}
+                  stroke={1.75}
+                />
+                {isOpen ? (
+                  <IconFolderOpen className="size-3 shrink-0" stroke={1.75} />
+                ) : (
+                  <IconFolder className="size-3 shrink-0" stroke={1.75} />
                 )}
-                stroke={1.75}
-              />
-              {isOpen ? (
-                <IconFolderOpen className="size-3 shrink-0" stroke={1.75} />
-              ) : (
-                <IconFolder className="size-3 shrink-0" stroke={1.75} />
-              )}
-              <span className="min-w-0 flex-1 truncate">{node.name}</span>
-              <span className="shrink-0 tabular-nums opacity-60">
-                {countFiles(node.children)}
-              </span>
-            </button>
-          </ContextMenuTrigger>
-          {/*
-           * A folder has no text to show, so the only thing worth putting on the
-           * clipboard is where it lives.
-           */}
-          <ContextMenuContent className="w-56">
-            <ContextMenuItem onClick={() => onReveal?.(node.path)}>
-              Pfad kopieren
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+                <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                <span className="shrink-0 tabular-nums opacity-60">
+                  {countFiles(node.children)}
+                </span>
+              </button>
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-56">
+              <ContextMenuItem onClick={() => void createNoteInFolder(node.path)}>
+                <IconPlus className="mr-2 size-3.5" />
+                Neue Notiz anlegen
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => {
+                  setTargetParentFolder(node.path);
+                  setFolderDialogOpen(true);
+                }}
+              >
+                <IconFolderPlus className="mr-2 size-3.5" />
+                Neuer Unterordner
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onReveal?.(node.path)}>
+                Pfad kopieren
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                className="text-destructive focus:bg-destructive/15 focus:text-destructive"
+                onClick={() => setDeleteFolderTarget({ path: node.path, name: node.name })}
+              >
+                <IconTrash className="mr-2 size-3.5" />
+                Ordner löschen
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+          <button
+            aria-label={`Neue Notiz in ${node.name}`}
+            className="absolute right-1 flex size-5 items-center justify-center rounded-md text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/folder-row:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              void createNoteInFolder(node.path);
+            }}
+            title={`Neue Notiz in ${node.name}`}
+            type="button"
+          >
+            <IconPlus className="size-3" stroke={1.75} />
+          </button>
+        </div>
         {isOpen && node.children.length ? (
-          <ul className="mt-0.5 flex flex-col gap-0.5">
+          <ul className="mt-0.5 flex list-none flex-col gap-0.5">
             {node.children.map((child) => renderNode(child, depth + 1))}
           </ul>
         ) : null}
@@ -255,31 +414,143 @@ export function VaultNotesSection({
     );
   };
 
-  const total = countFiles(nodes);
+  const total = visibleTotal;
 
   return (
-    /*
-     * The vault lists every markdown file the Brain knows about -- 2093 of them
-     * in `Plannung` -- and it rendered them into one flat `<ul>` with no cap. That
-     * is a 72000px block: the browser groups below it sat at y=7954, seven screens
-     * past the fold, and appeared to have vanished. Nothing had been removed; it
-     * was simply below a list that grew without bound.
-     *
-     * So the tree gets its own capped, scrollable box, the same way the notes list
-     * does, and the heading stays outside it so the count is always visible. This
-     * is the last section in the rail, so `flex-1` here is safe: there is nothing
-     * below it to push out.
-     */
     <div className="mt-3 flex min-h-0 flex-1 flex-col px-0.5" data-section="vault-notes">
-      <SidebarGroupLabel className="mb-0.5 flex h-7 shrink-0 items-center gap-1 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
-        Plannung
-        <span className="font-semibold tabular-nums text-sidebar-foreground/55">
-          {total}
-        </span>
-      </SidebarGroupLabel>
-      <ul className="no-scrollbar mt-0.5 min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain">
+      <div className="mb-0.5 flex h-7 shrink-0 items-center justify-between px-2">
+        <SidebarGroupLabel className="h-auto p-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
+          <span className="flex items-center gap-1.5">
+            Planung
+            <span className="font-semibold tabular-nums text-sidebar-foreground/55">
+              {total}
+            </span>
+          </span>
+        </SidebarGroupLabel>
+        <div className="flex items-center gap-0.5">
+          <Button
+            aria-label="Aus Vorlage erstellen"
+            className="size-6 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            onClick={() => setTemplatePickerOpen(true)}
+            size="icon"
+            title="Aus Vorlage erstellen"
+            type="button"
+            variant="ghost"
+          >
+            <IconTemplate className="size-3.5" stroke={1.75} />
+          </Button>
+          <Button
+            aria-label="Planung durchsuchen"
+            className="size-6 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            onClick={() => setQuickSearchOpen(true)}
+            size="icon"
+            title="Planung durchsuchen (⌘/Strg+K)"
+            type="button"
+            variant="ghost"
+          >
+            <IconSearch className="size-3.5" stroke={1.75} />
+          </Button>
+          <Button
+            aria-label="Neuer Ordner in Planung"
+            className="size-6 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            onClick={() => {
+              setTargetParentFolder("");
+              setFolderDialogOpen(true);
+            }}
+            size="icon"
+            title="Neuer Ordner in Planung"
+            type="button"
+            variant="ghost"
+          >
+            <IconFolderPlus className="size-3.5" stroke={1.75} />
+          </Button>
+          <Button
+            aria-label="Neue Notiz in Planung"
+            className="size-6 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            onClick={() => void createNoteInFolder("00 Inbox")}
+            size="icon"
+            title="Neue Notiz in Planung"
+            type="button"
+            variant="ghost"
+          >
+            <IconPlus className="size-3.5" stroke={1.75} />
+          </Button>
+        </div>
+      </div>
+      {nodes.length > 0 || filter ? (
+        <div className="mb-0.5 flex shrink-0 items-center gap-1 px-2">
+          <div className="relative flex h-6 min-w-0 flex-1 items-center rounded-md border border-transparent bg-sidebar-accent/40 px-2 focus-within:border-sidebar-foreground/30 focus-within:bg-sidebar-accent/70">
+            <IconFilter className="mr-1 size-3 shrink-0 text-sidebar-foreground/40" stroke={1.5} />
+            <input
+              aria-label="Notizen in der Sidebar filtern"
+              className="h-full min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-sidebar-foreground/40"
+              onChange={(event) => setFilter(event.target.value)}
+              placeholder="Filtern nach Pfad…"
+              value={filter}
+            />
+            {filter ? (
+              <button
+                aria-label="Filter zurücksetzen"
+                className="ml-1 rounded p-0.5 text-sidebar-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                onClick={() => setFilter("")}
+                type="button"
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+          <button
+            aria-label={sort === "alpha" ? "Alphabetisch sortiert" : "Nach Änderungszeit sortiert"}
+            className="flex size-6 items-center justify-center rounded-md text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            onClick={() => setSort((value) => (value === "alpha" ? "mtime" : "alpha"))}
+            title={sort === "alpha" ? "Alphabetisch → nach Änderungszeit" : "Nach Änderungszeit → alphabetisch"}
+            type="button"
+          >
+            {sort === "alpha" ? (
+              <IconSortAscending className="size-3.5" stroke={1.75} />
+            ) : (
+              <IconSortDescending className="size-3.5" stroke={1.75} />
+            )}
+          </button>
+        </div>
+      ) : null}
+      <ul className="no-scrollbar mt-0.5 flex min-h-0 list-none flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain">
         {nodes.map((node) => renderNode(node, 0))}
       </ul>
+      <NewFolderDialog
+        onCreate={handleCreateFolder}
+        onOpenChange={setFolderDialogOpen}
+        open={folderDialogOpen}
+      />
+      {deleteFolderTarget ? (
+        <DeleteConfirmDialog
+          confirmWord={deleteFolderTarget.name}
+          description={`Möchtest du den Ordner „${deleteFolderTarget.name}“ und alle darin enthaltenen Notizen wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`}
+          onConfirm={handleDeleteFolder}
+          onOpenChange={(open) => !open && setDeleteFolderTarget(null)}
+          open={Boolean(deleteFolderTarget)}
+          title="Ordner löschen"
+        />
+      ) : null}
+      {companyId ? (
+        <VaultQuickSearch
+          companyId={companyId}
+          onOpenChange={setQuickSearchOpen}
+          open={quickSearchOpen}
+        />
+      ) : null}
+      {companyId ? (
+        <VaultTemplatePicker
+          companyId={companyId}
+          onOpenChange={setTemplatePickerOpen}
+          open={templatePickerOpen}
+        />
+      ) : null}
+      {companyId ? (
+        <div className="mt-1 shrink-0 px-2 pb-1">
+          <VaultImportButton companyId={companyId} folder="00 Inbox" />
+        </div>
+      ) : null}
     </div>
   );
 }
