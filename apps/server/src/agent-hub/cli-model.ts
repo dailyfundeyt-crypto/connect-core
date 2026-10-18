@@ -13,16 +13,63 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type CliKind = "codex" | "claude";
+export type CliKind = "codex" | "claude" | "antigravity";
 
+/**
+ * Modelle, die jeder Provider nativ anbietet. "Browser-Use" ist kein
+ * separates Modell, sondern ein Tool-Flag auf der CLI — Antigravity z.B.
+ * hat ein eingebautes Browser-Tool, das im non-interactive-Mode aktiv ist,
+ * sobald der Prompt es braucht. Wir listen hier nur die Modellnamen, die
+ * wir per `--model` durchreichen.
+ */
 export const CLI_MODELS: Record<CliKind, string[]> = {
   codex: ["gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna"],
   claude: ["sonnet", "opus", "haiku"],
+  /**
+   * Stand 2026-10: Antigravity listet seine Modelle intern in einer
+   * `agy models`-Ausgabe. Wir nehmen die dokumentierten Namen plus einen
+   * „auto"-Eintrag, der `--model` weg lässt und die Default-Auswahl der
+   * CLI nimmt — beides ist im MCP-Tool-Kontext wichtig, weil der User
+   * den Provider konfiguriert, ohne jedes Mal die Modelliste zu pflegen.
+   */
+  antigravity: [
+    "auto",
+    "gemini-3.8-flash-high",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-low",
+    "gemini-3.7-flash-high",
+    "gemini-3.7-flash-medium",
+    "gemini-3.7-flash-low",
+    "gemini-3.1-pro-high",
+    "gemini-3.1-pro-low",
+  ],
 };
 
-const CLI_PACKAGES: Record<CliKind, { pkg: string; bin: string; label: string }> = {
-  codex: { pkg: "@openai/codex", bin: "bin/codex.js", label: "Codex (ChatGPT-Login)" },
-  claude: { pkg: "@anthropic-ai/claude-code", bin: "cli.js", label: "Claude (Claude-Login)" },
+/**
+ * Wie der Provider aufgerufen wird:
+ *   - `pkg` ist der npm-Package-Name (für die Installations-Hinweise)
+ *   - `bin` ist der Pfad *relativ* zum Package-Root, also `bin/foo.js`
+ *   - `label` ist der UI-Text in den Settings
+ *   - `binary` ist der Name, mit dem die CLI im PATH aufgerufen wird,
+ *     also `agy` für Antigravity (kein node-Wrapper)
+ *
+ * Antigravity hat ein **eingebautes Browser-Tool** (siehe Codelab
+ * "tool calling, and conversation history" + Settings "Tool Permission"):
+ * der Agent kann von sich aus Webseiten öffnen, klicken, Formulare
+ * ausfüllen. Das ist die „browser-use"-Anbindung, die der User in dieser
+ * Stufe mit-antigravity möchte — kein zusätzliches Paket nötig, einfach
+ * `agy -p "..."` aufrufen, der Agent klickt selbst.
+ */
+const CLI_PACKAGES: Record<CliKind, { pkg: string; bin: string; label: string; binary: string }> = {
+  codex: { pkg: "@openai/codex", bin: "bin/codex.js", label: "Codex (ChatGPT-Login)", binary: "codex" },
+  claude: { pkg: "@anthropic-ai/claude-code", bin: "cli.js", label: "Claude (Claude-Login)", binary: "claude" },
+  /**
+   * Antigravity wird nicht über npm-global installiert (es ist ein
+   * Go-Binary), aber wir listen den npm-Namen `@google/antigravity-cli`
+   * als Fallback-Hinweis. Den eigentlichen Pfad suchen wir in den
+   * plattformspezifischen `antigravityRoots()` weiter unten.
+   */
+  antigravity: { pkg: "@google/antigravity-cli", bin: "bin/agy.js", label: "Antigravity (Google-OAuth)", binary: "agy" },
 };
 
 const MODEL_NAME = /^[A-Za-z0-9._:\-/]{1,64}$/;
@@ -36,8 +83,45 @@ function npmGlobalRoots(): string[] {
   return roots;
 }
 
-/** Path of the CLI's JS entry, or null when it is not installed. */
+/**
+ * Wo Antigravity (`agy`) standardmäßig landet.
+ *
+ * Auf Windows installiert das PowerShell-Skript nach
+ * `%LOCALAPPDATA%\agy\bin\agy.exe`, auf Unix nach `~/.local/bin/agy`. Wir
+ * suchen beide — wenn `agy` zusätzlich im PATH ist, greift der
+ * `PATH`-Lookup unten, der in `cliEntry` als Fallback läuft.
+ */
+function antigravityRoots(): string[] {
+  const roots: string[] = [];
+  if (process.env.LOCALAPPDATA) {
+    roots.push(join(process.env.LOCALAPPDATA, "agy", "bin"));
+  }
+  if (process.platform !== "win32") {
+    roots.push(join(homedir(), ".local", "bin"));
+  }
+  // Falls die CLI über npm installiert wurde, landet sie wie Codex/Claude.
+  roots.push(...npmGlobalRoots().map((root) => root.replace(/node_modules$/, "")));
+  return roots;
+}
+
+/**
+ * Pfad zum ausführbaren CLI, oder `null` wenn nicht installiert.
+ *
+ * Codex & Claude sind Node-Skripte unter `node_modules/<pkg>/...`, also
+ * suchen wir im npm-Global-Root. Antigravity ist ein Go-Binary und liegt
+ * unter `antigravityRoots()` (oder ist im PATH — siehe Fallback).
+ */
 export function cliEntry(kind: CliKind): string | null {
+  if (kind === "antigravity") {
+    const exe = process.platform === "win32" ? "agy.exe" : "agy";
+    for (const root of antigravityRoots()) {
+      const candidate = join(root, exe);
+      if (existsSync(candidate)) return candidate;
+    }
+    // Fallback: PATH-Lookup. Wir vertrauen darauf, dass der Installer
+    // den Pfad gesetzt hat, und fragen das OS.
+    return exe;
+  }
   const { pkg, bin } = CLI_PACKAGES[kind];
   for (const root of npmGlobalRoots()) {
     const candidate = join(root, ...pkg.split("/"), ...bin.split("/"));
@@ -86,21 +170,52 @@ function killTree(child: ChildProcess) {
 
 type CliEvent = { text?: string; error?: string; usage?: { input: number; output: number }; fatal?: boolean };
 
+/**
+ * CLI-Args pro Provider.
+ *
+ * Antigravity hat ein **eingebautes Browser-Tool** (siehe Codelab
+ * "Tool calling"): sobald der Prompt Web-Aktionen braucht, klickt die
+ * CLI selbst. Wir setzen deshalb `--dangerously-skip-permissions` nicht —
+ * der User hat die Tool-Permission in seinen Antigravity-Settings eh auf
+ * `request-review` (oder einen anderen Wert) gesetzt, und das respektieren
+ * wir. Nur wenn `allowWrite` aktiv ist, geben wir der CLI den Freiraum
+ * für File-Operations; sonst bleibt sie read-only.
+ *
+ * Browser-Use heißt bei Antigravity also: einfach den Prompt losschicken,
+ * die CLI kümmert sich. Das `--sandbox`-Flag existiert bei Antigravity
+ * nicht — die Sandbox-Auswahl läuft über `agy --sandbox on|off`. Wir
+ * lassen es weg und übergeben das Verzeichnis via `-C`.
+ */
 function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean): string[] {
   if (kind === "codex") {
     return ["exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--color", "never", "--sandbox", allowWrite ? "workspace-write" : "read-only", "-m", model, "-C", cwd, "-"];
   }
-  return [
-    "-p",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--include-partial-messages",
-    "--model",
-    model,
-    "--allowedTools",
-    allowWrite ? "Read Glob Grep WebFetch WebSearch Edit Write" : "Read Glob Grep WebFetch WebSearch",
-  ];
+  if (kind === "claude") {
+    return [
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--include-partial-messages",
+      "--model",
+      model,
+      "--allowedTools",
+      allowWrite ? "Read Glob Grep WebFetch WebSearch Edit Write" : "Read Glob Grep WebFetch WebSearch",
+    ];
+  }
+  // antigravity: `-p` für non-interactive, `--output-format stream-json`
+  // für zeilenweise Events. Modell ist optional — `"auto"` lässt die CLI
+  // ihre Default-Wahl treffen, dann übergeben wir `--model` gar nicht.
+  const args = ["-p", "--output-format", "stream-json", "--no-color", "-C", cwd];
+  if (model && model !== "auto") {
+    args.push("--model", model);
+  }
+  if (allowWrite) {
+    // Antigravity hat kein direktes "write-only" Tool-Filter; aber
+    // `--sandbox on` ist die sichere Variante (passt zu `request-review`).
+    args.push("--sandbox", "on");
+  }
+  return args;
 }
 
 /** Translate one JSON line of the CLI into what the chat needs. */
@@ -110,6 +225,9 @@ function parseLine(kind: CliKind, line: string, state: { sawDelta: boolean; retr
     event = JSON.parse(line) as Record<string, unknown>;
   } catch {
     return null;
+  }
+  if (kind === "antigravity") {
+    return parseAntigravityLine(event, state);
   }
   if (kind === "codex") {
     const item = event.item as { type?: string; text?: string } | undefined;
@@ -151,6 +269,64 @@ function parseLine(kind: CliKind, line: string, state: { sawDelta: boolean; retr
   return null;
 }
 
+/**
+ * Antigravity-Stream-JSON unterscheidet sich von Claude/Codex:
+ *   - `assistant` (oder `text`) enthält das, was der Agent sagt
+ *   - `tool_use` zeigt, dass der Agent ein Tool aufgerufen hat (z.B. den
+ *     Browser). Wir geben das als kleinen Hinweis zurück, ohne es zu
+ *     parsen — die UI kann entscheiden, ob sie es anzeigt.
+ *   - `error` ist entweder ein Authorization-Fehler (`"not signed in"`)
+ *     oder ein Server-Fehler
+ *
+ * Wir halten uns an das, was die Doku verspricht, und fallen auf
+ * { text: roher JSON } zurück, wenn das Format mal nicht passt.
+ */
+function parseAntigravityLine(event: Record<string, unknown>, state: { sawDelta: boolean; retries: number }): CliEvent | null {
+  const type = event.type as string | undefined;
+  // Eigentliche Antwort
+  if (type === "assistant" || type === "text") {
+    const text = String(event.text ?? event.content ?? "");
+    if (text) {
+      state.sawDelta = true;
+      return { text };
+    }
+  }
+  // Tool-Aufruf (z.B. Browser-Open, Klick, Form-Fill) — Hinweis für die UI
+  if (type === "tool_use" || type === "tool_call") {
+    const name = String(event.name ?? event.tool ?? "tool");
+    return { text: `\n[Tool: ${name}]\n` };
+  }
+  // Modell-Retry
+  if (type === "system" && event.subtype === "api_retry") {
+    state.retries += 1;
+    if (state.retries >= 3) {
+      return {
+        error: "Antigravity erreicht seinen Server nicht (mehrere Fehlversuche). Meist hilft: `agy --version` prüfen, dann `agy` einmalig neu anmelden.",
+        fatal: true,
+      };
+    }
+    return null;
+  }
+  // Auth-Fehler / fatal
+  if (type === "error" || type === "result" && event.is_error) {
+    const message = String(event.error ?? event.message ?? event.result ?? "Antigravity-Fehler");
+    if (/not signed in|unauthor|login|401/i.test(message)) {
+      return {
+        error: "Antigravity ist nicht angemeldet. Bitte unter Einstellungen › Anbieter › Antigravity neu anmelden.",
+        fatal: true,
+      };
+    }
+    return { error: message, fatal: true };
+  }
+  // Schluss-Event mit Usage
+  if (type === "result" || type === "done" || type === "complete") {
+    const u = event.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+    const usage = u ? { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0 } : undefined;
+    return usage ? { usage } : null;
+  }
+  return null;
+}
+
 export type CliRunOptions = { kind: CliKind; model: string; agentId: string; prompt: string; allowWrite?: boolean; signal?: AbortSignal };
 
 /** Runs the CLI once and yields text pieces as they come. Throws with a readable German message. */
@@ -158,9 +334,25 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
   const entry = cliEntry(options.kind);
   const label = CLI_PACKAGES[options.kind].label;
   if (!entry) throw new Error(`${label}: Die CLI ist auf diesem PC nicht installiert (npm i -g ${CLI_PACKAGES[options.kind].pkg}).`);
-  if (!MODEL_NAME.test(options.model)) throw new Error(`${label}: Ungültiger Modellname.`);
+  // "auto" ist ein magischer Modellname bei Antigravity — wir lassen das
+  // Original durch, weil die Regex ihn durchlässt (Buchstaben+Zahlen+Punkt).
+  if (options.kind !== "antigravity" && !MODEL_NAME.test(options.model)) {
+    throw new Error(`${label}: Ungültiger Modellname.`);
+  }
+  if (options.kind === "antigravity" && options.model !== "auto") {
+    // Antigravity-Modellnamen können Leerzeichen enthalten („Gemini 3.7
+    // Flash (Low)"). Wir validieren hier nur, dass was Sinnvolles drin ist.
+    if (options.model.length === 0 || options.model.length > 80) {
+      throw new Error(`${label}: Ungültiger Modellname.`);
+    }
+  }
   const cwd = agentWorkdir(options.agentId);
-  const child = spawn(nodeBinary(), [entry, ...argsFor(options.kind, options.model, cwd, !!options.allowWrite)], {
+  const args = argsFor(options.kind, options.model, cwd, !!options.allowWrite);
+  // Antigravity ist ein Go-Binary und wird direkt aufgerufen; Codex und
+  // Claude sind Node-Skripte, also läuft das über `node entry.js`.
+  const cmd = options.kind === "antigravity" ? entry : nodeBinary();
+  const cmdArgs = options.kind === "antigravity" ? args : [entry, ...args];
+  const child = spawn(cmd, cmdArgs, {
     cwd,
     env: childEnv(),
     windowsHide: true,
@@ -327,7 +519,9 @@ function runQuick(kind: CliKind, args: string[], timeoutMs = 15_000): Promise<{ 
   return new Promise((resolve) => {
     const entry = cliEntry(kind);
     if (!entry) return resolve({ code: null, out: "" });
-    const child = spawn(nodeBinary(), [entry, ...args], { env: childEnv(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const cmd = kind === "antigravity" ? entry : nodeBinary();
+    const cmdArgs = kind === "antigravity" ? args : [entry, ...args];
+    const child = spawn(cmd, cmdArgs, { env: childEnv(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout?.on("data", (c) => {
       out += String(c);
@@ -349,12 +543,36 @@ export type CliStatus = { kind: CliKind; label: string; installed: boolean; vers
 export async function cliStatus(kind: CliKind): Promise<CliStatus> {
   const label = CLI_PACKAGES[kind].label;
   const base = { kind, label, models: CLI_MODELS[kind] };
-  if (!cliEntry(kind)) return { ...base, installed: false, version: null, loggedIn: null, detail: `Nicht installiert (npm i -g ${CLI_PACKAGES[kind].pkg}).` };
+  if (!cliEntry(kind)) {
+    // Antigravity hat eine andere Installations-Anleitung als die
+    // npm-Pakete — der Installer ist plattformspezifisch.
+    const hint = kind === "antigravity"
+      ? "Antigravity ist auf diesem PC nicht installiert. Installiere es mit `irm https://antigravity.google/cli/install.ps1 | iex` (Windows) bzw. `curl -fsSL https://antigravity.google/cli/install.sh | bash` (Unix)."
+      : `Nicht installiert (npm i -g ${CLI_PACKAGES[kind].pkg}).`;
+    return { ...base, installed: false, version: null, loggedIn: null, detail: hint };
+  }
   const version = (await runQuick(kind, ["--version"])).out.trim().split("\n")[0] || null;
   if (kind === "codex") {
     const status = await runQuick(kind, ["login", "status"]);
     const loggedIn = status.code === 0 && /logged in/i.test(status.out);
     return { ...base, installed: true, version, loggedIn, detail: status.out.trim().split("\n").pop() ?? "" };
+  }
+  if (kind === "antigravity") {
+    // Antigravity hat keinen eigenen `auth status`-Subcommand. Wir prüfen
+    // einen Settings-File: `~/.gemini/antigravity-cli/settings.json`
+    // existiert nach erfolgreichem Login immer. Wenn nicht, hat der
+    // User den Onboarding-Wizard noch nicht durchlaufen.
+    const settingsPath = join(homedir(), ".gemini", "antigravity-cli", "settings.json");
+    const settingsExists = existsSync(settingsPath);
+    return {
+      ...base,
+      installed: true,
+      version,
+      loggedIn: settingsExists,
+      detail: settingsExists
+        ? "Angemeldet (Google-OAuth-Token im System-Keyring)."
+        : "Nicht angemeldet. Bitte `agy` einmalig starten, um den Login-Flow zu durchlaufen.",
+    };
   }
   const status = await runQuick(kind, ["auth", "status"]);
   let loggedIn: boolean | null = null;
@@ -366,10 +584,31 @@ export async function cliStatus(kind: CliKind): Promise<CliStatus> {
   return { ...base, installed: true, version, loggedIn, detail: loggedIn ? "Angemeldet" : "Nicht angemeldet" };
 }
 
-/** Starts the CLI's own browser login in the background. The CLI opens the provider page itself. */
+/**
+ * Startet den Login-Flow des Providers.
+ *
+ * Antigravity: läuft ohne Argumente, der User kommt in den
+ * `agy`-Onboarding-Wizard, der ihn durch Google-OAuth führt. Wir starten
+ * das mit `--output-format stream-json` weg, damit der Wizard still in
+ * der Shell läuft (er interagiert über TTY mit dem User, was wir hier
+ * nicht simulieren können).
+ */
 export function startCliLogin(kind: CliKind): { started: boolean; message: string } {
   const entry = cliEntry(kind);
   if (!entry) return { started: false, message: "CLI nicht installiert." };
+  if (kind === "antigravity") {
+    // Antigravity hat keinen dedizierten login-Befehl — der User startet
+    // die CLI einmalig, der Onboarding-Wizard übernimmt. Wir starten
+    // `agy` so, dass es sichtbar ist (kein windowsHide), damit der
+    // User das Terminal sieht und durchklicken kann.
+    const child = spawn(entry, [], { env: childEnv(), stdio: "ignore", detached: false });
+    setTimeout(() => killTree(child), 10 * 60_000);
+    child.on("error", () => {});
+    return {
+      started: true,
+      message: "Antigravity-Login gestartet. Bitte im neu geöffneten Fenster den Google-OAuth-Wizard durchlaufen.",
+    };
+  }
   const args = kind === "codex" ? ["login"] : ["auth", "login"];
   const child = spawn(nodeBinary(), [entry, ...args], { env: childEnv(), windowsHide: true, stdio: "ignore", detached: false });
   setTimeout(() => killTree(child), 5 * 60_000);
@@ -378,5 +617,5 @@ export function startCliLogin(kind: CliKind): { started: boolean; message: strin
 }
 
 export function isCliKind(value: string): value is CliKind {
-  return value === "codex" || value === "claude";
+  return value === "codex" || value === "claude" || value === "antigravity";
 }

@@ -1,10 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconCircleCheck, IconCircleX, IconLoader2 } from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { PcBridgeAgentCard } from "@/components/pc-bridge/pc-bridge-agent-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PcBridgeAgentCard } from "@/components/pc-bridge/pc-bridge-agent-card";
-import { pcBridgeStatusQuery } from "@/lib/pc-bridge/api";
 import {
   agentHubAgentQuery,
   cliProvidersQuery,
@@ -15,16 +14,60 @@ import {
   startCliProviderLogin,
   testAgentModel,
 } from "@/lib/agent-hub/api";
+import { pcBridgeStatusQuery } from "@/lib/pc-bridge/api";
 
 const PROVIDERS: { id: ModelProvider; label: string; hint: string }[] = [
-  { id: "default", label: "Standard (globale Einstellung)", hint: "Nutzt das Modell aus Einstellungen → Modelle." },
-  { id: "openai", label: "OpenAI", hint: "Ohne eigenen Key wird der globale OpenAI-Key genutzt." },
-  { id: "anthropic", label: "Anthropic", hint: "Ohne eigenen Key wird der globale Anthropic-Key genutzt." },
-  { id: "ollama-local", label: "Ollama lokal", hint: "Läuft auf diesem PC über http://127.0.0.1:11434 – kein Key nötig." },
-  { id: "ollama-cloud", label: "Ollama Cloud", hint: "Eigener Key pro Agent – erstellen unter ollama.com/settings/keys." },
-  { id: "codex-cli", label: "Codex · mit ChatGPT-Konto", hint: "Nutzt dein ChatGPT-Abo über die Codex-CLI im Hintergrund – kein API-Key, kein Terminal." },
-  { id: "claude-cli", label: "Claude · mit Claude-Konto", hint: "Nutzt dein Claude-Abo über Claude Code im Hintergrund – kein API-Key, kein Terminal." },
-  { id: "openai-compatible", label: "OpenAI-kompatibel", hint: "Beliebiger Anbieter mit /v1/chat/completions (LM Studio, vLLM, OpenRouter …)." },
+  {
+    id: "default",
+    label: "Standard (globale Einstellung)",
+    hint: "Nutzt das Modell aus Einstellungen → Modelle.",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    hint: "Ohne eigenen Key wird der globale OpenAI-Key genutzt.",
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    hint: "Ohne eigenen Key wird der globale Anthropic-Key genutzt.",
+  },
+  {
+    id: "ollama-local",
+    label: "Ollama lokal",
+    hint: "Läuft auf diesem PC über http://127.0.0.1:11434 – kein Key nötig.",
+  },
+  {
+    id: "ollama-cloud",
+    label: "Ollama Cloud",
+    hint: "Eigener Key pro Agent – erstellen unter ollama.com/settings/keys.",
+  },
+  {
+    id: "codex-cli",
+    label: "Codex · mit ChatGPT-Konto",
+    hint: "Nutzt dein ChatGPT-Abo über die Codex-CLI im Hintergrund – kein API-Key, kein Terminal.",
+  },
+  {
+    id: "claude-cli",
+    label: "Claude · mit Claude-Konto",
+    hint: "Nutzt dein Claude-Abo über Claude Code im Hintergrund – kein API-Key, kein Terminal.",
+  },
+  /**
+   * Antigravity (`agy`) ist Googles Coding-Agent mit **eingebautem
+   * Browser-Tool** — der Agent klickt selbst, sobald der Prompt Web-
+   * Aktionen braucht. Login über Google-OAuth (kein API-Key nötig,
+   * kostenloser Tier 1.000 Requests/Tag).
+   */
+  {
+    id: "antigravity-cli",
+    label: "Antigravity · mit Google-Konto",
+    hint: "Googles Coding-Agent mit eingebautem Browser-Tool. Login über Google-OAuth, kein API-Key, kein Terminal.",
+  },
+  {
+    id: "openai-compatible",
+    label: "OpenAI-kompatibel",
+    hint: "Beliebiger Anbieter mit /v1/chat/completions (LM Studio, vLLM, OpenRouter …).",
+  },
 ];
 
 const SUGGESTIONS: Partial<Record<ModelProvider, string[]>> = {
@@ -32,7 +75,30 @@ const SUGGESTIONS: Partial<Record<ModelProvider, string[]>> = {
   anthropic: ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-1"],
   "codex-cli": ["gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna"],
   "claude-cli": ["sonnet", "opus", "haiku"],
-  "ollama-cloud": ["gpt-oss:120b", "gpt-oss:20b", "qwen3-coder:480b", "deepseek-v3.1:671b", "kimi-k2:1t", "glm-4.6"],
+  /**
+   * Antigravity kennt „auto" als magischen Wert, der die Default-Wahl
+   * der CLI nimmt. Die anderen Einträge sind die dokumentierten
+   * Gemini-3.x-Modelle in den drei Reasoning-Stufen.
+   */
+  "antigravity-cli": [
+    "auto",
+    "gemini-3.8-flash-high",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-low",
+    "gemini-3.7-flash-high",
+    "gemini-3.7-flash-medium",
+    "gemini-3.7-flash-low",
+    "gemini-3.1-pro-high",
+    "gemini-3.1-pro-low",
+  ],
+  "ollama-cloud": [
+    "gpt-oss:120b",
+    "gpt-oss:20b",
+    "qwen3-coder:480b",
+    "deepseek-v3.1:671b",
+    "kimi-k2:1t",
+    "glm-4.6",
+  ],
 };
 
 const DEFAULT_URLS: Partial<Record<ModelProvider, string>> = {
@@ -47,7 +113,8 @@ const DEFAULT_URLS: Partial<Record<ModelProvider, string>> = {
  */
 export function AgentModelPanel({ agentId }: { agentId: string }) {
   const bridge = useQuery(pcBridgeStatusQuery());
-  if (bridge.data?.mode === "relay") return <PcBridgeAgentCard agentId={agentId} status={bridge.data} />;
+  if (bridge.data?.mode === "relay")
+    return <PcBridgeAgentCard agentId={agentId} status={bridge.data} />;
   return <LocalAgentModelPanel agentId={agentId} />;
 }
 
@@ -59,11 +126,33 @@ function LocalAgentModelPanel({ agentId }: { agentId: string }) {
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const ollama = useQuery({ ...ollamaModelsQuery(), enabled: provider === "ollama-local" });
-  const isCli = provider === "codex-cli" || provider === "claude-cli";
-  const cli = useQuery({ ...cliProvidersQuery(), enabled: isCli, refetchInterval: isCli ? 5_000 : false });
-  const cliInfo = cli.data?.providers.find((entry) => `${entry.kind}-cli` === provider);
-  const login = useMutation({ mutationFn: () => startCliProviderLogin(provider === "claude-cli" ? "claude" : "codex") });
+  const ollama = useQuery({
+    ...ollamaModelsQuery(),
+    enabled: provider === "ollama-local",
+  });
+  const isCli =
+    provider === "codex-cli" ||
+    provider === "claude-cli" ||
+    provider === "antigravity-cli";
+  const cli = useQuery({
+    ...cliProvidersQuery(),
+    enabled: isCli,
+    refetchInterval: isCli ? 5_000 : false,
+  });
+  const cliInfo = cli.data?.providers.find(
+    (entry) => `${entry.kind}-cli` === provider,
+  );
+  const login = useMutation({
+    mutationFn: () => {
+      const kind: "codex" | "claude" | "antigravity" =
+        provider === "codex-cli"
+          ? "codex"
+          : provider === "claude-cli"
+            ? "claude"
+            : "antigravity";
+      return startCliProviderLogin(kind);
+    },
+  });
 
   useEffect(() => {
     const current = agent.data?.model;
@@ -89,17 +178,27 @@ function LocalAgentModelPanel({ agentId }: { agentId: string }) {
   const test = useMutation({ mutationFn: () => testAgentModel(agentId) });
 
   const info = PROVIDERS.find((entry) => entry.id === provider);
-  const needsKey = provider === "openai" || provider === "anthropic" || provider === "ollama-cloud" || provider === "openai-compatible";
+  const needsKey =
+    provider === "openai" ||
+    provider === "anthropic" ||
+    provider === "ollama-cloud" ||
+    provider === "openai-compatible";
   const current = agent.data?.model;
   const keyStored = current?.hasKey && current.provider === provider;
-  const dirty = !current || current.provider !== provider || current.model !== model || (current.baseUrl ?? "") !== baseUrl || apiKey.trim() !== "";
+  const dirty =
+    !current ||
+    current.provider !== provider ||
+    current.model !== model ||
+    (current.baseUrl ?? "") !== baseUrl ||
+    apiKey.trim() !== "";
 
   return (
     <div className="flex flex-col gap-5">
       <div>
         <h3 className="font-semibold text-[15px]">Modell</h3>
         <p className="mt-0.5 text-[13px] text-muted-foreground">
-          Welches Sprachmodell dieser Agent nutzt. Gilt nur für ihn – andere Agents behalten ihr eigenes Modell.
+          Welches Sprachmodell dieser Agent nutzt. Gilt nur für ihn – andere
+          Agents behalten ihr eigenes Modell.
         </p>
       </div>
 
@@ -111,7 +210,12 @@ function LocalAgentModelPanel({ agentId }: { agentId: string }) {
             const next = event.target.value as ModelProvider;
             setProvider(next);
             setBaseUrl("");
-            if (next !== current?.provider) setModel(next === "ollama-local" ? (ollama.data?.models[0]?.name ?? "qwen3:8b") : (SUGGESTIONS[next]?.[0] ?? ""));
+            if (next !== current?.provider)
+              setModel(
+                next === "ollama-local"
+                  ? (ollama.data?.models[0]?.name ?? "qwen3:8b")
+                  : (SUGGESTIONS[next]?.[0] ?? ""),
+              );
             else setModel(current?.model ?? "");
           }}
           className="h-9 rounded-lg border border-input bg-background px-2.5 text-sm"
@@ -123,22 +227,57 @@ function LocalAgentModelPanel({ agentId }: { agentId: string }) {
             </option>
           ))}
         </select>
-        {info ? <span className="text-[12px] text-muted-foreground">{info.hint}</span> : null}
+        {info ? (
+          <span className="text-[12px] text-muted-foreground">{info.hint}</span>
+        ) : null}
+        {provider === "codex-cli" || provider === "claude-cli" ? (
+          <div
+            className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-50/60 px-3 py-2 text-[12px] text-amber-900 dark:bg-amber-900/15 dark:text-amber-200"
+            data-testid="agent-model-web-hint"
+          >
+            <span className="font-medium">Hinweis:</span>
+            <span>
+              Für Web-Tasks (öffnen, klicken, Screenshots) ist{" "}
+              <span className="font-semibold">Antigravity</span> die bessere
+              Wahl — der hat ein Browser-Tool eingebaut und kämpft nicht mit
+              der Windows-Sandbox.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setProvider("antigravity-cli")}
+              data-testid="agent-model-web-hint-switch"
+            >
+              Zu Antigravity wechseln
+            </Button>
+          </div>
+        ) : null}
       </label>
 
       {provider !== "default" ? (
         <>
           <label className="flex flex-col gap-1.5">
             <span className="font-medium text-[13px]">Modellname</span>
-            <Input list={`agent-model-suggestions-${agentId}`} value={model} onChange={(event) => setModel(event.target.value)} placeholder="z. B. qwen3:8b" data-testid="agent-model-name" />
+            <Input
+              list={`agent-model-suggestions-${agentId}`}
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="z. B. qwen3:8b"
+              data-testid="agent-model-name"
+            />
             <datalist id={`agent-model-suggestions-${agentId}`}>
-              {(provider === "ollama-local" ? (ollama.data?.models.map((entry) => entry.name) ?? []) : (SUGGESTIONS[provider] ?? [])).map((name) => (
+              {(provider === "ollama-local"
+                ? (ollama.data?.models.map((entry) => entry.name) ?? [])
+                : (SUGGESTIONS[provider] ?? [])
+              ).map((name) => (
                 <option key={name} value={name} />
               ))}
             </datalist>
             {provider === "ollama-local" ? (
               ollama.data && !ollama.data.running ? (
-                <span className="text-[12px] text-destructive">Ollama läuft gerade nicht auf diesem PC.</span>
+                <span className="text-[12px] text-destructive">
+                  Ollama läuft gerade nicht auf diesem PC.
+                </span>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {(ollama.data?.models ?? []).map((entry) => (
@@ -158,20 +297,43 @@ function LocalAgentModelPanel({ agentId }: { agentId: string }) {
           </label>
 
           {isCli ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12.5px]" data-testid="agent-model-cli-status">
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12.5px]"
+              data-testid="agent-model-cli-status"
+            >
               {cli.isLoading ? (
-                <span className="flex items-center gap-1.5 text-muted-foreground"><IconLoader2 className="size-4 animate-spin" /> Prüfe Anmeldung …</span>
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <IconLoader2 className="size-4 animate-spin" /> Prüfe
+                  Anmeldung …
+                </span>
               ) : cliInfo && !cliInfo.installed ? (
                 <span className="text-destructive">{cliInfo.detail}</span>
               ) : cliInfo?.loggedIn ? (
-                <span className="flex items-center gap-1.5 text-emerald-600"><IconCircleCheck className="size-4" /> Angemeldet{cliInfo.version ? ` · ${cliInfo.version}` : ""}</span>
+                <span className="flex items-center gap-1.5 text-emerald-600">
+                  <IconCircleCheck className="size-4" /> Angemeldet
+                  {cliInfo.version ? ` · ${cliInfo.version}` : ""}
+                </span>
               ) : (
                 <>
-                  <span className="flex items-center gap-1.5 text-muted-foreground"><IconCircleX className="size-4" /> Nicht angemeldet</span>
-                  <Button size="sm" variant="outline" onClick={() => login.mutate()} disabled={login.isPending}>
-                    {login.isPending ? <IconLoader2 className="animate-spin" /> : null} Mit Konto anmelden
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <IconCircleX className="size-4" /> Nicht angemeldet
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => login.mutate()}
+                    disabled={login.isPending}
+                  >
+                    {login.isPending ? (
+                      <IconLoader2 className="animate-spin" />
+                    ) : null}{" "}
+                    Mit Konto anmelden
                   </Button>
-                  {login.data ? <span className="text-muted-foreground">{login.data.message}</span> : null}
+                  {login.data ? (
+                    <span className="text-muted-foreground">
+                      {login.data.message}
+                    </span>
+                  ) : null}
                 </>
               )}
             </div>
@@ -179,21 +341,37 @@ function LocalAgentModelPanel({ agentId }: { agentId: string }) {
 
           {provider !== "openai" && provider !== "anthropic" && !isCli ? (
             <label className="flex flex-col gap-1.5">
-              <span className="font-medium text-[13px]">Adresse (Base-URL)</span>
-              <Input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder={DEFAULT_URLS[provider] ?? ""} />
-              <span className="text-[12px] text-muted-foreground">Leer lassen für {DEFAULT_URLS[provider] ?? "die Standardadresse"}.</span>
+              <span className="font-medium text-[13px]">
+                Adresse (Base-URL)
+              </span>
+              <Input
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.target.value)}
+                placeholder={DEFAULT_URLS[provider] ?? ""}
+              />
+              <span className="text-[12px] text-muted-foreground">
+                Leer lassen für{" "}
+                {DEFAULT_URLS[provider] ?? "die Standardadresse"}.
+              </span>
             </label>
           ) : null}
 
           {needsKey ? (
             <label className="flex flex-col gap-1.5">
-              <span className="font-medium text-[13px]">API-Key {provider === "ollama-cloud" ? "(Pflicht)" : "(optional)"}</span>
+              <span className="font-medium text-[13px]">
+                API-Key{" "}
+                {provider === "ollama-cloud" ? "(Pflicht)" : "(optional)"}
+              </span>
               <Input
                 type="password"
                 autoComplete="off"
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
-                placeholder={keyStored ? `Gespeichert: ••••${current?.keyHint ?? ""} – leer lassen, um ihn zu behalten` : "Key einfügen"}
+                placeholder={
+                  keyStored
+                    ? `Gespeichert: ••••${current?.keyHint ?? ""} – leer lassen, um ihn zu behalten`
+                    : "Key einfügen"
+                }
                 data-testid="agent-model-key"
               />
               <span className="text-[12px] text-muted-foreground">
@@ -207,25 +385,63 @@ function LocalAgentModelPanel({ agentId }: { agentId: string }) {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty || (provider !== "default" && !model.trim())} data-testid="agent-model-save">
-          {save.isPending ? <IconLoader2 className="animate-spin" /> : null} Speichern
+        <Button
+          onClick={() => save.mutate()}
+          disabled={
+            save.isPending ||
+            !dirty ||
+            (provider !== "default" && !model.trim())
+          }
+          data-testid="agent-model-save"
+        >
+          {save.isPending ? <IconLoader2 className="animate-spin" /> : null}{" "}
+          Speichern
         </Button>
-        <Button variant="outline" onClick={() => test.mutate()} disabled={test.isPending || dirty}>
-          {test.isPending ? <IconLoader2 className="animate-spin" /> : null} Testen
+        <Button
+          variant="outline"
+          onClick={() => test.mutate()}
+          disabled={test.isPending || dirty}
+        >
+          {test.isPending ? <IconLoader2 className="animate-spin" /> : null}{" "}
+          Testen
         </Button>
-        {dirty && !save.isPending ? <span className="text-[12px] text-muted-foreground">Erst speichern, dann testen.</span> : null}
+        {dirty && !save.isPending ? (
+          <span className="text-[12px] text-muted-foreground">
+            Erst speichern, dann testen.
+          </span>
+        ) : null}
       </div>
-      {save.isError ? <p className="text-destructive text-xs">{(save.error as Error).message}</p> : null}
-      {save.isSuccess && !dirty ? <p className="text-[12px] text-emerald-600">Gespeichert. Gilt ab der nächsten Nachricht.</p> : null}
+      {save.isError ? (
+        <p className="text-destructive text-xs">
+          {(save.error as Error).message}
+        </p>
+      ) : null}
+      {save.isSuccess && !dirty ? (
+        <p className="text-[12px] text-emerald-600">
+          Gespeichert. Gilt ab der nächsten Nachricht.
+        </p>
+      ) : null}
       {test.data ? (
-        <p className={`flex items-start gap-1.5 text-[12.5px] ${test.data.ok ? "text-emerald-700" : "text-destructive"}`}>
-          {test.data.ok ? <IconCircleCheck className="mt-0.5 size-4 shrink-0" /> : <IconCircleX className="mt-0.5 size-4 shrink-0" />}
+        <p
+          className={`flex items-start gap-1.5 text-[12.5px] ${test.data.ok ? "text-emerald-700" : "text-destructive"}`}
+        >
+          {test.data.ok ? (
+            <IconCircleCheck className="mt-0.5 size-4 shrink-0" />
+          ) : (
+            <IconCircleX className="mt-0.5 size-4 shrink-0" />
+          )}
           <span>
-            {test.data.ok ? `Antwort: „${test.data.text || "(leer)"}“${test.data.ms ? ` · ${(test.data.ms / 1000).toFixed(1)} s` : ""}` : test.data.error}
+            {test.data.ok
+              ? `Antwort: „${test.data.text || "(leer)"}“${test.data.ms ? ` · ${(test.data.ms / 1000).toFixed(1)} s` : ""}`
+              : test.data.error}
           </span>
         </p>
       ) : null}
-      {test.isError ? <p className="text-destructive text-xs">{(test.error as Error).message}</p> : null}
+      {test.isError ? (
+        <p className="text-destructive text-xs">
+          {(test.error as Error).message}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -34,6 +34,12 @@ export async function dispatchModelTurn(input: {
 }): Promise<ModelTurnResult> {
   const prefs = getModelProviderPrefs();
 
+  // Hermes-Agent (Familie "connect"): immer Hermes/Connect-API, egal was global eingestellt ist.
+  // Vorher landeten Hermes-Agenten bei globalem "Model One" im Codex-Terminal und waren nicht bedienbar.
+  if (getAgentModelFamily(input.agentId) === "connect") {
+    return { ok: true, useHermes: true, summary: "" };
+  }
+
   // Model Two — Hermes (local background). Global setting wins over agent family.
   if (prefs.provider === "hermes") {
     return {
@@ -84,11 +90,18 @@ async function runManusApiPath(input: {
 }): Promise<ModelTurnResult> {
   const key = getAgentManusApiKey(input.agentId);
   if (!key) {
-    return {
-      ok: false,
-      summary:
-        "Kein Manus-API-Key. Unter Settings → Model Provider (API-Key) einen Manus-Key speichern. Ohne Key keine Manus-Cloud-Features (task.create / Mail Manus).",
-    };
+    // No Manus API key — silently fall through to the local headless CLI path
+    // (Codex / Antigravity / Claude). The user did not opt into Manus Cloud;
+    // we should not block their normal chat with a key-prompt error.
+    const headless = await tryHeadlessCodex(input);
+    if (headless) return headless;
+    const result = await runZgptCliTurn({
+      agentId: input.agentId,
+      text: buildPrompt(input),
+      agentName: input.agentName,
+      fileHints: input.fileHints,
+    });
+    return { ok: result.ok, summary: result.summary };
   }
   const result = await runManusApiTurn({
     agentId: input.agentId,
@@ -145,9 +158,59 @@ function buildPrompt(input: {
   return `${trimmed}\n\n[Dateien]\n${input.fileHints.map((f) => `- ${f}`).join("\n")}`;
 }
 
+/**
+ * Web-Task-Heuristik (Stufe 2.1 / Option 3: Antigravity-Only).
+ *
+ * Wenn der Composer-Text nach Browser/Web klingt, soll die UI den User auf
+ * Antigravity hinweisen: das ist der einzige lokale CLI mit eingebautem
+ * Browser-Tool. Codex/Claude kämpfen auf Windows gegen die Sandbox (`Create-
+ * ProcessWithLogonW 1385`) und brauchen einen Python-Sidecar, der nicht
+ * zuverlässig startet.
+ *
+ * Die Liste ist absichtlich breit — ein false-positive (UI zeigt einen
+ * Hinweis) ist harmlos, ein false-negative (User klickt sich durch die
+ * Sandbox-Fehler) ist die Hölle.
+ */
+const WEB_TASK_KEYWORDS = [
+  // Deutsch: Browser-Aktionen
+  "öffne", "offne", "navigiere", "klicke", "screenshot", "lade",
+  "besuche", "geh auf", "surfe", "screenshot", "browser",
+  "webseite", "webseite", "web-search", "such im web", "im internet",
+  "scrape", "formular", "einloggen", "anmeldung im browser",
+  // Englisch
+  "open url", "browse", "navigate to", "click on", "visit",
+  "go to", "fetch url", "screenshot", "login to", "log in to",
+  "sign in to", "scrape", "form submission", "web page",
+  // Direkte URLs
+  "http://", "https://",
+];
+
+export function looksLikeWebTask(text: string): boolean {
+  const lower = text.toLowerCase();
+  return WEB_TASK_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+/**
+ * Sollte die UI für diesen Text einen Antigravity-Hinweis zeigen?
+ *
+ * Ja, wenn der User einen Web-Task gestellt hat UND der aktuelle Agent
+ * NICHT auf Antigravity läuft. Codex/Claude bekommen dann den Tipp, dass
+ * Antigravity die bessere Wahl wäre.
+ */
+export function shouldSuggestAntigravity(agentProvider: string | null | undefined, text: string): boolean {
+  if (!looksLikeWebTask(text)) return false;
+  return agentProvider !== "antigravity-cli";
+}
+
+/** Kurze Begründung für den UI-Hinweis. */
+export const ANTIGRAVITY_WEB_HINT =
+  "Für Web-Tasks (öffnen, klicken, Screenshots) ist Antigravity besser — der hat ein Browser-Tool eingebaut und kämpft nicht mit der Windows-Sandbox.";
+
 /** Should this agent skip Hermes AG-UI for the current Model Provider? */
 export function shouldUseModelRouter(agentId: string | undefined): boolean {
   if (!agentId) return false;
+  // Hermes-Agenten gehen direkt an Hermes (CopilotKit), nie in den Model-One-Router.
+  if (getAgentModelFamily(agentId) === "connect") return false;
   if (usesExternalModelProvider()) return true;
   // Model Two: always Hermes path (useHermes) — still enter router so we don't hit shells.
   return true;
