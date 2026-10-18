@@ -41,8 +41,9 @@ export const agentFormSchema = z.object({
   /**
    * Stufe 1.1+: CLI-Engine für diesen Agent.
    * Wenn nicht gesetzt (undefined), nutzt der Agent das lokale Modell.
+   * Stufe 4: Erweitert um "freebuff" (npm i -g freebuff).
    */
-  cliEngineKind: z.enum(["antigravity", "codex", "claude"]).nullable(),
+  cliEngineKind: z.enum(["antigravity", "codex", "claude", "freebuff"]).nullable(),
   cliEngineModel: z.string().max(80),
   cliEngineAllowWrite: z.boolean(),
   /**
@@ -51,6 +52,25 @@ export const agentFormSchema = z.object({
   browserProfileEnabled: z.boolean(),
   browserProfileStartUrl: z.string().url("Ungültige URL").or(z.literal("")).max(500),
   browserProfileAllowWrite: z.boolean(),
+  /**
+   * Stufe 4: Freebuff-Engine (eigener Block — Modell wird in die
+   * ~/.config/manicode/settings.json geschrieben, nicht per CLI-Flag).
+   */
+  freebuffEnabled: z.boolean(),
+  freebuffModel: z.string().max(80),
+  freebuffAllowWrite: z.boolean(),
+  /**
+   * Stufe 3: Manus-Cloud-Engine.
+   */
+  manusEnabled: z.boolean(),
+  manusModel: z.string().max(80),
+  manusProfileName: z.string().max(120),
+  /**
+   * Stufe 3: browser-use Sidecar-Engine.
+   */
+  browserUseEnabled: z.boolean(),
+  browserUseStartUrl: z.string().url("Ungültige URL").or(z.literal("")).max(500),
+  browserUseAllowWrite: z.boolean(),
 });
 
 export type AgentFormValues = z.infer<typeof agentFormSchema>;
@@ -62,12 +82,21 @@ export const emptyAgentForm: AgentFormValues = {
   visibility: "private",
   endpoint: "",
   authValue: "",
-  cliEngineKind: null as "antigravity" | "codex" | "claude" | null,
+  cliEngineKind: null as "antigravity" | "codex" | "claude" | "freebuff" | null,
   cliEngineModel: "auto",
   cliEngineAllowWrite: false,
   browserProfileEnabled: false,
   browserProfileStartUrl: "",
   browserProfileAllowWrite: false,
+  freebuffEnabled: false,
+  freebuffModel: "auto",
+  freebuffAllowWrite: false,
+  manusEnabled: false,
+  manusModel: "auto",
+  manusProfileName: "",
+  browserUseEnabled: false,
+  browserUseStartUrl: "",
+  browserUseAllowWrite: false,
 };
 
 /** Convert form values to API input; omit an empty key so editing preserves the current credential. */
@@ -98,6 +127,36 @@ export function agentInputFrom(values: AgentFormValues) {
             startUrl: values.browserProfileStartUrl,
             profileName: "",
             allowWrite: values.browserProfileAllowWrite,
+          },
+        }
+      : {}),
+    // Stufe 4: Freebuff-Engine.
+    ...(values.freebuffEnabled
+      ? {
+          freebuffEngine: {
+            kind: "freebuff" as const,
+            model: values.freebuffModel || "auto",
+            allowWrite: values.freebuffAllowWrite,
+          },
+        }
+      : {}),
+    // Stufe 3: Manus-Cloud-Engine.
+    ...(values.manusEnabled
+      ? {
+          manusEngine: {
+            kind: "manus" as const,
+            model: values.manusModel || "auto",
+            ...(values.manusProfileName ? { profileName: values.manusProfileName } : {}),
+          },
+        }
+      : {}),
+    // Stufe 3: browser-use Sidecar-Engine.
+    ...(values.browserUseEnabled
+      ? {
+          browserUseEngine: {
+            kind: "browser_use" as const,
+            ...(values.browserUseStartUrl ? { startUrl: values.browserUseStartUrl } : {}),
+            allowWrite: values.browserUseAllowWrite,
           },
         }
       : {}),

@@ -13,7 +13,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type CliKind = "codex" | "claude" | "antigravity";
+export type CliKind = "codex" | "claude" | "antigravity" | "freebuff";
 
 /**
  * Modelle, die jeder Provider nativ anbietet. "Browser-Use" ist kein
@@ -43,6 +43,30 @@ export const CLI_MODELS: Record<CliKind, string[]> = {
     "gemini-3.1-pro-high",
     "gemini-3.1-pro-low",
   ],
+  /**
+   * Stufe 4: Freebuff (https://freebuff.com). Die CLI hat keinen
+   * `--model`-Flag — das Modell wird in `~/.config/manicode/settings.json`
+   * (`freebuffModel`-Feld) gesetzt. Wir nehmen die dokumentierten
+   * Modellnamen plus "auto" (= Default-Auswahl).
+   *
+   * Freebuff ist die kostenlose Alternative zu Codex/Claude/Antigravity
+   * mit eingebautem Web-Research + Browser-Use. Login läuft über
+   * `freebuff login` (Browser-OAuth, kein API-Key).
+   */
+  freebuff: [
+    "auto",
+    "z-ai/glm-5.3-flash",
+    "mimo-fast",
+    "mimo-2.6-pro",
+    "deepseek-v4.1-flash",
+    "deepseek-v4.1-flash-fast",
+    "gpt-6-luna",
+    "solar-mini-4",
+    "solar-pro-4",
+    "space-bunny-alpha",
+    "gemini-3.8-flash",
+    "muse-spark-1.3",
+  ],
 };
 
 /**
@@ -70,6 +94,13 @@ const CLI_PACKAGES: Record<CliKind, { pkg: string; bin: string; label: string; b
    * plattformspezifischen `antigravityRoots()` weiter unten.
    */
   antigravity: { pkg: "@google/antigravity-cli", bin: "bin/agy.js", label: "Antigravity (Google-OAuth)", binary: "agy" },
+  /**
+   * Stufe 4: Freebuff. Wird über `npm i -g freebuff` installiert; die
+   * npm-Library ist nur ein Wrapper, der das eigentliche Binary nach
+   * `~/.config/manicode/freebuff.exe` (Windows) / `~/.config/manicode/freebuff`
+   * (Unix) downloaded. Wir suchen dort direkt und im PATH als Fallback.
+   */
+  freebuff: { pkg: "freebuff", bin: "index.js", label: "Freebuff (Browser-Login, kostenlos)", binary: "freebuff" },
 };
 
 const MODEL_NAME = /^[A-Za-z0-9._:\-/]{1,64}$/;
@@ -105,11 +136,30 @@ function antigravityRoots(): string[] {
 }
 
 /**
+ * Wo Freebuff landet, wenn es per `npm i -g freebuff` installiert wurde.
+ *
+ * Die npm-Library ist nur ein Wrapper. Das echte Binary wird beim ersten
+ * Aufruf heruntergeladen und liegt unter
+ *   - Windows: `%USERPROFILE%\.config\manicode\freebuff.exe`
+ *   - Unix:    `~/.config/manicode/freebuff`
+ *
+ * Der npm-Wrapper selbst liegt im `node_modules/freebuff/`, also
+ * suchen wir in `npmGlobalRoots()` und zusätzlich im User-Config-Verzeichnis.
+ */
+function freebuffRoots(): string[] {
+  const roots: string[] = [];
+  roots.push(join(homedir(), ".config", "manicode"));
+  // PATH-Lookup als Fallback
+  return roots;
+}
+
+/**
  * Pfad zum ausführbaren CLI, oder `null` wenn nicht installiert.
  *
  * Codex & Claude sind Node-Skripte unter `node_modules/<pkg>/...`, also
  * suchen wir im npm-Global-Root. Antigravity ist ein Go-Binary und liegt
  * unter `antigravityRoots()` (oder ist im PATH — siehe Fallback).
+ * Freebuff ist ein natives Binary unter `freebuffRoots()` (oder im PATH).
  */
 export function cliEntry(kind: CliKind): string | null {
   if (kind === "antigravity") {
@@ -120,6 +170,15 @@ export function cliEntry(kind: CliKind): string | null {
     }
     // Fallback: PATH-Lookup. Wir vertrauen darauf, dass der Installer
     // den Pfad gesetzt hat, und fragen das OS.
+    return exe;
+  }
+  if (kind === "freebuff") {
+    const exe = process.platform === "win32" ? "freebuff.exe" : "freebuff";
+    for (const root of freebuffRoots()) {
+      const candidate = join(root, exe);
+      if (existsSync(candidate)) return candidate;
+    }
+    // Fallback: PATH-Lookup
     return exe;
   }
   const { pkg, bin } = CLI_PACKAGES[kind];
@@ -203,6 +262,26 @@ function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean,
       allowWrite ? "Read Glob Grep WebFetch WebSearch Edit Write" : "Read Glob Grep WebFetch WebSearch",
     ];
   }
+  // Stufe 4: Freebuff.
+  // Freebuff hat:
+  //   - `--cwd <dir>` für Arbeitsverzeichnis
+  //   - `--trust-agents` für Auto-Load .agents Files (sonst fragt die CLI)
+  //   - **kein** `--model`-Flag (Modell wird in settings.json gesetzt)
+  //   - **kein** `--output-format`-Flag (Freebuff streamt direkt)
+  //   - **kein** `-p`-Flag (Prompt wird als positional arg übergeben)
+  //
+  // Freebuff startet standardmäßig eine interaktive TUI; wir übergeben
+  // den Prompt als einziges positional arg, dann führt sie aus und
+  // beendet sich selbst. Browser-Use + Web-Research sind built-in und
+  // werden automatisch aktiviert, wenn der Prompt das braucht.
+  if (kind === "freebuff") {
+    return [
+      "--cwd",
+      cwd,
+      "--trust-agents",
+      prompt,
+    ];
+  }
   // antigravity: `-p` braucht zwingend ein Argument direkt danach
   // (agy bricht sonst mit "flag needs an argument: -p" ab). Wir bauen
   // deshalb `-p` und den Prompt als zusammenhängendes Paar ein. **Wichtig:**
@@ -234,6 +313,17 @@ function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean,
 
 /** Translate one JSON line of the CLI into what the chat needs. */
 function parseLine(kind: CliKind, line: string, state: { sawDelta: boolean; retries: number }): CliEvent | null {
+  // Stufe 4: Freebuff. Freebuff hat **kein** JSON-Stream-Format — die TUI
+  // gibt plain text auf stdout/stderr aus. Wir sammeln alle nicht-leeren
+  // Zeilen und schicken jede einzeln als Text-Delta. Wenn der Prozess
+  // beendet ist, hat der Generator die komplette Antwort.
+  if (kind === "freebuff") {
+    if (line.trim().length > 0) {
+      state.sawDelta = true;
+      return { text: line };
+    }
+    return null;
+  }
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(line) as Record<string, unknown>;
@@ -241,7 +331,15 @@ function parseLine(kind: CliKind, line: string, state: { sawDelta: boolean; retr
     return null;
   }
   if (kind === "antigravity") {
-    return parseAntigravityLine(event, state);
+    const obj = event as { type?: string; event?: string; text_delta?: string };
+    if (obj.type === "step_update") {
+      const step = (obj as { step_update?: { step_type?: string; text_delta?: string } }).step_update;
+      if (step?.step_type === "agent_response" && step.text_delta) {
+        state.sawDelta = true;
+        return { text: step.text_delta };
+      }
+    }
+    return null;
   }
   if (kind === "codex") {
     const item = event.item as { type?: string; text?: string } | undefined;
@@ -398,12 +496,19 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
       throw new Error(`${label}: Ungültiger Modellname.`);
     }
   }
+  if (options.kind === "freebuff") {
+    // Freebuff akzeptiert das Modell **nur** über die settings.json
+    // (`freebuffModel`-Feld), nicht als CLI-Flag. Wir schreiben den
+    // gewünschten Modellnamen in die Settings, BEVOR wir die CLI starten.
+    await writeFreebuffModel(options.model);
+  }
   const cwd = agentWorkdir(options.agentId);
   const args = argsFor(options.kind, options.model, cwd, !!options.allowWrite, options.prompt);
-  // Antigravity ist ein Go-Binary und wird direkt aufgerufen; Codex und
-  // Claude sind Node-Skripte, also läuft das über `node entry.js`.
-  const cmd = options.kind === "antigravity" ? entry : nodeBinary();
-  const cmdArgs = options.kind === "antigravity" ? args : [entry, ...args];
+  // Antigravity & Freebuff sind native Binaries und werden direkt aufgerufen;
+  // Codex und Claude sind Node-Skripte, also läuft das über `node entry.js`.
+  const isNativeBinary = options.kind === "antigravity" || options.kind === "freebuff";
+  const cmd = isNativeBinary ? entry : nodeBinary();
+  const cmdArgs = isNativeBinary ? args : [entry, ...args];
   const child = spawn(cmd, cmdArgs, {
     cwd,
     env: childEnv(),
@@ -465,8 +570,9 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
   options.signal?.addEventListener("abort", onAbort, { once: true });
   // Antigravity bekommt den Prompt als `-p "<prompt>"`-Argument; Codex und
   // Claude lesen ihn aus stdin. Stdin für Antigravity schließen wir
-  // sofort, damit agy nicht auf eine EOF wartet.
-  if (options.kind === "antigravity") {
+  // sofort, damit agy nicht auf eine EOF wartet. Freebuff bekommt den
+  // Prompt als positional arg, stdin schließen wir auch sofort.
+  if (options.kind === "antigravity" || options.kind === "freebuff") {
     child.stdin?.end();
   } else {
     child.stdin?.end(options.prompt, "utf8");
@@ -633,6 +739,28 @@ export async function cliStatus(kind: CliKind): Promise<CliStatus> {
         : "Nicht angemeldet. Bitte `agy` einmalig starten, um den Login-Flow zu durchlaufen.",
     };
   }
+  if (kind === "freebuff") {
+    // Freebuff-Login läuft über `freebuff login` (Browser-OAuth). Wir
+    // prüfen `~/.config/manicode/credentials.json` — existiert der Token,
+    // ist der User eingeloggt.
+    const credentialsPath = join(homedir(), ".config", "manicode", "credentials.json");
+    let loggedIn = false;
+    try {
+      const raw = JSON.parse(await Bun.file(credentialsPath).text()) as { default?: { tokenStore?: string } };
+      loggedIn = Boolean(raw.default?.tokenStore);
+    } catch {
+      loggedIn = false;
+    }
+    return {
+      ...base,
+      installed: true,
+      version,
+      loggedIn,
+      detail: loggedIn
+        ? "Angemeldet (Token im System-Keyring)."
+        : "Nicht angemeldet. Bitte `freebuff login` einmalig ausführen.",
+    };
+  }
   const status = await runQuick(kind, ["auth", "status"]);
   let loggedIn: boolean | null = null;
   try {
@@ -668,6 +796,18 @@ export function startCliLogin(kind: CliKind): { started: boolean; message: strin
       message: "Antigravity-Login gestartet. Bitte im neu geöffneten Fenster den Google-OAuth-Wizard durchlaufen.",
     };
   }
+  if (kind === "freebuff") {
+    // Freebuff hat `freebuff login` — startet den Browser-OAuth-Flow.
+    // Wir übergeben den Login-Befehl direkt; die CLI managed das Popup
+    // selbst und schreibt den Token in den System-Keyring.
+    const child = spawn(entry, ["login"], { env: childEnv(), stdio: "ignore", detached: false });
+    setTimeout(() => killTree(child), 10 * 60_000);
+    child.on("error", () => {});
+    return {
+      started: true,
+      message: "Freebuff-Login gestartet. Bitte im neu geöffneten Browser den OAuth-Flow bestätigen.",
+    };
+  }
   const args = kind === "codex" ? ["login"] : ["auth", "login"];
   const child = spawn(nodeBinary(), [entry, ...args], { env: childEnv(), windowsHide: true, stdio: "ignore", detached: false });
   setTimeout(() => killTree(child), 5 * 60_000);
@@ -675,6 +815,53 @@ export function startCliLogin(kind: CliKind): { started: boolean; message: strin
   return { started: true, message: "Anmeldung gestartet. Bitte im Browser bestätigen." };
 }
 
+/**
+ * Freebuff-Settings-Datei: `~/.config/manicode/settings.json`.
+ * Wir schreiben das gewünschte Modell vor jedem Lauf hinein und
+ * restaurieren den alten Wert danach (im finally-Block des Generators).
+ */
+type FreebuffSettings = { mode?: string; adsEnabled?: boolean; freebuffModel?: string; [k: string]: unknown };
+
+function freebuffSettingsPath(): string {
+  return join(homedir(), ".config", "manicode", "settings.json");
+}
+
+async function readFreebuffSettings(): Promise<FreebuffSettings> {
+  try {
+    return (await Bun.file(freebuffSettingsPath()).json()) as FreebuffSettings;
+  } catch {
+    return {};
+  }
+}
+
+async function writeFreebuffSettings(settings: FreebuffSettings): Promise<void> {
+  const path = freebuffSettingsPath();
+  const { mkdirSync } = await import("node:fs");
+  const { dirname } = await import("node:path");
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    await Bun.write(path, JSON.stringify(settings, null, 2));
+  } catch {
+    // Best effort
+  }
+}
+
+/**
+ * Setzt das `freebuffModel`-Feld in den Settings. Freebuff liest das
+ * nur beim Start; ein Hot-Swap ist nicht vorgesehen.
+ *
+ * `auto` lässt das Feld weg, damit Freebuff seine Default-Auswahl trifft.
+ */
+async function writeFreebuffModel(model: string): Promise<void> {
+  const settings = await readFreebuffSettings();
+  if (model === "auto" || !model) {
+    delete settings.freebuffModel;
+  } else {
+    settings.freebuffModel = model;
+  }
+  await writeFreebuffSettings(settings);
+}
+
 export function isCliKind(value: string): value is CliKind {
-  return value === "codex" || value === "claude" || value === "antigravity";
+  return value === "codex" || value === "claude" || value === "antigravity" || value === "freebuff";
 }

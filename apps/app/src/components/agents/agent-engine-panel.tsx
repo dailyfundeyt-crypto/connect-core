@@ -14,7 +14,7 @@
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IconBrain, IconBrowser, IconCheck, IconCloud, IconRobot, IconX } from "@tabler/icons-react";
+import { IconBrain, IconBrowser, IconCheck, IconCloud, IconRobot, IconSparkles, IconX } from "@tabler/icons-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,9 +24,9 @@ import { agentQueryOptions } from "@/lib/agents/queries";
 import { updateAgentMutationOptions } from "@/lib/agents/mutations";
 import type { AgentProfile } from "@/lib/agents/queries";
 
-type EngineKind = "none" | "cli" | "browser_profile" | "manus" | "browser_use";
+type EngineKind = "none" | "cli" | "browser_profile" | "manus" | "browser_use" | "freebuff";
 
-const CLI_KINDS = ["antigravity", "codex", "claude"] as const;
+const CLI_KINDS = ["antigravity", "codex", "claude", "freebuff"] as const;
 type CliKind = (typeof CLI_KINDS)[number];
 
 function deriveKind(profile: AgentProfile): EngineKind {
@@ -37,6 +37,7 @@ function deriveKind(profile: AgentProfile): EngineKind {
 type EnginePatch = {
   cliEngine?: { kind: CliKind; model: string; allowWrite: boolean };
   browserProfile?: { kind: "browser_profile"; startUrl: string; profileName: string; allowWrite: boolean };
+  freebuffEngine?: { kind: "freebuff"; model: string; allowWrite: boolean };
   manusEngine?: { kind: "manus"; model: string; profileName?: string };
   browserUseEngine?: { kind: "browser_use"; startUrl?: string; allowWrite: boolean };
 };
@@ -48,6 +49,8 @@ function buildEnginePatch(
   cliAllowWrite: boolean,
   browserUrl: string,
   browserAllowWrite: boolean,
+  freebuffModel: string,
+  freebuffAllowWrite: boolean,
   manusModel: string,
   manusProfile: string,
   browserUseUrl: string,
@@ -70,6 +73,15 @@ function buildEnginePatch(
         startUrl: browserUrl,
         profileName: "",
         allowWrite: browserAllowWrite,
+      },
+    };
+  }
+  if (kind === "freebuff") {
+    return {
+      freebuffEngine: {
+        kind: "freebuff" as const,
+        model: freebuffModel || "auto",
+        allowWrite: freebuffAllowWrite,
       },
     };
   }
@@ -96,6 +108,10 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
   const agent = queryClient.getQueryData(agentQueryOptions(agentId).queryKey);
   const profile = agent as AgentProfile | undefined;
+  // Wir frieren `profile` ein, sobald wir wissen, dass es definiert ist,
+  // damit TypeScript den Non-Null-Type durch den ganzen Render-Tree trägt.
+  if (!profile) return null;
+  const stableProfile: AgentProfile = profile;
 
   const [kind, setKind] = useState<EngineKind>(() => (profile ? deriveKind(profile) : "none"));
   const [cliKind, setCliKind] = useState<CliKind>(
@@ -105,9 +121,13 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
   const [cliAllowWrite, setCliAllowWrite] = useState<boolean>(profile?.engine?.allowWrite ?? false);
   const [browserUrl, setBrowserUrl] = useState<string>(profile?.engine?.startUrl ?? "");
   const [browserAllowWrite, setBrowserAllowWrite] = useState<boolean>(profile?.engine?.allowWrite ?? false);
+  // Stufe 4: Freebuff-Felder
+  const freebuffEngine = profile && profile.engine && profile.engine.kind === "freebuff" ? profile.engine : null;
+  const [freebuffModel, setFreebuffModel] = useState<string>(freebuffEngine?.model ?? "auto");
+  const [freebuffAllowWrite, setFreebuffAllowWrite] = useState<boolean>(freebuffEngine?.allowWrite ?? false);
   // Stufe 3: Manus + browser-use Felder
-  const manusEngine = profile?.engine?.kind === "manus" ? profile.engine : null;
-  const browserUseEngine = profile?.engine?.kind === "browser_use" ? profile.engine : null;
+  const manusEngine = profile && profile.engine && profile.engine.kind === "manus" ? profile.engine : null;
+  const browserUseEngine = profile && profile.engine && profile.engine.kind === "browser_use" ? profile.engine : null;
   const [manusModel, setManusModel] = useState<string>(manusEngine?.model ?? "auto");
   const [manusProfile, setManusProfile] = useState<string>(manusEngine?.profileName ?? "");
   const [browserUseUrl, setBrowserUseUrl] = useState<string>(browserUseEngine?.startUrl ?? "");
@@ -128,6 +148,8 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
       cliAllowWrite,
       browserUrl,
       browserAllowWrite,
+      freebuffModel,
+      freebuffAllowWrite,
       manusModel,
       manusProfile,
       browserUseUrl,
@@ -168,7 +190,7 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
         )}
       </header>
 
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="grid grid-cols-6 gap-1.5">
         <button
           className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[11px] font-medium transition ${
             kind === "none"
@@ -204,6 +226,18 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
         >
           <IconBrowser className="size-4" />
           Browser
+        </button>
+        <button
+          className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[11px] font-medium transition ${
+            kind === "freebuff"
+              ? "border-primary bg-primary/10 text-foreground"
+              : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setKind("freebuff")}
+          type="button"
+        >
+          <IconSparkles className="size-4" />
+          Freebuff
         </button>
         <button
           className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[11px] font-medium transition ${
@@ -273,6 +307,27 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
             />
             Schreiben erlauben (Formulare ausfüllen)
           </label>
+        </div>
+      )}
+
+      {kind === "freebuff" && (
+        <div className="grid gap-2">
+          <Input
+            onChange={(e) => setFreebuffModel(e.target.value)}
+            placeholder="Modell (z.B. auto, glm-5.3-flash, deepseek-v4.1-flash)"
+            value={freebuffModel}
+          />
+          <label className="flex items-center gap-2 text-xs">
+            <Switch
+              checked={freebuffAllowWrite}
+              onCheckedChange={setFreebuffAllowWrite}
+            />
+            Dateien schreiben erlauben
+          </label>
+          <p className="text-[10px] text-muted-foreground">
+            Freebuff (kostenlos, mit Web-Research + Browser-Use). Install: <code>npm i -g freebuff</code> +
+            einmalig <code>freebuff login</code>.
+          </p>
         </div>
       )}
 

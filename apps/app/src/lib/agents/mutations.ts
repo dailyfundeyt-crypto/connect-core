@@ -18,7 +18,7 @@ export type AgentInput = {
   auth?: { header: string; value: string };
   /** Stufe 1.1: CLI-Engine-Konfiguration. */
   cliEngine?: {
-    kind: "antigravity" | "codex" | "claude";
+    kind: "antigravity" | "codex" | "claude" | "freebuff";
     model: string;
     allowWrite: boolean;
   };
@@ -27,6 +27,24 @@ export type AgentInput = {
     kind: "browser_profile";
     startUrl: string;
     profileName: string;
+    allowWrite: boolean;
+  };
+  /** Stufe 4: Freebuff-Engine. */
+  freebuffEngine?: {
+    kind: "freebuff";
+    model: string;
+    allowWrite: boolean;
+  };
+  /** Stufe 3: Manus-Cloud-Engine. */
+  manusEngine?: {
+    kind: "manus";
+    model: string;
+    profileName?: string;
+  };
+  /** Stufe 3: browser-use Sidecar-Engine. */
+  browserUseEngine?: {
+    kind: "browser_use";
+    startUrl?: string;
     allowWrite: boolean;
   };
 };

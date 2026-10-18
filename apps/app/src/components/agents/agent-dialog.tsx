@@ -335,6 +335,24 @@ function GeneralSection({
          */
         endpoint: profile.builtIn ? "" : (profile.endpoint ?? ""),
         authValue: "",
+        // Engine-Felder (Stufe 1.1 / 2 / 3 / 4). Default = lokales Modell
+        // (kein Engine). `patch` überschreibt die Werte, die der User
+        // gerade editiert.
+        cliEngineKind: null as "antigravity" | "codex" | "claude" | "freebuff" | null,
+        cliEngineModel: "auto",
+        cliEngineAllowWrite: false,
+        browserProfileEnabled: false,
+        browserProfileStartUrl: "",
+        browserProfileAllowWrite: false,
+        freebuffEnabled: false,
+        freebuffModel: "auto",
+        freebuffAllowWrite: false,
+        manusEnabled: false,
+        manusModel: "auto",
+        manusProfileName: "",
+        browserUseEnabled: false,
+        browserUseStartUrl: "",
+        browserUseAllowWrite: false,
         ...patch,
       }),
     });

@@ -216,6 +216,16 @@ function engineOf(configuration: unknown): AgentEngine | null {
       return { kind: "browser_profile", startUrl, profileName, allowWrite };
     }
   }
+  // Stufe 4: Freebuff-Engine in configuration.freebuff
+  const fb = cfg.freebuff;
+  if (fb && typeof fb === "object") {
+    const obj = fb as Record<string, unknown>;
+    if (obj.kind === "freebuff") {
+      const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
+      const allowWrite = obj.allowWrite === true;
+      return { kind: "freebuff", model, allowWrite };
+    }
+  }
   // Stufe 3: Manus-Cloud-Engine in configuration.manus
   const mn = cfg.manus;
   if (mn && typeof mn === "object") {
@@ -496,6 +506,8 @@ export function createAgentProfileStore(
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
               // Stufe 2 Phase C: Browser-Profile.
               ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+              // Stufe 4: Freebuff-Engine.
+              ...(input.freebuffEngine ? { freebuff: input.freebuffEngine } : {}),
               // Stufe 3: Manus-Cloud-Engine.
               ...(input.manusEngine ? { manus: input.manusEngine } : {}),
               // Stufe 3: browser-use Sidecar-Engine.
@@ -535,6 +547,7 @@ export function createAgentProfileStore(
               systemPrompt,
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
               ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+              ...(input.freebuffEngine ? { freebuff: input.freebuffEngine } : {}),
               ...(input.manusEngine ? { manus: input.manusEngine } : {}),
               ...(input.browserUseEngine ? { browserUse: input.browserUseEngine } : {}),
             },
@@ -618,6 +631,8 @@ export function createAgentProfileStore(
             ...(input.cliEngine ? { cli: input.cliEngine } : {}),
             // Stufe 2 Phase C: Browser-Profile-Engine.
             ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+            // Stufe 4: Freebuff-Engine.
+            ...(input.freebuffEngine ? { freebuff: input.freebuffEngine } : {}),
             // Stufe 3: Manus-Cloud-Engine.
             ...(input.manusEngine ? { manus: input.manusEngine } : {}),
             // Stufe 3: browser-use Sidecar-Engine.

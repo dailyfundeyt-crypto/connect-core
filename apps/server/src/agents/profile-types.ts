@@ -41,6 +41,26 @@ export type BrowserProfileEngine = {
 };
 
 /**
+ * Stufe 4: Freebuff-Engine.
+ *
+ * Freebuff ist die kostenlose Alternative zu Codex/Claude/Antigravity
+ * (https://freebuff.com, npm install -g freebuff). Built-in Web-Research
+ * + Browser-Use. Login über Browser-Account (nicht API-Key).
+ *
+ * Binary liegt in `~/.config/manicode/freebuff.exe` (Windows) bzw.
+ * `~/.config/manicode/freebuff` (Unix). Settings: `settings.json` mit
+ * `freebuffModel`-Feld. Kein --model-Flag — das Modell wird über die
+ * Settings-Datei gewählt.
+ */
+export type FreebuffEngine = {
+  kind: "freebuff";
+  /** Default "auto" — Freebuff nimmt die Default-Auswahl der CLI. */
+  model: string;
+  /** Ob Freebuff Dateien schreiben darf. Default false (read-only). */
+  allowWrite: boolean;
+};
+
+/**
  * Manus-Cloud-Engine (Stufe 3).
  *
  * Wenn diese Engine gesetzt ist, läuft der Agent auf Manus 1.5/1.6 mit
@@ -73,7 +93,7 @@ export type BrowserUseEngine = {
 };
 
 /**Union aller Engine-Typen. */
-export type AgentEngine = CliEngine | BrowserProfileEngine | ManusEngine | BrowserUseEngine;
+export type AgentEngine = CliEngine | BrowserProfileEngine | FreebuffEngine | ManusEngine | BrowserUseEngine;
 
 export type AgentProfile = {
   id: string;
@@ -130,6 +150,12 @@ export type CreateAgentInput = Pick<
    * hat der Agent kein eigenes Browser-Profil.
    */
   browserProfile?: BrowserProfileEngine;
+  /**
+   * Freebuff-Engine (Stufe 4). Optional: wenn nicht gesetzt, läuft der
+   * Agent nicht auf Freebuff. Erfordert installiertes `npm i -g freebuff`
+   * und ein einmalig durchgelaufene Login (`freebuff login`).
+   */
+  freebuffEngine?: FreebuffEngine;
   /**
    * Manus-Cloud-Engine (Stufe 3). Optional: wenn nicht gesetzt, läuft
    * der Agent nicht auf Manus. Erfordert globalen Manus-API-Key

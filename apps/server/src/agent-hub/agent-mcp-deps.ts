@@ -95,6 +95,29 @@ async function executeEnginePrompt(
       profileName: input.engine.profileName,
     });
   }
+  if (input.engine.kind === "freebuff") {
+    // Stufe 4: Freebuff-Engine — Server ruft die Freebuff-CLI auf
+    // (`npm i -g freebuff`). Freebuff hat einen kostenlosen
+    // Browser-OAuth-Login (kein API-Key) und eingebauten
+    // Web-Research + Browser-Use. Das Modell wird über die
+    // Freebuff-settings.json gesetzt, nicht per CLI-Flag.
+    let collected = "";
+    try {
+      for await (const event of runCli({
+        kind: "freebuff",
+        model: input.engine.model,
+        agentId: input.agentId,
+        prompt: input.prompt,
+        allowWrite: input.engine.allowWrite,
+      })) {
+        if (event.text) collected += event.text;
+        if (event.error) throw new Error(event.error);
+      }
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+    return collected.trim() || "(Freebuff hat ohne Text geantwortet.)";
+  }
   if (input.engine.kind === "browser_use") {
     // Stufe 3: browser-use Sidecar — Server ruft den lokalen Sidecar.
     if (input.engine.startUrl) {

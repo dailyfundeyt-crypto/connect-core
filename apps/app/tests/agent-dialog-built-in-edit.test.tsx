@@ -78,6 +78,7 @@ function serve(endpoint: string) {
     endpoint,
     hasAuth: false,
     hasCallbackToken: false,
+    engine: null,
   };
   const store = {
     get: async () => profile,

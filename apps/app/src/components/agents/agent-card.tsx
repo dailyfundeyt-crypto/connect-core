@@ -1,4 +1,4 @@
-import { IconBrain, IconBrowser, IconCheck, IconCloud, IconRobot } from "@tabler/icons-react";
+import { IconBrain, IconBrowser, IconCheck, IconCloud, IconRobot, IconSparkles } from "@tabler/icons-react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,14 @@ function EngineBadge({ engine }: { engine: AgentProfile["engine"] }) {
       <span className="inline-flex items-center gap-0.5 rounded-full bg-fuchsia-500/15 px-1.5 py-0.5 text-[9px] font-medium text-fuchsia-700 dark:text-fuchsia-300">
         <IconRobot className="size-2.5" />
         b-use
+      </span>
+    );
+  }
+  if (engine.kind === "freebuff") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-1.5 py-0.5 text-[9px] font-medium text-orange-700 dark:text-orange-300">
+        <IconSparkles className="size-2.5" />
+        Freebuff
       </span>
     );
   }
