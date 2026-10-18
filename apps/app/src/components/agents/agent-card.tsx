@@ -1,9 +1,29 @@
-import { IconCheck } from "@tabler/icons-react";
+import { IconBrowser, IconCheck } from "@tabler/icons-react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { cn } from "@/lib/utils";
 
 type AgentCardVariant = "tile" | "row";
+
+/**
+ * Engine-Tag-Badge für die Agent-Card (Stufe 2 Phase I).
+ */
+function EngineBadge({ engine }: { engine: AgentProfile["engine"] }) {
+  if (!engine) return null;
+  if (engine.kind === "browser_profile") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:text-amber-300">
+        <IconBrowser className="size-2.5" />
+        Browser
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-300">
+      {engine.kind}
+    </span>
+  );
+}
 
 /**
  * `tile` — compact portrait card (Agents management).
@@ -43,16 +63,19 @@ export function AgentCard({
             {agent.roleDescription}
           </span>
         </span>
-        {statusLabel ? (
-          <span className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
-            <IconCheck
-              aria-hidden
-              className="size-3.5 text-emerald-500"
-              stroke={2.25}
-            />
-            {statusLabel}
-          </span>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <EngineBadge engine={agent.engine} />
+          {statusLabel ? (
+            <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
+              <IconCheck
+                aria-hidden
+                className="size-3.5 text-emerald-500"
+                stroke={2.25}
+              />
+              {statusLabel}
+            </span>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -69,9 +92,12 @@ export function AgentCard({
       </div>
       <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent" />
       <div className="absolute inset-0 flex flex-col justify-end gap-1 p-3">
-        <span className="line-clamp-1 text-sm font-semibold tracking-tight">
-          {agent.name}
-        </span>
+        <div className="flex items-center justify-between gap-1">
+          <span className="line-clamp-1 text-sm font-semibold tracking-tight">
+            {agent.name}
+          </span>
+          <EngineBadge engine={agent.engine} />
+        </div>
         <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
           {agent.roleDescription}
         </span>
