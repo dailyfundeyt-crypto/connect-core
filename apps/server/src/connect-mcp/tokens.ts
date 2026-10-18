@@ -110,7 +110,7 @@ export async function createConnectMcpToken(
     sql`INSERT INTO connect_mcp_tokens
       (id, user_id, token_hash, label, lifetime, expires_at, created_at)
       VALUES (${id}, ${input.userId}, ${tokenHash}, ${input.label}, ${input.lifetime},
-              ${expiresAt ? new Date(expiresAt) : null}, now())`,
+              ${expiresAt}, now())`,
   );
 
   return {
@@ -136,8 +136,8 @@ export async function resolveConnectMcpToken(
   const rows = (await database.execute(
     sql`SELECT user_id, expires_at FROM connect_mcp_tokens
         WHERE token_hash = ${tokenHash} LIMIT 1`,
-  )) as { rows?: Array<{ user_id: string; expires_at: string | null }> };
-  const row = rows.rows?.[0];
+  )) as Array<{ user_id: string; expires_at: string | null }>;
+  const row = rows[0];
   if (!row) return null;
 
   // Probe-Tokens: prüfen, ob abgelaufen
@@ -164,8 +164,8 @@ export async function listConnectMcpTokens(
   const rows = (await database.execute(
     sql`SELECT id, user_id, token_hash, label, lifetime, expires_at, last_used_at, created_at
         FROM connect_mcp_tokens WHERE user_id = ${userId} ORDER BY created_at DESC`,
-  )) as { rows?: Array<Record<string, unknown>> };
-  return (rows.rows ?? []).map((r) => ({
+  )) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
     id: String(r.id),
     userId: String(r.user_id),
     tokenHash: String(r.token_hash),
@@ -184,8 +184,12 @@ export async function revokeConnectMcpToken(
   tokenId: string,
 ): Promise<boolean> {
   await ensureConnectMcpTables(database);
-  const result = (await database.execute(
+  await database.execute(
     sql`DELETE FROM connect_mcp_tokens WHERE id = ${tokenId} AND user_id = ${userId}`,
-  )) as { count?: number };
-  return (result.count ?? 0) > 0;
+  );
+  // Drizzle's pg-driver gibt kein rowcount zurück; wir lesen den Token zur Verifikation.
+  const after = (await database.execute(
+    sql`SELECT 1 FROM connect_mcp_tokens WHERE id = ${tokenId} LIMIT 1`,
+  )) as Array<unknown>;
+  return after.length === 0;
 }

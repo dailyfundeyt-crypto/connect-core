@@ -85,6 +85,15 @@ export type McpToolDef = {
     required?: string[];
     additionalProperties?: boolean;
   };
+  /**
+   * Optionale Handler-Funktion. Wenn vorhanden, führt der Router sie aus,
+   * wenn `tools/call` mit diesem Tool-Namen aufgerufen wird. Wenn nicht
+   * vorhanden → Stub-Antwort.
+   *
+   * Handler werden in `handlers/*.ts` definiert und in `tool-registry.ts`
+   * registriert.
+   */
+  handler?: McpToolHandler;
   /** Optionale Annotationen für UI-Clients */
   annotations?: {
     /** Wird das Tool als "Read-Only" gehandelt? */
@@ -186,19 +195,6 @@ export function validateToolArgs(
 }
 
 // ============================================================================
-// Tool-Registry (Skelett, wird in Commit 2-4 gefüllt)
-// ============================================================================
-
-/**
- * Globale Connect-MCP-Tool-Registry. Wird in `tool-registry.ts` definiert
- * und hier nur exportiert, damit der Router sie iterieren kann.
- *
- * Default: leeres Array, damit Commit 1 ohne Dependencies baubar ist.
- * Commits 2-4 füllen die Handler (agents, browser, mini-apps, knowledge).
- */
-export const connectMcpTools: McpToolDef[] = [];
-
-// ============================================================================
 // JSON-RPC Dispatcher
 // ============================================================================
 
@@ -209,6 +205,8 @@ export type DispatchResult = {
 };
 
 export type ConnectMcpDeps = {
+  /** Liste der exponierten Tools (kommt aus `tool-registry.ts`) */
+  tools: McpToolDef[];
   /** User-Identität aus dem Bearer-Token auflösen */
   resolveToken: (token: string) => Promise<{ id: string; email?: string; name?: string } | null>;
   /** Single-User-Mode: erlaube Anfragen ohne Token */
@@ -256,7 +254,7 @@ export async function dispatchJsonRpc(
         jsonrpc: "2.0",
         id,
         result: {
-          tools: connectMcpTools.map((t) => ({
+          tools: deps.tools.map((t) => ({
             name: t.name,
             description: t.description,
             inputSchema: t.inputSchema,
@@ -291,7 +289,7 @@ export async function dispatchJsonRpc(
         },
       };
     }
-    const tool = connectMcpTools.find((t) => t.name === toolName);
+    const tool = deps.tools.find((t) => t.name === toolName);
     if (!tool) {
       return {
         httpStatus: 404,
@@ -314,8 +312,13 @@ export async function dispatchJsonRpc(
       };
     }
     try {
-      // TODO Commit 2-4: echte Handler dispatch
-      // const result = await tool.handler(validated.args, { actorId: actor.id });
+      if (tool.handler) {
+        const result = await tool.handler(validated.args, {
+          actorId: actor.id,
+        });
+        return { httpStatus: 200, response: { jsonrpc: "2.0", id, result } };
+      }
+      // Kein Handler verdrahtet → Stub-Antwort (Commit-1-Verhalten).
       const result: McpToolResult = {
         content: [
           {
@@ -397,12 +400,7 @@ const localOnly: MiddlewareHandler = async (context, next) => {
 
 export type TokenResolver = (token: string) => Promise<{ id: string; email?: string; name?: string } | null>;
 
-export function createConnectMcpRouter(
-  deps: {
-    resolveToken: TokenResolver;
-    singleUser?: { id: string; email?: string; name?: string };
-  },
-): Hono {
+export function createConnectMcpRouter(deps: ConnectMcpDeps): Hono {
   const app = new Hono();
 
   app.use("*", localOnly);
@@ -413,7 +411,7 @@ export function createConnectMcpRouter(
       ok: true,
       server: "connect-mcp",
       version: "0.1.0",
-      tools: connectMcpTools.length,
+      tools: deps.tools.length,
     }),
   );
 
@@ -423,7 +421,7 @@ export function createConnectMcpRouter(
       server: { name: "connect-mcp", version: "0.1.0" },
       transport: "http",
       url: "/api/connect-mcp/jsonrpc",
-      tools: connectMcpTools.map((t) => ({
+      tools: deps.tools.map((t) => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema,

@@ -20,7 +20,7 @@ import { buildAgentMcpDeps } from "./agent-hub/agent-mcp-deps";
 import { createAgentMcpRoutes } from "./agent-hub/agent-mcp-routes";
 import { createConnectMcpRouter } from "./connect-mcp/router";
 import { resolveConnectMcpToken } from "./connect-mcp/tokens";
-import { connectMcpTools as connectMcpToolsRegistry } from "./connect-mcp/tool-registry";
+import { buildConnectMcpToolRegistry } from "./connect-mcp/tool-registry";
 import {
   type AuditEventType,
   type AuditInitiator,
@@ -1330,13 +1330,19 @@ export function createApp(
   //
   // Format: JSON-RPC 2.0 (`/jsonrpc`), GET `/manifest` und `/health`.
   if (attachmentDatabase) {
-    // `connectMcpToolsRegistry` ist aktuell leer; Commits 2-4 füllen die
-    // Handler. Der Mount bleibt aber aktiv, damit `/health` und `/manifest`
-    // schon jetzt erreichbar sind.
-    void connectMcpToolsRegistry;
+    // Tool-Registry wird gebaut, wenn Profile-Store + AgentMcp-Deps da sind.
+    // Commit 2: agents-Tools. Commits 3-4 erweitern um browser/mini-apps/knowledge.
+    const tools = agentProfileStore
+      ? buildConnectMcpToolRegistry({
+          database: attachmentDatabase,
+          profileStore: agentProfileStore,
+          agentMcp: buildAgentMcpDeps(attachmentDatabase, agentProfileStore),
+        })
+      : [];
     app.route(
       "/api/connect-mcp",
       createConnectMcpRouter({
+        tools,
         resolveToken: (token) => resolveConnectMcpToken(attachmentDatabase, token),
         ...(config.singleUser
           ? { singleUser: { id: "dev-local-user", email: "stefankunc994@gmail.com", name: "Stefan Kunc" } }
