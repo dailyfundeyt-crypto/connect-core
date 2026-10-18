@@ -5,6 +5,24 @@ export type AgentActor = {
   role: "admin" | "user";
 };
 
+/**
+ * CLI-Engine-Konfiguration (Stufe 1.1+).
+ *
+ * Wenn `engine = "cli"` gesetzt ist, läuft der Agent auf einer der
+ * installierten CLI-Engines (Antigravity, Codex, Claude). Das ist der
+ * Standard für Connect-Bots ohne eigene Endpoint.
+ *
+ * Wenn `endpoint` gesetzt ist, läuft er auf einer externen AG-UI-URL.
+ * Wenn keines von beiden gesetzt ist, läuft er auf dem lokalen Bot.
+ */
+export type CliEngine = {
+  kind: "antigravity" | "codex" | "claude";
+  /** Default "auto" — die CLI wählt ihr eigenes Modell. */
+  model: string;
+  /** Ob die CLI Dateien schreiben darf. Default false (read-only). */
+  allowWrite: boolean;
+};
+
 export type AgentProfile = {
   id: string;
   name: string;
@@ -27,6 +45,8 @@ export type AgentProfile = {
    * it. A surface only needs to know whether to offer "generate" or "rotate".
    */
   hasCallbackToken: boolean;
+  /** CLI-Engine-Konfiguration (Stufe 1.1+). */
+  engine: CliEngine | null;
 };
 
 export type CreateAgentInput = Pick<
@@ -48,4 +68,9 @@ export type CreateAgentInput = Pick<
    * why it is optional rather than defaulting to empty; a blank field must not drop a key.
    */
   auth?: { header: string; value: string };
+  /**
+   * CLI-Engine-Konfiguration (Stufe 1.1+). Optional: wenn nicht gesetzt,
+   * nutzt der Agent das lokale Modell (ohne CLI).
+   */
+  cliEngine?: CliEngine;
 };

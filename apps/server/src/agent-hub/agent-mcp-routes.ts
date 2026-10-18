@@ -442,6 +442,110 @@ export function createAgentMcpRoutes(
     }
   });
 
+  /* ---------------------------------------------------------- App-Instanzen (Stufe 2) */
+  const { agentAppInstances } = await import("../db/schema/coworker");
+  const { listAppIds, launchAppInstance: doLaunchAppInstance } = await import("./app-launcher");
+  const { and, eq } = await import("drizzle-orm");
+
+  /** Liste aller App-Instanzen für diesen Agent. */
+  routes.get("/:agentId/app-instances", async (context) => {
+    const agentId = context.req.param("agentId");
+    const agent = await deps.lookupAgent(agentId);
+    if (!agent) return context.json({ error: "Agent nicht gefunden." }, 404);
+    if (!database) return context.json({ error: "Datenbank nicht verfügbar." }, 500);
+    const rows = await database.select().from(agentAppInstances).where(eq(agentAppInstances.agentId, agentId));
+    return context.json({
+      instances: rows.map((r) => ({
+        id: r.id,
+        appId: r.appId,
+        slot: r.slot,
+        name: r.name,
+        email: r.email,
+        enabled: r.enabled,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    });
+  });
+
+  /** Neue App-Instanz anlegen. */
+  routes.post("/:agentId/app-instances", async (context) => {
+    const agentId = context.req.param("agentId");
+    const agent = await deps.lookupAgent(agentId);
+    if (!agent) return context.json({ error: "Agent nicht gefunden." }, 404);
+    if (!database) return context.json({ error: "Datenbank nicht verfügbar." }, 500);
+    const body = (await context.req.json().catch(() => ({}))) as {
+      appId?: string;
+      slot?: number;
+      name?: string;
+      email?: string;
+      enabled?: boolean;
+    };
+    if (!body.appId) return context.json({ error: "appId fehlt." }, 400);
+    if (!listAppIds().includes(body.appId as ReturnType<typeof listAppIds>[number])) {
+      return context.json({ error: `Unbekannte App: ${body.appId}` }, 400);
+    }
+    const [created] = await database
+      .insert(agentAppInstances)
+      .values({
+        agentId,
+        appId: body.appId,
+        slot: body.slot ?? 1,
+        name: body.name ?? "",
+        email: body.email ?? "",
+        enabled: body.enabled ?? true,
+      })
+      .returning();
+    return context.json({ instance: created ?? null }, created ? 201 : 500);
+  });
+
+  /** App-Instanz aktualisieren (Name, E-Mail, Enabled). */
+  routes.patch("/:agentId/app-instances/:instanceId", async (context) => {
+    const instanceId = context.req.param("instanceId");
+    if (!database) return context.json({ error: "Datenbank nicht verfügbar." }, 500);
+    const body = (await context.req.json().catch(() => ({}))) as {
+      name?: string;
+      email?: string;
+      enabled?: boolean;
+    };
+    const [updated] = await database
+      .update(agentAppInstances)
+      .set({ name: body.name, email: body.email, enabled: body.enabled, updatedAt: new Date() })
+      .where(eq(agentAppInstances.id, instanceId))
+      .returning();
+    return context.json({ instance: updated ?? null });
+  });
+
+  /** App-Instanz löschen. */
+  routes.delete("/:agentId/app-instances/:instanceId", async (context) => {
+    const instanceId = context.req.param("instanceId");
+    if (!database) return context.json({ error: "Datenbank nicht verfügbar." }, 500);
+    await database.delete(agentAppInstances).where(eq(agentAppInstances.id, instanceId));
+    return context.json({ ok: true });
+  });
+
+  /** App-Instanz extern starten. */
+  routes.post("/:agentId/app-instances/:instanceId/launch", async (context) => {
+    const instanceId = context.req.param("instanceId");
+    if (!database) return context.json({ error: "Datenbank nicht verfügbar." }, 500);
+    const [row] = await database
+      .select()
+      .from(agentAppInstances)
+      .where(eq(agentAppInstances.id, instanceId));
+    if (!row) return context.json({ error: "Instanz nicht gefunden." }, 404);
+    const result = doLaunchAppInstance(
+      row.appId as Parameters<typeof doLaunchAppInstance>[0],
+      row.email,
+      row.slot,
+    );
+    return context.json(result);
+  });
+
+  /** Verfügbare Apps auflisten. */
+  routes.get("/apps", async (_context) => {
+    const { listApps } = await import("./app-launcher");
+    return context.json({ apps: listApps() });
+  });
+
   return routes;
 }
 

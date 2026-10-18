@@ -38,6 +38,13 @@ export const agentFormSchema = z.object({
    * always empty when editing, and leaving it empty keeps whatever key is already set.
    */
   authValue: z.string(),
+  /**
+   * Stufe 1.1+: CLI-Engine für diesen Agent.
+   * Wenn nicht gesetzt (undefined), nutzt der Agent das lokale Modell.
+   */
+  cliEngineKind: z.enum(["antigravity", "codex", "claude"]).nullable(),
+  cliEngineModel: z.string().max(80),
+  cliEngineAllowWrite: z.boolean(),
 });
 
 export type AgentFormValues = z.infer<typeof agentFormSchema>;
@@ -49,6 +56,9 @@ export const emptyAgentForm: AgentFormValues = {
   visibility: "private",
   endpoint: "",
   authValue: "",
+  cliEngineKind: null,
+  cliEngineModel: "auto",
+  cliEngineAllowWrite: false,
 };
 
 /** Convert form values to API input; omit an empty key so editing preserves the current credential. */
@@ -61,5 +71,15 @@ export function agentInputFrom(values: AgentFormValues) {
     roleDescription: values.roleDescription,
     visibility: "private" as const,
     endpoint: "",
+    // Stufe 1.1: CLI-Engine. Wenn nicht gesetzt, läuft der Agent auf dem lokalen Modell.
+    ...(values.cliEngineKind
+      ? {
+          cliEngine: {
+            kind: values.cliEngineKind,
+            model: values.cliEngineModel || "auto",
+            allowWrite: values.cliEngineAllowWrite,
+          },
+        }
+      : {}),
   };
 }

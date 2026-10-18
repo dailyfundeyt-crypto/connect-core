@@ -7,6 +7,7 @@
 import {
   boolean,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -157,3 +158,33 @@ export const routineRuns = pgTable(
     index("routine_runs_by_routine_idx").on(table.routineId, table.startedAt),
   ],
 );
+
+/**
+ * App-Instanzen pro Agent (Stufe 2).
+ *
+ * Ein Agent kann mehrere Instanzen einer App haben (z.B. 3x Codex Desktop
+ * mit verschiedenen Accounts). Die Instanzen haben einen Slot, eine E-Mail
+ * und einen Enabled-Status. Das App-Launching geht über ein URL-Protokoll
+ * (z.B. `codex://launch?email=...`), das auf dem PC registriert ist.
+ */
+export const agentAppInstances = pgTable(
+  "agent_app_instances",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    appId: text("app_id").notNull(), // "codex" | "ottermind" | "manus" | "figma" | "cursor" | "perplexity" | ...
+    slot: integer("slot").notNull().default(1),
+    name: text("name").notNull().default(""),
+    email: text("email").notNull().default(""),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("agent_app_instances_agent_id_idx").on(table.agentId),
+    { unique: ["agentId", "appId", "slot"] },
+  ],
+);
+

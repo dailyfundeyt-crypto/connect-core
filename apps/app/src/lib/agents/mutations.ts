@@ -16,6 +16,12 @@ export type AgentInput = {
   endpoint?: string;
   /** Write-only auth value; omitted when the user leaves the key field empty. */
   auth?: { header: string; value: string };
+  /** Stufe 1.1: CLI-Engine-Konfiguration. */
+  cliEngine?: {
+    kind: "antigravity" | "codex" | "claude";
+    model: string;
+    allowWrite: boolean;
+  };
 };
 
 /** The sentence for every write here, since they all fail the same way to a reader. */
