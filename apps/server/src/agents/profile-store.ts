@@ -216,6 +216,30 @@ function engineOf(configuration: unknown): AgentEngine | null {
       return { kind: "browser_profile", startUrl, profileName, allowWrite };
     }
   }
+  // Stufe 3: Manus-Cloud-Engine in configuration.manus
+  const mn = cfg.manus;
+  if (mn && typeof mn === "object") {
+    const obj = mn as Record<string, unknown>;
+    if (obj.kind === "manus") {
+      const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
+      const profileName = typeof obj.profileName === "string" ? obj.profileName : undefined;
+      return profileName
+        ? { kind: "manus", model, profileName }
+        : { kind: "manus", model };
+    }
+  }
+  // Stufe 3: browser-use Sidecar in configuration.browserUse
+  const bu = cfg.browserUse;
+  if (bu && typeof bu === "object") {
+    const obj = bu as Record<string, unknown>;
+    if (obj.kind === "browser_use") {
+      const startUrl = typeof obj.startUrl === "string" ? obj.startUrl : undefined;
+      const allowWrite = obj.allowWrite === true;
+      return startUrl
+        ? { kind: "browser_use", startUrl, allowWrite }
+        : { kind: "browser_use", allowWrite };
+    }
+  }
   return null;
 }
 
@@ -472,6 +496,10 @@ export function createAgentProfileStore(
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
               // Stufe 2 Phase C: Browser-Profile.
               ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+              // Stufe 3: Manus-Cloud-Engine.
+              ...(input.manusEngine ? { manus: input.manusEngine } : {}),
+              // Stufe 3: browser-use Sidecar-Engine.
+              ...(input.browserUseEngine ? { browserUse: input.browserUseEngine } : {}),
               ...(input.auth && vault
                 ? {
                     auth: await storeAgentAuth({
@@ -507,6 +535,8 @@ export function createAgentProfileStore(
               systemPrompt,
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
               ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+              ...(input.manusEngine ? { manus: input.manusEngine } : {}),
+              ...(input.browserUseEngine ? { browserUse: input.browserUseEngine } : {}),
             },
           });
         } else {
@@ -588,6 +618,10 @@ export function createAgentProfileStore(
             ...(input.cliEngine ? { cli: input.cliEngine } : {}),
             // Stufe 2 Phase C: Browser-Profile-Engine.
             ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+            // Stufe 3: Manus-Cloud-Engine.
+            ...(input.manusEngine ? { manus: input.manusEngine } : {}),
+            // Stufe 3: browser-use Sidecar-Engine.
+            ...(input.browserUseEngine ? { browserUse: input.browserUseEngine } : {}),
             ...(input.auth && vault
               ? {
                   auth: await storeAgentAuth({

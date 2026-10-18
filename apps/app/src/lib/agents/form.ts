@@ -62,7 +62,7 @@ export const emptyAgentForm: AgentFormValues = {
   visibility: "private",
   endpoint: "",
   authValue: "",
-  cliEngineKind: null,
+  cliEngineKind: null as "antigravity" | "codex" | "claude" | null,
   cliEngineModel: "auto",
   cliEngineAllowWrite: false,
   browserProfileEnabled: false,

@@ -46,9 +46,9 @@ export type AgentProfile = {
    * a roster on `canManage` and an administrator's "mine" fills up with other people's work.
    */
   mine: boolean;
-  /** Stufe 1.1: Engine-Konfiguration (CLI oder Browser-Profile). */
+  /** Stufe 1.1+2+3: Engine-Konfiguration (CLI, Browser-Profile, Manus, browser-use). */
   engine: {
-    kind: "antigravity" | "codex" | "claude" | "browser_profile";
+    kind: "antigravity" | "codex" | "claude" | "browser_profile" | "manus" | "browser_use";
     model?: string;
     allowWrite?: boolean;
     startUrl?: string;

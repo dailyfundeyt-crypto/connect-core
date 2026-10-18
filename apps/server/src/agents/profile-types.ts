@@ -40,8 +40,40 @@ export type BrowserProfileEngine = {
   allowWrite: boolean;
 };
 
+/**
+ * Manus-Cloud-Engine (Stufe 3).
+ *
+ * Wenn diese Engine gesetzt ist, läuft der Agent auf Manus 1.5/1.6 mit
+ * dem globalen Manus-API-Key (der vom Server gelesen wird). Ideal für
+ * Aufgaben, die Cloud-Compute brauchen (lange Tasks, Background-Jobs,
+ * Mail-Manus, geteilte Results).
+ */
+export type ManusEngine = {
+  kind: "manus";
+  /** Default "auto" — Manus wählt das Modell. */
+  model: string;
+  /** Optional: Agent-Manus-Profile (login session) — für Multi-Account */
+  profileName?: string;
+};
+
+/**
+ * Sidecar-Browser-Use-Engine (Stufe 3).
+ *
+ * Wenn diese Engine gesetzt ist, läuft der Agent über den
+ * browser-use Python-Sidecar (lokaler Service, Port 8765). Der Sidecar
+ * ist ein vollwertiger Browser-Use-Agent, der z.B. Formulare ausfüllen
+ * oder mehrere Seiten besuchen kann.
+ */
+export type BrowserUseEngine = {
+  kind: "browser_use";
+  /** Optionale Start-URL die der Sidecar zuerst öffnet. */
+  startUrl?: string;
+  /** Ob der Sidecar schreibend agieren darf. Default false. */
+  allowWrite: boolean;
+};
+
 /**Union aller Engine-Typen. */
-export type AgentEngine = CliEngine | BrowserProfileEngine;
+export type AgentEngine = CliEngine | BrowserProfileEngine | ManusEngine | BrowserUseEngine;
 
 export type AgentProfile = {
   id: string;
@@ -98,4 +130,16 @@ export type CreateAgentInput = Pick<
    * hat der Agent kein eigenes Browser-Profil.
    */
   browserProfile?: BrowserProfileEngine;
+  /**
+   * Manus-Cloud-Engine (Stufe 3). Optional: wenn nicht gesetzt, läuft
+   * der Agent nicht auf Manus. Erfordert globalen Manus-API-Key
+   * (MANUS_API_KEY) auf dem Server.
+   */
+  manusEngine?: ManusEngine;
+  /**
+   * browser-use Sidecar-Engine (Stufe 3). Optional: wenn nicht gesetzt,
+   * nutzt der Agent nicht den Sidecar. Erfordert laufenden Sidecar auf
+   * $BROWSER_USE_URL (default http://127.0.0.1:8765).
+   */
+  browserUseEngine?: BrowserUseEngine;
 };

@@ -1,17 +1,20 @@
 /**
- * Agent-Engine Panel (Stufe 2 Phase E+F).
+ * Agent-Engine Panel (Stufe 2 Phase E+F + Stufe 3).
  *
  * Erlaubt das Wechseln der Engine eines Agents:
  * - Keine Engine (lokales Modell)
  * - CLI-Engine (Antigravity / Codex / Claude mit Modell + allowWrite)
  * - Browser-Profile-Engine (Helium mit Start-URL + Allow-Write)
+ * - Manus-Cloud-Engine (Stufe 3, server-side task.create + Polling)
+ * - browser-use Sidecar-Engine (Stufe 3, lokaler Browser-Use-Agent)
  *
  * Das PATCH-Endpoint nimmt die Felder entgegen, der profileStore
- * speichert sie in configuration.cli bzw. configuration.browserProfile.
+ * speichert sie in configuration.cli / configuration.browserProfile /
+ * configuration.manus / configuration.browserUse.
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IconBrain, IconBrowser, IconCheck, IconX } from "@tabler/icons-react";
+import { IconBrain, IconBrowser, IconCheck, IconCloud, IconRobot, IconX } from "@tabler/icons-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,16 +24,22 @@ import { agentQueryOptions } from "@/lib/agents/queries";
 import { updateAgentMutationOptions } from "@/lib/agents/mutations";
 import type { AgentProfile } from "@/lib/agents/queries";
 
-type EngineKind = "none" | "cli" | "browser_profile";
+type EngineKind = "none" | "cli" | "browser_profile" | "manus" | "browser_use";
 
 const CLI_KINDS = ["antigravity", "codex", "claude"] as const;
 type CliKind = (typeof CLI_KINDS)[number];
 
 function deriveKind(profile: AgentProfile): EngineKind {
   if (!profile.engine) return "none";
-  if (profile.engine.kind === "browser_profile") return "browser_profile";
-  return "cli";
+  return profile.engine.kind as EngineKind;
 }
+
+type EnginePatch = {
+  cliEngine?: { kind: CliKind; model: string; allowWrite: boolean };
+  browserProfile?: { kind: "browser_profile"; startUrl: string; profileName: string; allowWrite: boolean };
+  manusEngine?: { kind: "manus"; model: string; profileName?: string };
+  browserUseEngine?: { kind: "browser_use"; startUrl?: string; allowWrite: boolean };
+};
 
 function buildEnginePatch(
   kind: EngineKind,
@@ -39,7 +48,11 @@ function buildEnginePatch(
   cliAllowWrite: boolean,
   browserUrl: string,
   browserAllowWrite: boolean,
-): { cliEngine?: { kind: CliKind; model: string; allowWrite: boolean }; browserProfile?: { kind: "browser_profile"; startUrl: string; profileName: string; allowWrite: boolean } } {
+  manusModel: string,
+  manusProfile: string,
+  browserUseUrl: string,
+  browserUseAllowWrite: boolean,
+): EnginePatch {
   if (kind === "none") return {};
   if (kind === "cli") {
     return {
@@ -50,12 +63,31 @@ function buildEnginePatch(
       },
     };
   }
+  if (kind === "browser_profile") {
+    return {
+      browserProfile: {
+        kind: "browser_profile" as const,
+        startUrl: browserUrl,
+        profileName: "",
+        allowWrite: browserAllowWrite,
+      },
+    };
+  }
+  if (kind === "manus") {
+    return {
+      manusEngine: {
+        kind: "manus" as const,
+        model: manusModel || "auto",
+        ...(manusProfile ? { profileName: manusProfile } : {}),
+      },
+    };
+  }
+  // browser_use
   return {
-    browserProfile: {
-      kind: "browser_profile" as const,
-      startUrl: browserUrl,
-      profileName: "",
-      allowWrite: browserAllowWrite,
+    browserUseEngine: {
+      kind: "browser_use" as const,
+      ...(browserUseUrl ? { startUrl: browserUseUrl } : {}),
+      allowWrite: browserUseAllowWrite,
     },
   };
 }
@@ -73,6 +105,15 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
   const [cliAllowWrite, setCliAllowWrite] = useState<boolean>(profile?.engine?.allowWrite ?? false);
   const [browserUrl, setBrowserUrl] = useState<string>(profile?.engine?.startUrl ?? "");
   const [browserAllowWrite, setBrowserAllowWrite] = useState<boolean>(profile?.engine?.allowWrite ?? false);
+  // Stufe 3: Manus + browser-use Felder
+  const manusEngine = profile?.engine?.kind === "manus" ? profile.engine : null;
+  const browserUseEngine = profile?.engine?.kind === "browser_use" ? profile.engine : null;
+  const [manusModel, setManusModel] = useState<string>(manusEngine?.model ?? "auto");
+  const [manusProfile, setManusProfile] = useState<string>(manusEngine?.profileName ?? "");
+  const [browserUseUrl, setBrowserUseUrl] = useState<string>(browserUseEngine?.startUrl ?? "");
+  const [browserUseAllowWrite, setBrowserUseAllowWrite] = useState<boolean>(
+    browserUseEngine?.allowWrite ?? false,
+  );
   const [lastSaved, setLastSaved] = useState<null | "ok" | "err">(null);
 
   const update = useMutation(updateAgentMutationOptions(queryClient));
@@ -80,9 +121,29 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
   if (!profile) return null;
 
   const save = async () => {
-    const patch = buildEnginePatch(kind, cliKind, cliModel, cliAllowWrite, browserUrl, browserAllowWrite);
+    const patch = buildEnginePatch(
+      kind,
+      cliKind,
+      cliModel,
+      cliAllowWrite,
+      browserUrl,
+      browserAllowWrite,
+      manusModel,
+      manusProfile,
+      browserUseUrl,
+      browserUseAllowWrite,
+    );
     try {
-      await update.mutateAsync({ agentId, input: { ...patch, name: profile.name, title: profile.title, roleDescription: profile.roleDescription, visibility: "private" } });
+      await update.mutateAsync({
+        agentId,
+        input: {
+          ...patch,
+          name: profile.name,
+          title: profile.title,
+          roleDescription: profile.roleDescription,
+          visibility: "private",
+        },
+      });
       setLastSaved("ok");
       setTimeout(() => setLastSaved(null), 2000);
     } catch {
@@ -107,7 +168,7 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
         )}
       </header>
 
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-5 gap-1.5">
         <button
           className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[11px] font-medium transition ${
             kind === "none"
@@ -143,6 +204,30 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
         >
           <IconBrowser className="size-4" />
           Browser
+        </button>
+        <button
+          className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[11px] font-medium transition ${
+            kind === "manus"
+              ? "border-primary bg-primary/10 text-foreground"
+              : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setKind("manus")}
+          type="button"
+        >
+          <IconCloud className="size-4" />
+          Manus
+        </button>
+        <button
+          className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[11px] font-medium transition ${
+            kind === "browser_use"
+              ? "border-primary bg-primary/10 text-foreground"
+              : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setKind("browser_use")}
+          type="button"
+        >
+          <IconRobot className="size-4" />
+          b-use
         </button>
       </div>
 
@@ -188,6 +273,44 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
             />
             Schreiben erlauben (Formulare ausfüllen)
           </label>
+        </div>
+      )}
+
+      {kind === "manus" && (
+        <div className="grid gap-2">
+          <Input
+            onChange={(e) => setManusModel(e.target.value)}
+            placeholder="Modell (z.B. auto, manus-1.6, manus-1.5)"
+            value={manusModel}
+          />
+          <Input
+            onChange={(e) => setManusProfile(e.target.value)}
+            placeholder="Helium-Profil (optional, z.B. manus-1)"
+            value={manusProfile}
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Manus-Cloud-Tasks. Erfordert MANUS_API_KEY auf dem Server.
+          </p>
+        </div>
+      )}
+
+      {kind === "browser_use" && (
+        <div className="grid gap-2">
+          <Input
+            onChange={(e) => setBrowserUseUrl(e.target.value)}
+            placeholder="Start-URL (optional)"
+            value={browserUseUrl}
+          />
+          <label className="flex items-center gap-2 text-xs">
+            <Switch
+              checked={browserUseAllowWrite}
+              onCheckedChange={setBrowserUseAllowWrite}
+            />
+            Schreiben erlauben (Formulare ausfüllen)
+          </label>
+          <p className="text-[10px] text-muted-foreground">
+            browser-use Sidecar (Port 8765). Start: <code>browser-use --port 8765</code>
+          </p>
         </div>
       )}
 

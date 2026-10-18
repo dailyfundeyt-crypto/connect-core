@@ -23,8 +23,11 @@
 
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { and, eq } from "drizzle-orm";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
+import { agentAppInstances } from "../db/schema/coworker";
+import { listAppIds, launchAppInstance as doLaunchAppInstance } from "./app-launcher";
 import {
   type BrowserAction,
   closeBrowserTab,
@@ -443,9 +446,7 @@ export function createAgentMcpRoutes(
   });
 
   /* ---------------------------------------------------------- App-Instanzen (Stufe 2) */
-  const { agentAppInstances } = await import("../db/schema/coworker");
-  const { listAppIds, launchAppInstance: doLaunchAppInstance } = await import("./app-launcher");
-  const { and, eq } = await import("drizzle-orm");
+  // Statische Imports oben: agentAppInstances, listAppIds, doLaunchAppInstance, and, eq
 
   /** Liste aller App-Instanzen für diesen Agent. */
   routes.get("/:agentId/app-instances", async (context) => {

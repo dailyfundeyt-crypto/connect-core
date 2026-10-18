@@ -1,4 +1,4 @@
-import { IconBrowser, IconCheck } from "@tabler/icons-react";
+import { IconBrain, IconBrowser, IconCheck, IconCloud, IconRobot } from "@tabler/icons-react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { cn } from "@/lib/utils";
@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 type AgentCardVariant = "tile" | "row";
 
 /**
- * Engine-Tag-Badge für die Agent-Card (Stufe 2 Phase I).
+ * Engine-Tag-Badge für die Agent-Card (Stufe 2 Phase I + Stufe 3).
  */
 function EngineBadge({ engine }: { engine: AgentProfile["engine"] }) {
   if (!engine) return null;
@@ -18,8 +18,25 @@ function EngineBadge({ engine }: { engine: AgentProfile["engine"] }) {
       </span>
     );
   }
+  if (engine.kind === "manus") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-medium text-sky-700 dark:text-sky-300">
+        <IconCloud className="size-2.5" />
+        Manus
+      </span>
+    );
+  }
+  if (engine.kind === "browser_use") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-fuchsia-500/15 px-1.5 py-0.5 text-[9px] font-medium text-fuchsia-700 dark:text-fuchsia-300">
+        <IconRobot className="size-2.5" />
+        b-use
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-300">
+      <IconBrain className="size-2.5" />
       {engine.kind}
     </span>
   );

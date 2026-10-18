@@ -14,6 +14,8 @@ import { runTurn } from "../routines/run-turn-helper";
 import { agentBrowserTabs } from "../db/schema";
 import type { Database } from "../db/client";
 import { runCli } from "./cli-model";
+import { runManus } from "./manus-engine";
+import { runBrowserUse, navigateBrowserUse } from "./browser-use-sidecar";
 import type {
   AgentAntigravityInvoke,
   AgentBrowserTabsInvoke,
@@ -66,7 +68,7 @@ async function executeEnginePrompt(
   }
   if (input.engine.kind === "browser_profile") {
     // Browser-Profile-Engine: zuerst zu startUrl navigieren
-    const { ensureAgentChromeRunning, cdpNavigate } = await import("./agent-cdp");
+    const { ensureAgentChromeRunning, cdpNavigate, cdpPortFor } = await import("./agent-cdp");
     const { listBrowserTabsFor } = await import("./agent-browser");
     if (input.database) {
       const tabs = await listBrowserTabsFor(input.database, input.agentId);
@@ -74,7 +76,7 @@ async function executeEnginePrompt(
       if (myTab && input.engine.startUrl) {
         try {
           await ensureAgentChromeRunning(myTab.profileDir);
-          await cdpNavigate(myTab.profileDir, input.engine.startUrl);
+          await cdpNavigate(cdpPortFor(myTab.profileDir), input.engine.startUrl);
         } catch (err) {
           // Navigation-Fehler ist nicht fatal — wir führen den Chat trotzdem aus
           console.warn(`[agent-mcp] browser-navigate failed:`, err);
@@ -83,6 +85,31 @@ async function executeEnginePrompt(
     }
     // Browser-Profile ohne CLI → Stub mit Hinweis
     return `[Browser-Profile-Engine: ${input.engine.profileName}]\n\nBrowser ist geladen (${input.engine.startUrl}).\n\nDer Prompt kann jetzt über die Browser-Steuerung an den User gegeben werden:\n\n${input.prompt}\n\n(Hinweis: aktuell ist keine CLI parallel konfiguriert — der Browser-Profile-Modus ist read-only.)`;
+  }
+  if (input.engine.kind === "manus") {
+    // Stufe 3: Manus-Cloud-Engine — Server ruft Manus-API auf.
+    return runManus({
+      agentId: input.agentId,
+      prompt: input.prompt,
+      model: input.engine.model,
+      profileName: input.engine.profileName,
+    });
+  }
+  if (input.engine.kind === "browser_use") {
+    // Stufe 3: browser-use Sidecar — Server ruft den lokalen Sidecar.
+    if (input.engine.startUrl) {
+      // Vor dem Task zur Start-URL navigieren
+      try {
+        await navigateBrowserUse(input.engine.startUrl);
+      } catch (err) {
+        console.warn(`[agent-mcp] browser-use navigate failed:`, err);
+      }
+    }
+    return runBrowserUse({
+      agentId: input.agentId,
+      prompt: input.prompt,
+      allowWrite: input.engine.allowWrite,
+    });
   }
   // CLI-Engine
   let collected = "";
