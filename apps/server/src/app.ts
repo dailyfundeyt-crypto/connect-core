@@ -16,6 +16,11 @@ import { createDriveBackupRoutes } from "./drive-backup/routes";
 import { DriveBackupService } from "./drive-backup/service";
 import { createVoiceBridgeRoutes } from "./voice/bridge-routes";
 import { createAgentHubRoutes } from "./agent-hub/routes";
+import { buildAgentMcpDeps } from "./agent-hub/agent-mcp-deps";
+import { createAgentMcpRoutes } from "./agent-hub/agent-mcp-routes";
+import { createConnectMcpRouter } from "./connect-mcp/router";
+import { resolveConnectMcpToken } from "./connect-mcp/tokens";
+import { connectMcpTools as connectMcpToolsRegistry } from "./connect-mcp/tool-registry";
 import {
   type AuditEventType,
   type AuditInitiator,
@@ -42,16 +47,21 @@ import {
 } from "./channels/attachments";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
+import { installAgentConversationRoutes } from "./channels/agent-conversation-routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
 import { createThreadRoutes } from "./channels/thread-routes";
 import { createThreadReader } from "./channels/thread-status";
 import { createCliBridgeRoutes } from "./cli-bridge/routes";
 import { installLocalPcBridgeRoutes, installPcBridgeRoutes, pcQuery } from "./pc-bridge";
+import { createHeliumSyncRoutes } from "./helium-sync";
+import { installLocalSocialRoutes } from "./social";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
 import type { ComponentStore } from "./components/store";
 import { createConnectWorkspaceRoutes } from "./connect/routes";
+import { installEmbedCheck, installLocalAppProxy, localAppRefererRedirect } from "./connect/local-apps";
+import { installLocalMusicRoutes } from "./music/local-music";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PageFrameStore } from "./computer/page-frames";
 import type { PolicyStore } from "./computer/policy-store";
@@ -332,6 +342,13 @@ export function createApp(
   mountDesktopConnectionFailure(app, desktopHostToken);
 
   app.get("/health", (context) => context.json({ status: "ok" }));
+  // /api/health wird vom Connect-Sozial (Dailyfun) Online-Gate verwendet,
+  // um echte Connectivity (gegen Captive Portals etc.) zu prüfen. Ohne
+  // diesen Endpoint meldet das Gate dauerhaft "offline" und legt den
+  // Offline-Screen über die ganze App.
+  app.get("/api/health", (context) => context.json({ status: "ok" }));
+  // Handy-In-App-Browser: absolute Pfade einer über /apps/<port>/ geöffneten lokalen App zurück in den Proxy.
+  if (process.env.CONNECT_SERVERLESS !== "1") app.use("*", localAppRefererRedirect());
   // Projected, never the raw runtime. config.runtime carries the Intelligence contract, including
   // INTELLIGENCE_API_KEY and the licence token, and this endpoint is reachable by anyone. Returning
   // the object wholesale would serve deployment secrets to the browser. Add fields here explicitly.
@@ -1197,6 +1214,10 @@ export function createApp(
       createChannelRoutes(channelStore, requireUser, channelEvents, auditStore),
     );
   }
+  // oneconv: Ein Agent = ein Gespräch (alle Teile eines Agenten, Weiterleitung alter /channel/<id>-Links)
+  if (attachmentDatabase) {
+    installAgentConversationRoutes(app as never, requireUser, attachmentDatabase, channelStore);
+  }
 
   // Phase B/C: Bot-CLI → Codex API key / plan proxy + usage dashboard.
   // Settings › Brain: read-only view of the local Brain folder (loopback only, off when serverless).
@@ -1284,6 +1305,46 @@ export function createApp(
     }),
   );
 
+  // /api/agent-mcp — jeder Agent wird sein eigener MCP-Server. Andere
+  // Agents / Tools rufen die hier registrierten Tools (chat, steer, query,
+  // profile, list_browser_tabs) per HTTP auf. Mounted wenn ein
+  // Agent-Profile-Store da ist, weil ohne den nichts Sinnvolles rauskommt.
+  if (agentProfileStore) {
+    app.route(
+      "/api/agent-mcp",
+      createAgentMcpRoutes(
+        requireUser,
+        buildAgentMcpDeps(attachmentDatabase, agentProfileStore),
+        attachmentDatabase,
+      ),
+    );
+  }
+
+  // /api/connect-mcp — globaler MCP-Server, der alle Connect-Agenten
+  // und -Features als Tools nach außen exponiert. Externe Clients
+  // (Perplexity Computer, Grok-Bot, Codex-App, Manus, Claude) rufen
+  // diesen Endpoint als MCP-Server auf.
+  //
+  // Auth: Bearer-Token aus `connect_mcp_tokens`-Tabelle, optional
+  // Single-User-Override (Dev-Loopback ohne Sign-In).
+  //
+  // Format: JSON-RPC 2.0 (`/jsonrpc`), GET `/manifest` und `/health`.
+  if (attachmentDatabase) {
+    // `connectMcpToolsRegistry` ist aktuell leer; Commits 2-4 füllen die
+    // Handler. Der Mount bleibt aber aktiv, damit `/health` und `/manifest`
+    // schon jetzt erreichbar sind.
+    void connectMcpToolsRegistry;
+    app.route(
+      "/api/connect-mcp",
+      createConnectMcpRouter({
+        resolveToken: (token) => resolveConnectMcpToken(attachmentDatabase, token),
+        ...(config.singleUser
+          ? { singleUser: { id: "dev-local-user", email: "stefankunc994@gmail.com", name: "Stefan Kunc" } }
+          : {}),
+      }),
+    );
+  }
+
   app.route(
     "/api/cli-bridge",
     createCliBridgeRoutes(requireUser, {
@@ -1299,7 +1360,17 @@ export function createApp(
     if (attachmentDatabase) installPcBridgeRoutes(app as never, requireUser as never, pcQuery(attachmentDatabase));
   } else {
     installLocalPcBridgeRoutes(app as never, requireUser as never);
+    // Connect Social (helium-social): öffentliche Firmenprofile/Feed, zentral in Supabase (pc-bridge.env).
+    installLocalSocialRoutes(app, requireUser);
+    // Helium-Erweiterung „Connect Sync“: Tabs melden + Befehle vom Handy (nur 127.0.0.1, Token-Kopplung).
+    app.route("/api/helium-sync", createHeliumSyncRoutes(requireUser as never));
+    // Handy-In-App-Browser: lokale Apps (localhost:<port>) über den QR-Tunnel, nur mit Login + Port-Whitelist.
+    installLocalAppProxy(app, requireUser, attachmentDatabase);
+    // Musik & Beats: eigene Songs vom PC (Downloads/Musik) fürs Handy über den QR-Tunnel, nur mit Login.
+    installLocalMusicRoutes(app as never, requireUser as never);
   }
+  // Handy-In-App-Browser: darf eine Seite eingebettet werden? (X-Frame-Options / frame-ancestors)
+  installEmbedCheck(app, requireUser);
 
   // Settings › Sicherung: verschluesselte Google-Drive-Sicherung (drive.file), Zeitplan + Wiederherstellen.
   if (attachmentDatabase && config.keyEncryptionKey) {
