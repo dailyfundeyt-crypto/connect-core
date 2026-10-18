@@ -1,10 +1,10 @@
-/* Minimal offline shell so Chromium offers "Install app". */
+﻿/* Minimal offline shell so Chromium offers "Install app". */
 // v3: Navigationen holen die index.html mit cache:"reload" – umgeht den HTTP-Cache.
 // v2 war zwar network-first, aber der HTTP-Cache lieferte weiterhin eine alte index.html
 // aus, die auf ein altes, inzwischen geloeschtes Bundle zeigte (leere Seite / alte Route).
 // v1 hat "/" cache-first ausgeliefert – nach einem Update zeigte die alte index.html
 // auf gelöschte Assets (leere Seite).
-const CACHE = "connect-shell-v3";
+const CACHE = "connect-shell-v8";
 const SHELL = ["/manifest.webmanifest", "/brand/connect-logo.png"];
 
 self.addEventListener("install", (event) => {

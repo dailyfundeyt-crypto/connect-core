@@ -101,6 +101,38 @@ export function VaultNoteEditor({
   const [fm, setFm] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  /*
+   * Hidden file input used by the slash menu's "Bild" command. The editor
+   * delegates the picker to the parent because the parent owns the document
+   * state; we just turn the chosen file into a data URL and append an image
+   * block to whatever is open.
+   */
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImagePaste = (_file: File) => {
+    imageInputRef.current?.click();
+  };
+
+  const handleImageFileChosen: React.ChangeEventHandler<HTMLInputElement> = (event) => {
+    const file = event.target.files?.[0];
+    // Always reset the input so the same file can be picked again later.
+    event.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result ?? "");
+      if (!url) return;
+      setBlocks((current) => {
+        if (!current) return current;
+        const next: NoteBlock[] = [
+          ...current,
+          { id: `b-${Date.now().toString(36)}`, type: "image", spans: [], url },
+        ];
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+  };
 
   /*
    * Load once per path.
@@ -134,17 +166,22 @@ export function VaultNoteEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, file.data?.path]);
 
+  const { mutate: saveNote } = save;
+
   const dirty = useMemo(() => {
     if (!blocks) return false;
     return blocksToMarkdown(blocks) !== baseline.current || fm !== fmBase.current;
   }, [blocks, fm]);
 
-  // Debounced auto-save
+  // Debounced auto-save. `save.mutate` is a stable function reference from the
+  // mutation result, so listing the whole `save` object here would tear this
+  // effect down on every render -- which is what made the auto-save timer
+  // never fire and the editor trip React's nested-update guard (#185).
   useEffect(() => {
     if (!blocks || !dirty) return;
     const currentMarkdown = blocksToMarkdown(blocks);
     const timer = setTimeout(() => {
-      save.mutate(
+      saveNote(
         { path, content: fm + currentMarkdown, mode: "write" },
         {
           onSuccess: () => {
@@ -162,9 +199,10 @@ export function VaultNoteEditor({
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [blocks, dirty, fm, path, save]);
+  }, [blocks, dirty, fm, path, saveNote]);
 
-  // Save on unmount if dirty
+  // Save on unmount if dirty. `saveNote` is a stable callback returned by
+  // React Query, so depending on the whole `save` object is not necessary.
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const pathRef = useRef(path);
@@ -177,11 +215,11 @@ export function VaultNoteEditor({
       if (blocksRef.current) {
         const md = blocksToMarkdown(blocksRef.current);
         if (md !== baseline.current || fmRef.current !== fmBase.current) {
-          save.mutate({ path: pathRef.current, content: fmRef.current + md, mode: "write" });
+          saveNote({ path: pathRef.current, content: fmRef.current + md, mode: "write" });
         }
       }
     };
-  }, [save]);
+  }, [saveNote]);
 
   /*
    * Warn on browser tab close/reload if there are pending unsaved changes.
@@ -223,6 +261,13 @@ export function VaultNoteEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-neutral-950">
+      <input
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={handleImageFileChosen}
+        ref={imageInputRef}
+        type="file"
+      />
 
       <div className="flex min-h-0 flex-1 gap-2 overflow-hidden bg-white dark:bg-neutral-950">
         <div
@@ -286,7 +331,11 @@ export function VaultNoteEditor({
               </div>
 
               {fm ? <FrontmatterField onChange={setFm} value={fm} /> : null}
-              <NoteBlockEditor blocks={blocks} onBlocksChange={setBlocks} />
+              <NoteBlockEditor
+                blocks={blocks}
+                onBlocksChange={setBlocks}
+                onImagePaste={handleImagePaste}
+              />
             </>
           ) : (
             <div className="flex items-center gap-2 py-12 text-sm text-muted-foreground">
