@@ -25,6 +25,7 @@ import type {
 } from "./agent-mcp-routes";
 import { eq } from "drizzle-orm";
 import type { AgentProfileStore } from "../agents/profile-store";
+import type { AgentProfile } from "../agents/profile-types";
 
 const STEER_NOTES = new Map<string, string[]>();
 
@@ -48,73 +49,96 @@ function buildLookup(store: AgentProfileStore | undefined): AgentProfileLookup {
 }
 
 /**
- * Stufe 1.1: Liest die CLI-Engine-Konfiguration aus dem Agent-Profil
- * und führt den Prompt über die CLI aus (oder den Stub, wenn keine Engine).
+ * Stufe 2 Phase G: Führt den Prompt mit der konfigurierten Engine aus.
+ *
+ * - CLI-Engine → runCli
+ * - Browser-Profile-Engine → Browser-Navigation zu startUrl, dann runCli
+ *   (oder Stub wenn keine CLI konfiguriert)
+ * - Keine Engine → Stub
+ */
+async function executeEnginePrompt(
+  input: { agentId: string; prompt: string; engine: AgentProfile["engine"]; database: Database | undefined },
+): Promise<string> {
+  if (!input.engine) {
+    // Keine Engine: Stub
+    if (!input.database) throw new Error("Datenbank ist nicht konfiguriert.");
+    return runTurn({ database: input.database, agentId: input.agentId, prompt: input.prompt, ephemeral: false });
+  }
+  if (input.engine.kind === "browser_profile") {
+    // Browser-Profile-Engine: zuerst zu startUrl navigieren
+    const { ensureAgentChromeRunning, cdpNavigate } = await import("./agent-cdp");
+    const { listBrowserTabsFor } = await import("./agent-browser");
+    if (input.database) {
+      const tabs = await listBrowserTabsFor(input.database, input.agentId);
+      const myTab = tabs.find((t) => !t.closedAt);
+      if (myTab && input.engine.startUrl) {
+        try {
+          await ensureAgentChromeRunning(myTab.profileDir);
+          await cdpNavigate(myTab.profileDir, input.engine.startUrl);
+        } catch (err) {
+          // Navigation-Fehler ist nicht fatal — wir führen den Chat trotzdem aus
+          console.warn(`[agent-mcp] browser-navigate failed:`, err);
+        }
+      }
+    }
+    // Browser-Profile ohne CLI → Stub mit Hinweis
+    return `[Browser-Profile-Engine: ${input.engine.profileName}]\n\nBrowser ist geladen (${input.engine.startUrl}).\n\nDer Prompt kann jetzt über die Browser-Steuerung an den User gegeben werden:\n\n${input.prompt}\n\n(Hinweis: aktuell ist keine CLI parallel konfiguriert — der Browser-Profile-Modus ist read-only.)`;
+  }
+  // CLI-Engine
+  let collected = "";
+  try {
+    for await (const event of runCli({
+      kind: input.engine.kind,
+      model: input.engine.model,
+      agentId: input.agentId,
+      prompt: input.prompt,
+      allowWrite: input.engine.allowWrite,
+    })) {
+      if (event.text) collected += event.text;
+      if (event.error) throw new Error(event.error);
+    }
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+  return collected.trim() || "(keine Antwort erhalten.)";
+}
+
+/**
+ * Stufe 1.1 + 2: Liest die Engine-Konfiguration aus dem Agent-Profil
+ * und führt den Prompt über die Engine aus.
  */
 function buildChat(
   database: Database | undefined,
   store: AgentProfileStore | undefined,
 ): AgentChatInvoke {
   return async ({ agentId, prompt }) => {
-    if (!database) throw new Error("Datenbank ist nicht konfiguriert.");
     const profile = store ? await store.get({ id: "system", role: "admin" }, agentId) : null;
-    const engine = profile?.engine;
-    if (engine) {
-      // Stufe 1.1+: echter CLI-Run
-      let collected = "";
-      try {
-        for await (const event of runCli({
-          kind: engine.kind,
-          model: engine.model,
-          agentId,
-          prompt,
-          allowWrite: engine.allowWrite,
-        })) {
-          if (event.text) collected += event.text;
-          if (event.error) {
-            throw new Error(event.error);
-          }
-        }
-      } catch (error) {
-        throw error instanceof Error ? error : new Error(String(error));
-      }
-      return collected.trim() || "(keine Antwort erhalten.)";
-    }
-    // Fallback: Stub (bis Stufe 1.1+ den echten Turn-Runner einbaut)
-    return runTurn({ database, agentId, prompt, ephemeral: false });
+    if (!profile?.engine && !database) throw new Error("Datenbank ist nicht konfiguriert.");
+    return executeEnginePrompt({
+      agentId,
+      prompt,
+      engine: profile?.engine ?? null,
+      database,
+    });
   };
 }
 
 /**
- * Stufe 1.1: einmalige Frage, kein History. Nutzt die CLI wenn konfiguriert.
+ * Stufe 1.1 + 2: einmalige Frage, kein History. Nutzt die Engine.
  */
 function buildQuery(
   database: Database | undefined,
   store: AgentProfileStore | undefined,
 ): AgentQueryInvoke {
   return async ({ agentId, question }) => {
-    if (!database) throw new Error("Datenbank ist nicht konfiguriert.");
     const profile = store ? await store.get({ id: "system", role: "admin" }, agentId) : null;
-    const engine = profile?.engine;
-    if (engine) {
-      let collected = "";
-      try {
-        for await (const event of runCli({
-          kind: engine.kind,
-          model: engine.model,
-          agentId,
-          prompt: question,
-          allowWrite: engine.allowWrite,
-        })) {
-          if (event.text) collected += event.text;
-          if (event.error) throw new Error(event.error);
-        }
-      } catch (error) {
-        throw error instanceof Error ? error : new Error(String(error));
-      }
-      return collected.trim() || "(keine Antwort erhalten.)";
-    }
-    return runTurn({ database, agentId, prompt: question, ephemeral: true });
+    if (!profile?.engine && !database) throw new Error("Datenbank ist nicht konfiguriert.");
+    return executeEnginePrompt({
+      agentId,
+      prompt: question,
+      engine: profile?.engine ?? null,
+      database,
+    });
   };
 }
 

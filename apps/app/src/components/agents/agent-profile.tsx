@@ -5,6 +5,7 @@ import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AgentBrowserPanel } from "@/components/agents/agent-browser-panel";
 import { AgentCliStreamPanel } from "@/components/agents/agent-cli-stream-panel";
 import { AgentAppInstancePanel } from "@/components/agents/agent-app-instance-panel";
+import { AgentEnginePanel } from "@/components/agents/agent-engine-panel";
 import { AgentDialog } from "@/components/agents/agent-dialog";
 import { AgentMcpTools } from "@/components/agents/agent-mcp-tools";
 import { Button } from "@/components/ui/button";
@@ -109,6 +110,11 @@ export function AgentProfile({ agentId }: { agentId: string }) {
        * kann ohne den ganzen CopilotKit-Turn mitzutesten. */}
       <section className="grid gap-2">
         <AgentMcpTools agentId={agentId} />
+      </section>
+
+      {/* Stufe 2 Phase E+F: Engine-Auswahl (Lokal / CLI / Browser-Profile). */}
+      <section className="grid gap-2">
+        <AgentEnginePanel agentId={agentId} />
       </section>
 
       {/* Stufe 1.2: Browser-Tab-Lifecycle + persistentes Profil.
