@@ -2,7 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { AgentBrowserPanel } from "@/components/agents/agent-browser-panel";
+import { AgentCliStreamPanel } from "@/components/agents/agent-cli-stream-panel";
 import { AgentDialog } from "@/components/agents/agent-dialog";
+import { AgentMcpTools } from "@/components/agents/agent-mcp-tools";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentQueryOptions } from "@/lib/agents/queries";
@@ -99,14 +102,34 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </p>
       </section>
 
+      {/* Stufe 1: dieser Agent ist sein eigener MCP-Server. Die
+       * Sektion zeigt, welche Tools er anderen Agents / Tools anbietet,
+       * und erlaubt einen Klick-Test, damit man den Pfad verifizieren
+       * kann ohne den ganzen CopilotKit-Turn mitzutesten. */}
+      <section className="grid gap-2">
+        <AgentMcpTools agentId={agentId} />
+      </section>
+
+      {/* Stufe 1.2: Browser-Tab-Lifecycle + persistentes Profil.
+       * Stufe 2 ersetzt den Stub durch die echte Playwright-Engine. */}
+      <section className="grid gap-2">
+        <AgentBrowserPanel agentId={agentId} />
+      </section>
+
+      {/* Stufe 1.3: Live-Stream der CLI-Runs (Antigravity/Codex/Claude).
+       * Der User sieht jedes Token, jeden Tool-Call in Echtzeit. */}
+      <section className="grid gap-2">
+        <AgentCliStreamPanel agentId={agentId} />
+      </section>
+
       <div className="flex flex-col gap-2">
         <Button
           className="w-full text-sm!"
           onClick={() =>
-            void navigate({ search: { agent: agentId }, to: "/channel/new" })
+            void navigate({ params: { agentId }, to: "/agent/$agentId" })
           }
         >
-          Start new channel
+          Gespräch öffnen
         </Button>
         <Button
           className="w-full text-sm!"

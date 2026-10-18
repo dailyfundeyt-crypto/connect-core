@@ -32,6 +32,14 @@ import {
   openBrowserTab,
   performBrowserAction,
 } from "./agent-browser";
+import { isCliKind, runCli } from "./cli-model";
+import {
+  type CliRunEvent,
+  abortAgentCliRun,
+  lastAgentCliRun,
+  startAgentCliRun,
+  subscribeAgentCliRun,
+} from "./agent-cli-stream";
 import {
   type AgentMcpContext,
   type AgentMcpToolResult,
@@ -213,6 +221,79 @@ export function createAgentMcpRoutes(
   });
 
   /**
+   * Stufe 1.3: Live-SSE-Stream eines CLI-Runs (Antigravity/Codex/Claude).
+   *
+   * Body: JSON mit `provider` ("antigravity" | "codex" | "claude"),
+   * `model`, `prompt`, `allowWrite?`. Antwort: `text/event-stream` —
+   * jeder Run-Event wird als SSE-Event rausgeschrieben.
+   *
+   * Ablauf:
+   *   1. Wir registrieren den Run unter `runId`.
+   *   2. Wir schicken `event: started` mit `{ runId }`.
+   *   3. Wir pumpen jedes `text`/`error`/`usage`-Event als
+   *      `event: delta` (mit `text` oder `error` im JSON).
+   *   4. Wir schicken `event: end` mit der finalen Meta (fullText, status).
+   *
+   * Query `?runId=...` an einen bereits laufenden Run **subscribed** nur
+   * (kein neuer Run). Das ist nützlich, wenn der Client reconnectet
+   * oder einen zweiten Tab offen hat.
+   */
+  routes.post("/:agentId/cli/stream", async (context) => {
+    const agentId = context.req.param("agentId");
+    const agent = await deps.lookupAgent(agentId);
+    if (!agent) return context.json({ error: "Agent nicht gefunden." }, 404);
+
+    const body = (await context.req.json().catch(() => ({}))) as {
+      provider?: unknown;
+      model?: unknown;
+      prompt?: unknown;
+      allowWrite?: unknown;
+      runId?: unknown;
+    };
+    // 1) Re-Subscribe auf laufenden Run
+    if (typeof body.runId === "string" && body.runId) {
+      return createCliSseResponse(agentId, body.runId);
+    }
+    // 2) Neuen Run starten
+    const provider = typeof body.provider === "string" ? body.provider : "";
+    if (!isCliKind(provider)) {
+      return context.json({ error: `Unbekannter Provider: ${provider}` }, 400);
+    }
+    const prompt = typeof body.prompt === "string" ? body.prompt : "";
+    if (!prompt.trim()) {
+      return context.json({ error: "Argument 'prompt' ist erforderlich." }, 400);
+    }
+    const model = typeof body.model === "string" && body.model.length > 0 ? body.model : "auto";
+    const allowWrite = Boolean(body.allowWrite);
+    const { runId } = startAgentCliRun({
+      agentId,
+      provider,
+      model,
+      prompt,
+      allowWrite,
+    });
+    return createCliSseResponse(agentId, runId);
+  });
+
+  /** Letzten abgeschlossenen Run für diesen Agent abrufen (60s-Cache). */
+  routes.get("/:agentId/cli/last", async (context) => {
+    const agentId = context.req.param("agentId");
+    const last = lastAgentCliRun(agentId);
+    if (!last) return context.json({ ok: false, error: "Kein Run im Cache." }, 404);
+    return context.json({ ok: true, run: last });
+  });
+
+  /** Laufenden Run abbrechen. */
+  routes.post("/:agentId/cli/abort", async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => ({}))) as { runId?: unknown };
+    const runId = typeof body.runId === "string" ? body.runId : "";
+    if (!runId) return context.json({ error: "runId fehlt." }, 400);
+    const aborted = abortAgentCliRun(agentId, runId);
+    return context.json({ ok: aborted });
+  });
+
+  /**
    * Kurzprofil des Agenten — was andere Agents über ihn wissen sollten.
    */
   routes.get("/:agentId/profile", async (context) => {
@@ -363,3 +444,99 @@ export function createAgentMcpRoutes(
 
   return routes;
 }
+
+/**
+ * SSE-Response für einen laufenden oder frisch gestarteten CLI-Run.
+ * Wir pumpen jeden `CliRunEvent` als SSE-Event raus:
+ *   - `event: started` mit `{ runId, meta }` (nur bei neuem Run)
+ *   - `event: meta` mit dem aktuellen Run-Meta (immer)
+ *   - `event: delta` mit `{ text?: string, error?: string }` pro Run-Event
+ *   - `event: end` mit der finalen Meta (immer)
+ *
+ * Der Stream endet, sobald der Run `status !== "running"` ist oder der
+ * Client disconnected (`req.raw.signal.aborted`).
+ */
+function createCliSseResponse(agentId: string, runId: string): Response {
+  const encoder = new TextEncoder();
+  let interval: ReturnType<typeof setInterval> | null = null;
+  let abortCleanup: (() => void) | null = null;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      // 1) Erste Meta
+      const initial = lastAgentCliRun(agentId);
+      controller.enqueue(
+        encoder.encode(
+          `event: meta\ndata: ${JSON.stringify({ runId, meta: initial ?? null })}\n\n`,
+        ),
+      );
+      // 2) Subscriben
+      let closed = false;
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (interval) clearInterval(interval);
+        interval = null;
+        try {
+          controller.close();
+        } catch {
+          /* schon zu */
+        }
+      };
+      abortCleanup = cleanup;
+      // Heartbeat alle 15s — verhindert Proxy-Timeouts
+      interval = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          cleanup();
+        }
+      }, 15_000);
+      try {
+        for await (const event of subscribeAgentCliRun(agentId, runId)) {
+          if (closed) break;
+          const payload = encodeRunEvent(event);
+          if (payload) controller.enqueue(encoder.encode(payload));
+          if (event.kind === "done") break;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        controller.enqueue(
+          encoder.encode(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`),
+        );
+      } finally {
+        cleanup();
+      }
+    },
+    cancel() {
+      abortCleanup?.();
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store",
+      "x-accel-buffering": "no",
+    },
+  });
+}
+
+function encodeRunEvent(event: CliRunEvent): string | null {
+  if (event.kind === "meta") {
+    return `event: meta\ndata: ${JSON.stringify({ meta: event.meta })}\n\n`;
+  }
+  if (event.kind === "done") {
+    return `event: end\ndata: ${JSON.stringify({ meta: event.meta })}\n\n`;
+  }
+  const inner = event.event;
+  const payload: { text?: string; error?: string; usage?: { input: number; output: number } } = {};
+  if (inner.text) payload.text = inner.text;
+  if (inner.error) payload.error = inner.error;
+  if (inner.usage) payload.usage = inner.usage;
+  if (Object.keys(payload).length === 0) return null;
+  return `event: delta\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
+// Re-export the runCli helper so mcp-tools.ts can stream Ant-Tool-Runs
+// in the future (Stufe 1.1: echter Turn-Runner). Imported by tools.
+export { runCli };

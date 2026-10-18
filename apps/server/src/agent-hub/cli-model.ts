@@ -186,7 +186,7 @@ type CliEvent = { text?: string; error?: string; usage?: { input: number; output
  * nicht — die Sandbox-Auswahl läuft über `agy --sandbox on|off`. Wir
  * lassen es weg und übergeben das Verzeichnis via `-C`.
  */
-function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean): string[] {
+function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean, prompt: string): string[] {
   if (kind === "codex") {
     return ["exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--color", "never", "--sandbox", allowWrite ? "workspace-write" : "read-only", "-m", model, "-C", cwd, "-"];
   }
@@ -203,18 +203,32 @@ function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean)
       allowWrite ? "Read Glob Grep WebFetch WebSearch Edit Write" : "Read Glob Grep WebFetch WebSearch",
     ];
   }
-  // antigravity: `-p` für non-interactive, `--output-format stream-json`
-  // für zeilenweise Events. Modell ist optional — `"auto"` lässt die CLI
-  // ihre Default-Wahl treffen, dann übergeben wir `--model` gar nicht.
-  const args = ["-p", "--output-format", "stream-json", "--no-color", "-C", cwd];
-  if (model && model !== "auto") {
-    args.push("--model", model);
-  }
+  // antigravity: `-p` braucht zwingend ein Argument direkt danach
+  // (agy bricht sonst mit "flag needs an argument: -p" ab). Wir bauen
+  // deshalb `-p` und den Prompt als zusammenhängendes Paar ein. **Wichtig:**
+  // `-p` darf **nicht** am Anfang stehen, weil agy das nächste Argument
+  // als Prompt-Text interpretiert — und das ist `--output-format`, was
+  // agy dann als Prompt-String verschluckt (Bug in einer früheren Version).
+  //
+  // Reihenfolge: alle Flags zuerst, `-p <prompt>` als Letztes. Der Prompt
+  // wird **nicht** über stdin gegeben — agy will ihn als Argument.
+  //
+  // Antigravity hat KEIN `--no-color`-Flag und KEIN `-C`-Flag (cwd wird
+  // via `--add-dir` oder schlicht via `cwd` des Prozesses gesetzt). Wir
+  // nutzen den `cwd`-Parameter von `spawn()` für das Arbeitsverzeichnis
+  // und übergeben keine Flags, die agy nicht kennt.
+  //
+  // Für Write-Tasks setzen wir `--dangerously-skip-permissions` (agy
+  // hat keinen `--sandbox`-Toggle für `-p`-Mode; das `--sandbox`-Flag
+  // existiert zwar, ist aber für interaktive Sessions).
+  const args = [
+    "--output-format",
+    "stream-json",
+  ];
   if (allowWrite) {
-    // Antigravity hat kein direktes "write-only" Tool-Filter; aber
-    // `--sandbox on` ist die sichere Variante (passt zu `request-review`).
-    args.push("--sandbox", "on");
+    args.push("--dangerously-skip-permissions");
   }
+  args.push("-p", prompt);
   return args;
 }
 
@@ -271,30 +285,51 @@ function parseLine(kind: CliKind, line: string, state: { sawDelta: boolean; retr
 
 /**
  * Antigravity-Stream-JSON unterscheidet sich von Claude/Codex:
- *   - `assistant` (oder `text`) enthält das, was der Agent sagt
- *   - `tool_use` zeigt, dass der Agent ein Tool aufgerufen hat (z.B. den
- *     Browser). Wir geben das als kleinen Hinweis zurück, ohne es zu
- *     parsen — die UI kann entscheiden, ob sie es anzeigt.
- *   - `error` ist entweder ein Authorization-Fehler (`"not signed in"`)
- *     oder ein Server-Fehler
+ *   - `event: "step_update"` mit `step_type: "agent_response"` und
+ *     `text_delta` enthält das, was der Agent sagt
+ *   - `event: "init"` zeigt zu Beginn die verfügbaren Tools (interessant
+ *     für die UI als Hinweis, dass Browser-Use verfügbar ist)
+ *   - `event: "result"` ist die Schluss-Nachricht mit `response` und
+ *     `usage` (input_tokens, output_tokens, thinking_tokens, …)
  *
  * Wir halten uns an das, was die Doku verspricht, und fallen auf
- * { text: roher JSON } zurück, wenn das Format mal nicht passt.
+ * `{ text: roher JSON }` zurück, wenn das Format mal nicht passt.
  */
 function parseAntigravityLine(event: Record<string, unknown>, state: { sawDelta: boolean; retries: number }): CliEvent | null {
-  const type = event.type as string | undefined;
-  // Eigentliche Antwort
-  if (type === "assistant" || type === "text") {
-    const text = String(event.text ?? event.content ?? "");
-    if (text) {
-      state.sawDelta = true;
-      return { text };
+  // Antigravity-Output hat `event: "..."` als Top-Level, nicht `type: "..."`.
+  // Wir akzeptieren beides, falls eine ältere CLI-Version noch das alte
+  // Format liefert.
+  const type = (event.event ?? event.type) as string | undefined;
+  // Init-Event: Tools-Liste. Wir geben einen kurzen Hinweis zurück, der
+  // in der Stream-UI angezeigt werden kann.
+  if (type === "init") {
+    const init = event.init as { tools?: string[]; permission_mode?: string } | undefined;
+    const tools = Array.isArray(init?.tools) ? init.tools : [];
+    if (tools.length > 0) {
+      const browserTools = tools.filter((t) => t.startsWith("browser_") || t === "open_browser_url" || t === "click_browser_pixel" || t === "capture_browser_screenshot" || t === "read_browser_page");
+      const note = browserTools.length > 0
+        ? `\n[Antigravity bereit — Browser-Tools: ${browserTools.length}]\n`
+        : `\n[Antigravity bereit — ${tools.length} Tools]\n`;
+      return { text: note };
     }
+    return null;
   }
-  // Tool-Aufruf (z.B. Browser-Open, Klick, Form-Fill) — Hinweis für die UI
-  if (type === "tool_use" || type === "tool_call") {
-    const name = String(event.name ?? event.tool ?? "tool");
-    return { text: `\n[Tool: ${name}]\n` };
+  // step_update mit agent_response → Text-Delta
+  if (type === "step_update") {
+    const step = event.step_update as { step_type?: string; text_delta?: string; state?: string } | undefined;
+    if (step?.step_type === "agent_response" && step.text_delta) {
+      state.sawDelta = true;
+      return { text: step.text_delta };
+    }
+    // Step-Wechsel: kurze Markierung
+    if (step?.step_type === "user_input" && step.state === "DONE") {
+      return null;
+    }
+    if (step?.step_type === "agent_response" && step.state === "ACTIVE" && !step.text_delta) {
+      // Agent beginnt zu antworten
+      return null;
+    }
+    return null;
   }
   // Modell-Retry
   if (type === "system" && event.subtype === "api_retry") {
@@ -318,10 +353,27 @@ function parseAntigravityLine(event: Record<string, unknown>, state: { sawDelta:
     }
     return { error: message, fatal: true };
   }
-  // Schluss-Event mit Usage
+  // Schluss-Event mit Response + Usage
   if (type === "result" || type === "done" || type === "complete") {
-    const u = event.usage as { input_tokens?: number; output_tokens?: number } | undefined;
-    const usage = u ? { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0 } : undefined;
+    const result = (event.result ?? event) as {
+      response?: string;
+      usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number; total_tokens?: number };
+      duration_seconds?: number;
+      num_turns?: number;
+    };
+    const u = result.usage;
+    const usage = u
+      ? {
+          input: u.input_tokens ?? 0,
+          output: (u.output_tokens ?? 0) + (u.thinking_tokens ?? 0),
+        }
+      : undefined;
+    // Wenn der Stream schon Deltas geliefert hat, ist response nur ein
+    // Wiederhol-Confirm. Sonst schicken wir den response-Text.
+    if (!state.sawDelta && typeof result.response === "string" && result.response) {
+      state.sawDelta = true;
+      return { text: result.response, ...(usage ? { usage } : {}) };
+    }
     return usage ? { usage } : null;
   }
   return null;
@@ -347,7 +399,7 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
     }
   }
   const cwd = agentWorkdir(options.agentId);
-  const args = argsFor(options.kind, options.model, cwd, !!options.allowWrite);
+  const args = argsFor(options.kind, options.model, cwd, !!options.allowWrite, options.prompt);
   // Antigravity ist ein Go-Binary und wird direkt aufgerufen; Codex und
   // Claude sind Node-Skripte, also läuft das über `node entry.js`.
   const cmd = options.kind === "antigravity" ? entry : nodeBinary();
@@ -411,7 +463,14 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
   }, RUN_TIMEOUT_MS);
   const onAbort = () => killTree(child);
   options.signal?.addEventListener("abort", onAbort, { once: true });
-  child.stdin?.end(options.prompt, "utf8");
+  // Antigravity bekommt den Prompt als `-p "<prompt>"`-Argument; Codex und
+  // Claude lesen ihn aus stdin. Stdin für Antigravity schließen wir
+  // sofort, damit agy nicht auf eine EOF wartet.
+  if (options.kind === "antigravity") {
+    child.stdin?.end();
+  } else {
+    child.stdin?.end(options.prompt, "utf8");
+  }
 
   let produced = false;
   let lastError: string | null = null;
