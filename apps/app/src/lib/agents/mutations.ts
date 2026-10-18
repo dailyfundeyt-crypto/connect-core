@@ -22,6 +22,13 @@ export type AgentInput = {
     model: string;
     allowWrite: boolean;
   };
+  /** Stufe 2 Phase C: Browser-Profile-Engine. */
+  browserProfile?: {
+    kind: "browser_profile";
+    startUrl: string;
+    profileName: string;
+    allowWrite: boolean;
+  };
 };
 
 /** The sentence for every write here, since they all fail the same way to a reader. */

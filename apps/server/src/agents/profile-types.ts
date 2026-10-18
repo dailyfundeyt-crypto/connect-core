@@ -23,6 +23,26 @@ export type CliEngine = {
   allowWrite: boolean;
 };
 
+/**
+ * Browser-Profile-Engine (Stufe 2 Phase C).
+ *
+ * Ein Agent kann ein Helium-Browser-Profil haben, das beim Öffnen
+ * automatisch eine Start-URL lädt. Das Profil ist persistent (Cookies,
+ * LocalStorage, etc.) und der Agent kann den Browser nutzen.
+ */
+export type BrowserProfileEngine = {
+  kind: "browser_profile";
+  /** URL die beim Öffnen des Agent-Browsers automatisch geladen wird. */
+  startUrl: string;
+  /** Name des Browser-Profils im %LOCALAPPDATA%/Helium/profiles/-Verzeichnis. */
+  profileName: string;
+  /** Ob der Browser schreibend agieren darf (Formulare ausfüllen, etc.). */
+  allowWrite: boolean;
+};
+
+/**Union aller Engine-Typen. */
+export type AgentEngine = CliEngine | BrowserProfileEngine;
+
 export type AgentProfile = {
   id: string;
   name: string;
@@ -45,8 +65,8 @@ export type AgentProfile = {
    * it. A surface only needs to know whether to offer "generate" or "rotate".
    */
   hasCallbackToken: boolean;
-  /** CLI-Engine-Konfiguration (Stufe 1.1+). */
-  engine: CliEngine | null;
+  /** Engine-Konfiguration (Stufe 1.1+): CLI oder Browser-Profile. */
+  engine: AgentEngine | null;
 };
 
 export type CreateAgentInput = Pick<
@@ -73,4 +93,9 @@ export type CreateAgentInput = Pick<
    * nutzt der Agent das lokale Modell (ohne CLI).
    */
   cliEngine?: CliEngine;
+  /**
+   * Browser-Profile-Engine (Stufe 2 Phase C). Optional: wenn nicht gesetzt,
+   * hat der Agent kein eigenes Browser-Profil.
+   */
+  browserProfile?: BrowserProfileEngine;
 };

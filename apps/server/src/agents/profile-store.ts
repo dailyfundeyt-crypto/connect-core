@@ -20,6 +20,7 @@ import {
 import { canManageAgent } from "./profile-policy";
 import type {
   AgentActor,
+  AgentEngine,
   AgentProfile,
   CreateAgentInput,
 } from "./profile-types";
@@ -183,22 +184,39 @@ function mapProfile(
     // wipe one by saving an unrelated edit; showing the value would put a secret in a screenshot.
     hasAuth: authFromConfiguration(row.configuration) !== null,
     /** CLI-Engine-Konfiguration (Stufe 1.1+). */
-    engine: cliEngineOf(row.configuration),
+    engine: engineOf(row.configuration),
   };
 }
 
-/** Liest die CLI-Engine-Konfiguration aus der JSONB-configuration. */
-function cliEngineOf(configuration: unknown): AgentProfile["engine"] {
+/** Liest die CLI/Browser-Engine-Konfiguration aus der JSONB-configuration. */
+function engineOf(configuration: unknown): AgentEngine | null {
   if (!configuration || typeof configuration !== "object") return null;
-  const cli = (configuration as Record<string, unknown>).cli;
-  if (!cli || typeof cli !== "object") return null;
-  const obj = cli as Record<string, unknown>;
-  const kind = obj.kind;
-  if (typeof kind !== "string") return null;
-  if (kind !== "antigravity" && kind !== "codex" && kind !== "claude") return null;
-  const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
-  const allowWrite = obj.allowWrite === true;
-  return { kind, model, allowWrite };
+  const cfg = configuration as Record<string, unknown>;
+  // Stufe 1.1: CLI-Engine in configuration.cli
+  const cli = cfg.cli;
+  if (cli && typeof cli === "object") {
+    const obj = cli as Record<string, unknown>;
+    const kind = obj.kind;
+    if (typeof kind === "string") {
+      if (kind === "antigravity" || kind === "codex" || kind === "claude") {
+        const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
+        const allowWrite = obj.allowWrite === true;
+        return { kind, model, allowWrite };
+      }
+    }
+  }
+  // Stufe 2 Phase C: Browser-Profile in configuration.browserProfile
+  const bp = cfg.browserProfile;
+  if (bp && typeof bp === "object") {
+    const obj = bp as Record<string, unknown>;
+    if (obj.kind === "browser_profile") {
+      const startUrl = typeof obj.startUrl === "string" ? obj.startUrl : "";
+      const profileName = typeof obj.profileName === "string" ? obj.profileName : "default";
+      const allowWrite = obj.allowWrite === true;
+      return { kind: "browser_profile", startUrl, profileName, allowWrite };
+    }
+  }
+  return null;
 }
 
 /**
@@ -452,6 +470,8 @@ export function createAgentProfileStore(
               ...endpoint,
               // Stufe 1.1: CLI-Engine-Konfiguration.
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
+              // Stufe 2 Phase C: Browser-Profile.
+              ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
               ...(input.auth && vault
                 ? {
                     auth: await storeAgentAuth({
@@ -486,6 +506,7 @@ export function createAgentProfileStore(
             configuration: {
               systemPrompt,
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
+              ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
             },
           });
         } else {
@@ -565,6 +586,8 @@ export function createAgentProfileStore(
             // Stufe 1.1: CLI-Engine. Wenn input.cliEngine gesetzt ist, wird
             // die Engine überschrieben. Wenn nicht, bleibt die vorherige erhalten.
             ...(input.cliEngine ? { cli: input.cliEngine } : {}),
+            // Stufe 2 Phase C: Browser-Profile-Engine.
+            ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
             ...(input.auth && vault
               ? {
                   auth: await storeAgentAuth({

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AgentBrowserPanel } from "@/components/agents/agent-browser-panel";
 import { AgentCliStreamPanel } from "@/components/agents/agent-cli-stream-panel";
+import { AgentAppInstancePanel } from "@/components/agents/agent-app-instance-panel";
 import { AgentDialog } from "@/components/agents/agent-dialog";
 import { AgentMcpTools } from "@/components/agents/agent-mcp-tools";
 import { Button } from "@/components/ui/button";
@@ -121,6 +122,20 @@ export function AgentProfile({ agentId }: { agentId: string }) {
       <section className="grid gap-2">
         <AgentCliStreamPanel agentId={agentId} />
       </section>
+
+      {/* Stufe 2 Phase B: App-Instanzen (Codex, Ottermind, Manus, etc.).
+       * Der Agent kann externe Apps mit Account-Slots verwalten. */}
+      <section className="grid gap-2">
+        <AgentAppInstancePanel agentId={agentId} />
+      </section>
+
+      {/* Stufe 2 Phase C: Browser-Profile-Engine.
+       * Wenn der Agent die Browser-Profile-Engine nutzt, zeige das Profil. */}
+      {profile.engine?.kind === "browser_profile" && (
+        <section className="grid gap-2">
+          <AgentBrowserPanel agentId={agentId} />
+        </section>
+      )}
 
       <div className="flex flex-col gap-2">
         <Button

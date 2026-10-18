@@ -45,6 +45,12 @@ export const agentFormSchema = z.object({
   cliEngineKind: z.enum(["antigravity", "codex", "claude"]).nullable(),
   cliEngineModel: z.string().max(80),
   cliEngineAllowWrite: z.boolean(),
+  /**
+   * Stufe 2 Phase C: Browser-Profile-Engine.
+   */
+  browserProfileEnabled: z.boolean(),
+  browserProfileStartUrl: z.string().url("Ungültige URL").or(z.literal("")).max(500),
+  browserProfileAllowWrite: z.boolean(),
 });
 
 export type AgentFormValues = z.infer<typeof agentFormSchema>;
@@ -59,6 +65,9 @@ export const emptyAgentForm: AgentFormValues = {
   cliEngineKind: null,
   cliEngineModel: "auto",
   cliEngineAllowWrite: false,
+  browserProfileEnabled: false,
+  browserProfileStartUrl: "",
+  browserProfileAllowWrite: false,
 };
 
 /** Convert form values to API input; omit an empty key so editing preserves the current credential. */
@@ -78,6 +87,17 @@ export function agentInputFrom(values: AgentFormValues) {
             kind: values.cliEngineKind,
             model: values.cliEngineModel || "auto",
             allowWrite: values.cliEngineAllowWrite,
+          },
+        }
+      : {}),
+    // Stufe 2 Phase C: Browser-Profile-Engine.
+    ...(values.browserProfileEnabled && values.browserProfileStartUrl
+      ? {
+          browserProfile: {
+            kind: "browser_profile" as const,
+            startUrl: values.browserProfileStartUrl,
+            profileName: "",
+            allowWrite: values.browserProfileAllowWrite,
           },
         }
       : {}),
