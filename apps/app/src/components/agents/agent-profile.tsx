@@ -6,6 +6,7 @@ import { AgentBrowserPanel } from "@/components/agents/agent-browser-panel";
 import { AgentCliStreamPanel } from "@/components/agents/agent-cli-stream-panel";
 import { AgentAppInstancePanel } from "@/components/agents/agent-app-instance-panel";
 import { AgentEnginePanel } from "@/components/agents/agent-engine-panel";
+import { AgentWorkspace } from "@/components/agents/agent-workspace";
 import { AgentDialog } from "@/components/agents/agent-dialog";
 import { AgentMcpTools } from "@/components/agents/agent-mcp-tools";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,8 @@ function ProfileSkeleton() {
 export function AgentProfile({ agentId }: { agentId: string }) {
   /** The full dialog, opened over the chat rather than navigating away from it. */
   const [managing, setManaging] = useState(false);
+  /** Stufe 2 Phase H: Workspace-Modus (3-Spalten) wenn Engine konfiguriert. */
+  const [useWorkspace, setUseWorkspace] = useState(false);
   const navigate = useNavigate();
   const agent = useQuery(agentQueryOptions(agentId));
 
@@ -70,6 +73,25 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   }
 
   const profile = agent.data;
+  const hasEngine = profile.engine !== null;
+
+  if (useWorkspace) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex items-center justify-end border-b border-border bg-card/40 px-4 py-1.5">
+          <Button
+            onClick={() => setUseWorkspace(false)}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Zur Detail-Ansicht
+          </Button>
+        </div>
+        <AgentWorkspace agentId={agentId} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex w-full flex-col gap-6 p-8">
@@ -152,6 +174,15 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         >
           Gespräch öffnen
         </Button>
+        {hasEngine && (
+          <Button
+            className="w-full text-sm!"
+            onClick={() => setUseWorkspace(true)}
+            variant="outline"
+          >
+            Workspace öffnen (3-Spalten)
+          </Button>
+        )}
         <Button
           className="w-full text-sm!"
           onClick={() => setManaging(true)}
