@@ -50,7 +50,13 @@ export const agentFormSchema = z.object({
    * Stufe 2 Phase C: Browser-Profile-Engine.
    */
   browserProfileEnabled: z.boolean(),
-  browserProfileStartUrl: z.string().url("Ungültige URL").or(z.literal("")).max(500),
+  browserProfileStartUrl: z
+    .string()
+    .max(500)
+    .refine(
+      (v) => v === "" || /^https?:\/\//.test(v),
+      "Ungültige URL",
+    ),
   browserProfileAllowWrite: z.boolean(),
   /**
    * Stufe 4: Freebuff-Engine (eigener Block — Modell wird in die
@@ -69,7 +75,13 @@ export const agentFormSchema = z.object({
    * Stufe 3: browser-use Sidecar-Engine.
    */
   browserUseEnabled: z.boolean(),
-  browserUseStartUrl: z.string().url("Ungültige URL").or(z.literal("")).max(500),
+  browserUseStartUrl: z
+    .string()
+    .max(500)
+    .refine(
+      (v) => v === "" || /^https?:\/\//.test(v),
+      "Ungültige URL",
+    ),
   browserUseAllowWrite: z.boolean(),
 });
 
