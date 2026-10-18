@@ -19,6 +19,11 @@
       }
       // localStorage throws in some privacy modes; a theme is not worth taking the app down for.
       try {
+        // One-time migration from the old light startup default. Later choices are preserved.
+        if (window.localStorage.getItem("connect-theme.default-dark.v2") !== "1") {
+          window.localStorage.setItem("connect-theme", "dark");
+          window.localStorage.setItem("connect-theme.default-dark.v2", "1");
+        }
         // Connect Premium: beim ersten Start einmalig auf den dunklen Premium-Look umstellen.
         // Abschalten: localStorage "connect.premium" = "off". Hell/Dunkel bleibt im Menü umschaltbar.
         const premium = window.localStorage.getItem("connect.premium") !== "off";
@@ -27,16 +32,21 @@
           window.localStorage.setItem("connect-theme", "dark");
           window.localStorage.setItem("connect.premium.v1", "1");
         }
-        const dark = window.localStorage.getItem("connect-theme") === "dark";
+        const storedTheme = window.localStorage.getItem("connect-theme");
+        const dark = storedTheme === null || storedTheme === "dark";
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       } catch {}
     </script>
     <style>
-      #connect-public-intro { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #e4e4e7; background: #050506; animation: connect-intro-in 0.3s ease-out 0.6s both; }
-      #connect-public-intro h1 { margin: 0; font-size: 28px; font-weight: 600; }
-      #connect-public-intro p { max-width: 32rem; margin: 0; color: #a1a1aa; line-height: 1.6; font-size: 15px; }
-      #connect-public-intro a { color: #7dd3fc; }
+      /* Public-Intro: kleines Overlay oben links, KEIN Viewport-Block. */
+      /* Früher war `min-height: 100dvh` der Grund, warum User im Lade- */
+      /* Screen stecken blieben, wenn React hängt. Jetzt ist der Intro */
+      /* nur ein dezenter Hinweis in der oberen Ecke, bis React mountet. */
+      #connect-public-intro { position: fixed; top: 16px; left: 16px; max-width: 360px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 16px; text-align: left; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #e4e4e7; background: rgba(9, 9, 11, 0.92); border: 1px solid #27272a; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); z-index: 1; pointer-events: none; animation: connect-intro-in 0.3s ease-out 0.6s both; }
+      #connect-public-intro h1 { margin: 0; font-size: 18px; font-weight: 600; }
+      #connect-public-intro p { max-width: 32rem; margin: 0; color: #a1a1aa; line-height: 1.5; font-size: 13px; }
+      #connect-public-intro a { color: #7dd3fc; pointer-events: auto; }
       html.connect-premium, html.connect-premium body { background: #09090b; }
       html.dark #connect-public-intro { color: #e2e8f0; }
       html.dark #connect-public-intro p { color: #94a3b8; }
@@ -48,10 +58,9 @@
     <div id="root">
       <!-- Public intro for visitors and crawlers (Google OAuth branding check). React replaces it on mount. -->
       <div id="connect-public-intro" lang="de">
-        <img src="/brand/connect-logo.png" alt="Connect Logo" width="56" height="56" />
+        <img src="/brand/connect-logo.png" alt="Connect Logo" width="28" height="28" />
         <h1>Connect</h1>
-        <p>Connect ist ein Arbeitsbereich für KI-Agenten der Kunc GmbH: Firmen, Projekte und Agenten an einem Ort, Chats mit deinen Agenten, gemeinsames Wissen und optional eine verschlüsselte Sicherung in deinem Google Drive. Die Anmeldung erfolgt mit deinem Google-Konto.</p>
-        <p><a href="/sign">Anmelden</a> · <a href="/datenschutz">Datenschutzerklärung</a> · <a href="/nutzungsbedingungen">Nutzungsbedingungen</a></p>
+        <p>Arbeitsbereich für KI-Agenten der Kunc GmbH. <a href="/sign">Anmelden</a></p>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
