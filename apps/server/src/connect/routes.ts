@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
@@ -319,6 +320,29 @@ export function createConnectWorkspaceRoutes(
    * profile (extensions / Web Store). No system-browser fallback — callers
    * must show Connect Desktop when this fails (needsDesktop: true).
    */
+  /**
+   * ProfilmenÃ¼ â€º Connect-Chrome: Browser-Tab-Agenten einschalten. Ist kein Browser mit Connect Sync
+   * verbunden, startet Connect-Chrome (eigenes Connect-Profil, nicht Stefans Helium) mit der Erweiterung.
+   */
+  app.get("/browser-agents", async (context) => {
+    const { agentsEnabled, heliumStatus } = await import("../helium-sync");
+    return context.json({ agentsEnabled: agentsEnabled(), ...heliumStatus() });
+  });
+  app.post("/browser-agents", async (context) => {
+    if (process.env.CONNECT_SERVERLESS === "1") return context.json({ ok: false, error: "Nur in der Connect App am PC." }, 400);
+    const actor = context.get("actor");
+    const body = (await context.req.json().catch(() => null)) as { enabled?: unknown; launch?: unknown } | null;
+    const { agentsEnabled, setAgentsEnabled, extensionLive, heliumStatus } = await import("../helium-sync");
+    setAgentsEnabled(body?.enabled !== false);
+    let launched: { ok: boolean; detail?: string } | null = null;
+    if (agentsEnabled() && !extensionLive() && body?.launch !== false) {
+      const { profileDir } = connectChromeProfileDir(actor.id, "", "default");
+      launched = await launchConnectChrome("about:blank", profileDir);
+      for (let i = 0; i < 20 && !extensionLive(); i++) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return context.json({ ok: true, agentsEnabled: agentsEnabled(), launched: launched?.ok ?? false, launchError: launched && !launched.ok ? launched.detail ?? null : null, ...heliumStatus() });
+  });
+
   app.post("/open-chrome", async (context) => {
     const actor = context.get("actor");
     const body = (await context.req.json().catch(() => null)) as {
@@ -565,8 +589,9 @@ export function createConnectWorkspaceRoutes(
     const actor = context.get("actor");
     const agentId = context.req.query("agentId")?.trim() ?? "";
     const kind = context.req.query("profileKind") === "manus" ? "manus" : "default";
+    const targetId = context.req.query("targetId")?.trim() || undefined;
     const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
-    const shot = await cdpScreenshot(cdpPortFor(profileDir));
+    const shot = await cdpScreenshot(cdpPortFor(profileDir), targetId);
     if (!shot.ok || !shot.bytes) {
       return context.json({ ok: false, error: shot.error ?? "Keine Vorschau." }, 503);
     }
@@ -579,18 +604,157 @@ export function createConnectWorkspaceRoutes(
     });
   });
 
+  /** List only page targets from this agent's isolated Chrome profile. */
+  app.get("/agent-chrome/tabs", async (context) => {
+    const actor = context.get("actor");
+    const agentId = context.req.query("agentId")?.trim() ?? "";
+    const kind = context.req.query("profileKind") === "manus" ? "manus" : "default";
+    const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
+    try {
+      const tabs = await cdpPageTargets(cdpPortFor(profileDir));
+      return context.json({
+        ok: true,
+        tabs: tabs.map(({ id, title, url }) => ({ id, title, url })),
+      });
+    } catch {
+      return context.json({ ok: false, error: "Agent-Browser nicht erreichbar.", tabs: [] }, 503);
+    }
+  });
+
   /** Bring the agent's browser tab to the front (big view "Fenster zeigen"). */
   app.post("/agent-chrome/focus", async (context) => {
     const actor = context.get("actor");
     const body = (await context.req.json().catch(() => null)) as {
       agentId?: unknown;
       profileKind?: unknown;
+      targetId?: unknown;
     } | null;
     const agentId = typeof body?.agentId === "string" ? body.agentId.trim() : "";
     const kind = body?.profileKind === "manus" ? "manus" : "default";
+    const targetId = typeof body?.targetId === "string" ? body.targetId.trim() : undefined;
     const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
-    const res = await cdpCall(cdpPortFor(profileDir), "Page.bringToFront", {});
+    const res = await cdpCall(cdpPortFor(profileDir), "Page.bringToFront", {}, targetId);
     return context.json(res.ok ? { ok: true } : { ok: false, error: res.error }, res.ok ? 200 : 503);
+  });
+
+  /** Explicit, structured input forwarding for the user-controlled agent browser view. */
+  app.post("/agent-chrome/control", async (context) => {
+    const actor = context.get("actor");
+    const body = (await context.req.json().catch(() => null)) as {
+      agentId?: unknown;
+      profileKind?: unknown;
+      targetId?: unknown;
+      action?: unknown;
+      x?: unknown;
+      y?: unknown;
+      button?: unknown;
+      clickCount?: unknown;
+      deltaX?: unknown;
+      deltaY?: unknown;
+      text?: unknown;
+      key?: unknown;
+      code?: unknown;
+      modifiers?: unknown;
+      url?: unknown;
+    } | null;
+    const agentId = typeof body?.agentId === "string" ? body.agentId.trim() : "";
+    const targetId = typeof body?.targetId === "string" ? body.targetId.trim() : "";
+    const kind = body?.profileKind === "manus" ? "manus" : "default";
+    const action = body?.action;
+    if (!agentId || !targetId || targetId.length > 128) {
+      return context.json({ ok: false, error: "Agent oder Browser-Tab fehlt." }, 400);
+    }
+    const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
+    const port = cdpPortFor(profileDir);
+
+    if (action === "click" || action === "scroll") {
+      const x = typeof body?.x === "number" ? body.x : NaN;
+      const y = typeof body?.y === "number" ? body.y : NaN;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
+        return context.json({ ok: false, error: "Ungültige Zeigerposition." }, 400);
+      }
+      const metrics = await cdpCall(port, "Page.getLayoutMetrics", {}, targetId);
+      const viewport = (metrics.result?.cssLayoutViewport ?? metrics.result?.layoutViewport) as
+        | { clientWidth?: number; clientHeight?: number }
+        | undefined;
+      const width = Number(viewport?.clientWidth);
+      const height = Number(viewport?.clientHeight);
+      if (!metrics.ok || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return context.json({ ok: false, error: metrics.error ?? "Browser-Ansicht nicht verfügbar." }, 503);
+      }
+      const point = { x: x * width, y: y * height };
+      if (action === "scroll") {
+        const deltaX = typeof body?.deltaX === "number" ? body.deltaX : 0;
+        const deltaY = typeof body?.deltaY === "number" ? body.deltaY : 0;
+        if (Math.abs(deltaX) > 2000 || Math.abs(deltaY) > 2000) {
+          return context.json({ ok: false, error: "Scroll-Schritt ist zu groß." }, 400);
+        }
+        const res = await cdpCall(port, "Input.dispatchMouseEvent", {
+          type: "mouseWheel", ...point, deltaX, deltaY,
+        }, targetId);
+        return context.json(res.ok ? { ok: true } : { ok: false, error: res.error }, res.ok ? 200 : 503);
+      }
+      const button = body?.button === "right" || body?.button === "middle" ? body.button : "left";
+      const clickCount = body?.clickCount === 2 ? 2 : 1;
+      const pressed = await cdpCall(port, "Input.dispatchMouseEvent", {
+        type: "mousePressed", ...point, button, clickCount,
+        buttons: button === "left" ? 1 : button === "right" ? 2 : 4,
+      }, targetId);
+      if (!pressed.ok) return context.json({ ok: false, error: pressed.error }, 503);
+      const released = await cdpCall(port, "Input.dispatchMouseEvent", {
+        type: "mouseReleased", ...point, button, clickCount, buttons: 0,
+      }, targetId);
+      return context.json(released.ok ? { ok: true } : { ok: false, error: released.error }, released.ok ? 200 : 503);
+    }
+
+    if (action === "text") {
+      const text = typeof body?.text === "string" ? body.text : "";
+      if (!text || text.length > 1000) return context.json({ ok: false, error: "Text fehlt oder ist zu lang." }, 400);
+      const res = await cdpCall(port, "Input.insertText", { text }, targetId);
+      return context.json(res.ok ? { ok: true } : { ok: false, error: res.error }, res.ok ? 200 : 503);
+    }
+
+    if (action === "key") {
+      const key = typeof body?.key === "string" ? body.key : "";
+      const code = typeof body?.code === "string" ? body.code : "";
+      const modifiers = typeof body?.modifiers === "number" ? body.modifiers : 0;
+      const allowedKey = /^[a-zA-Z0-9]$/.test(key) || [
+        "Enter", "Escape", "Tab", "Backspace", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+        "Home", "End", "PageUp", "PageDown", "Space", " ", "Shift", "Control", "Alt", "Meta",
+      ].includes(key) || /^F(?:[1-9]|1[0-2])$/.test(key);
+      if (!allowedKey || !Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15 || code.length > 32) {
+        return context.json({ ok: false, error: "Diese Taste wird nicht unterstützt." }, 400);
+      }
+      const virtualKey = /^[a-zA-Z]$/.test(key)
+        ? key.toUpperCase().charCodeAt(0)
+        : /^[0-9]$/.test(key)
+          ? key.charCodeAt(0)
+          : ({ Enter: 13, Escape: 27, Tab: 9, Backspace: 8, Delete: 46, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34, Space: 32, " ": 32, Shift: 16, Control: 17, Alt: 18, Meta: 91 } as Record<string, number>)[key] ?? (key.startsWith("F") ? 111 + Number(key.slice(1)) : 0);
+      const params = { key: key === "Space" ? " " : key, code: code || key, modifiers, windowsVirtualKeyCode: virtualKey, nativeVirtualKeyCode: virtualKey };
+      const down = await cdpCall(port, "Input.dispatchKeyEvent", { type: "keyDown", ...params }, targetId);
+      if (!down.ok) return context.json({ ok: false, error: down.error }, 503);
+      const up = await cdpCall(port, "Input.dispatchKeyEvent", { type: "keyUp", ...params }, targetId);
+      return context.json(up.ok ? { ok: true } : { ok: false, error: up.error }, up.ok ? 200 : 503);
+    }
+
+    if (action === "navigate") {
+      const rawUrl = typeof body?.url === "string" ? body.url.trim() : "";
+      let parsed: URL;
+      try { parsed = new URL(/^[a-z][a-z\d+.-]*:/i.test(rawUrl) ? rawUrl : `https://${rawUrl}`); }
+      catch { return context.json({ ok: false, error: "Bitte eine gültige Webadresse eingeben." }, 400); }
+      if (!(["http:", "https:"].includes(parsed.protocol) || parsed.href === "about:blank")) {
+        return context.json({ ok: false, error: "Nur Webadressen mit http oder https sind erlaubt." }, 400);
+      }
+      const res = await cdpCall(port, "Page.navigate", { url: parsed.href }, targetId);
+      return context.json(res.ok ? { ok: true } : { ok: false, error: res.error }, res.ok ? 200 : 503);
+    }
+
+    if (action === "reload") {
+      const res = await cdpCall(port, "Page.reload", { ignoreCache: false }, targetId);
+      return context.json(res.ok ? { ok: true } : { ok: false, error: res.error }, res.ok ? 200 : 503);
+    }
+
+    return context.json({ ok: false, error: "Unbekannte Browser-Aktion." }, 400);
   });
 
   return app;
@@ -634,14 +798,28 @@ function cdpPortFor(profileDir: string): number {
 type CdpResult = { ok: boolean; result?: Record<string, unknown>; url?: string; error?: string };
 type CdpShot = { ok: boolean; bytes?: Uint8Array; url?: string; error?: string };
 
-type CdpTarget = { type?: string; url?: string; webSocketDebuggerUrl?: string };
+type CdpTarget = { id?: string; type?: string; title?: string; url?: string; webSocketDebuggerUrl?: string };
 
-async function cdpPageTarget(port: number): Promise<CdpTarget | null> {
+async function cdpPageTargets(port: number): Promise<Array<{ id: string; title: string; url: string }>> {
+  const res = await fetch(`http://127.0.0.1:${port}/json/list`, {
+    signal: AbortSignal.timeout(2000),
+  });
+  if (!res.ok) throw new Error("Agent-Browser nicht erreichbar.");
+  const list = (await res.json()) as CdpTarget[];
+  return list
+    .filter((target): target is CdpTarget & { id: string } => Boolean(target.id && target.type === "page" && target.webSocketDebuggerUrl && !target.url?.startsWith("devtools://")))
+    .map((target) => ({ id: target.id, title: target.title ?? target.url ?? "Neuer Tab", url: target.url ?? "about:blank" }));
+}
+
+async function cdpPageTarget(port: number, targetId?: string): Promise<CdpTarget | null> {
   const res = await fetch(`http://127.0.0.1:${port}/json/list`, {
     signal: AbortSignal.timeout(2000),
   });
   if (!res.ok) return null;
   const list = (await res.json()) as CdpTarget[];
+  if (targetId) {
+    return list.find((target) => target.id === targetId && target.type === "page" && target.webSocketDebuggerUrl) ?? null;
+  }
   return (
     list.find((t) => t.type === "page" && t.webSocketDebuggerUrl && !t.url?.startsWith("devtools://")) ??
     null
@@ -652,10 +830,11 @@ async function cdpCall(
   port: number,
   method: string,
   params: Record<string, unknown>,
+  targetId?: string,
 ): Promise<CdpResult> {
   let target: CdpTarget | null = null;
   try {
-    target = await cdpPageTarget(port);
+    target = await cdpPageTarget(port, targetId);
   } catch {
     return { ok: false, error: `Agent-Browser nicht erreichbar (CDP 127.0.0.1:${port}).` };
   }
@@ -698,8 +877,9 @@ async function cdpCall(
 
 async function cdpScreenshot(
   port: number,
+  targetId?: string,
 ): Promise<CdpShot> {
-  const res = await cdpCall(port, "Page.captureScreenshot", { format: "jpeg", quality: 60 });
+  const res = await cdpCall(port, "Page.captureScreenshot", { format: "jpeg", quality: 60 }, targetId);
   if (!res.ok || !res.result) return { ok: false, error: res.error ?? "CDP-Fehler" };
   const data = typeof res.result.data === "string" ? res.result.data : "";
   if (!data) return { ok: false, error: "Leerer Screenshot." };
@@ -707,6 +887,16 @@ async function cdpScreenshot(
 }
 
 type ChromeLaunch = { ok: true; binary: string } | { ok: false; detail: string };
+
+/** `--load-extension` for Connect Sync when the folder exists (repo extensions/connect-sync). */
+function connectSyncExtensionArgs(): string[] {
+  const candidates = [
+    process.env.CONNECT_SYNC_EXTENSION_DIR?.trim(),
+    "C:\\Users\\Kunc GmbH\\Downloads\\OpenBot-v2-Helium\\extensions\\connect-sync",
+  ].filter((dir): dir is string => Boolean(dir));
+  const found = candidates.find((dir) => existsSync(`${dir}/manifest.json`));
+  return found ? [`--load-extension=${found}`] : [];
+}
 
 async function launchConnectChrome(
   url: string,
@@ -719,6 +909,8 @@ async function launchConnectChrome(
     // CDP for the live preview: loopback only, one port per profile (see cdpPortFor).
     `--remote-debugging-port=${cdpPortFor(profileDir)}`,
     "--remote-debugging-address=127.0.0.1",
+    // Connect Sync: Tabs dieses Browsers an Connect melden (Browser-Tab-Agenten, Mein Helium).
+    ...connectSyncExtensionArgs(),
     "--new-window",
     url,
   ];
@@ -734,28 +926,28 @@ async function launchConnectChrome(
     if (process.platform === "win32") {
       // Bun kills its direct children when the server exits/restarts (bun --watch). Hand the
       // launch to Start-Process so the agent's own browser window survives server restarts.
-      const quoteArg = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
-      const psQuote = (v: string) => `'${v.replace(/'/g, "''")}'`;
+      // PowerShell splittet Argumente mit Leerzeichen falsch, deshalb gehen wir
+      // über cmd.exe mit manuell gequoteten Argumenten. `cmd /c` startet den
+      // Prozess asynchron, das Server-Loop blockt nicht.
+      const cmdQuoted = args
+        .map((a) => (a.includes(" ") || a.includes('"') ? `"${a.replace(/"/g, '\\"')}"` : a))
+        .join(" ");
+      const cmdLine = `start "" "${binary}" ${cmdQuoted}`;
       try {
         const proc = Bun.spawn(
-          [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            `Start-Process -FilePath ${psQuote(binary)} -ArgumentList ${psQuote(args.map(quoteArg).join(" "))}`,
-          ],
-          { stdout: "ignore", stderr: "pipe", stdin: "ignore", windowsHide: true } as Parameters<typeof Bun.spawn>[1],
+          ["cmd.exe", "/d", "/c", cmdLine],
+          {
+            stdout: "ignore",
+            stderr: "pipe",
+            stdin: "ignore",
+            windowsHide: false,
+          } as Parameters<typeof Bun.spawn>[1],
         );
-        const code = await proc.exited;
-        if (code === 0) return { ok: true, binary };
-        let stderr = "";
-        try {
-          stderr = (await new Response(proc.stderr as ReadableStream).text()).trim().slice(0, 240);
-        } catch {
-          /* ignore */
-        }
-        errors.push(`${binary}: Start-Process code ${code}${stderr ? ` — ${stderr}` : ""}`);
+        void proc.exited.catch(() => undefined);
+        // start im cmd.exe detached den Prozess — wir warten kurz, ob es
+        // überhaupt eine Fehlermeldung gab
+        await new Promise((r) => setTimeout(r, 200));
+        return { ok: true, binary };
       } catch (err) {
         errors.push(`${binary}: ${err instanceof Error ? err.message : String(err)}`);
       }
