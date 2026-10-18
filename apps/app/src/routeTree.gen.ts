@@ -10,16 +10,20 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as LocalConnectRouteImport } from './routes/local-connect'
 import { Route as SignRouteImport } from './routes/sign'
 import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
 import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
+import { Route as AuthedFocusRouteImport } from './routes/_authed/focus'
 import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
 import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
+import { Route as AuthedAppBrainRouteImport } from './routes/_authed/_app/brain'
 import { Route as AuthedAppMarketRouteImport } from './routes/_authed/_app/market'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
+import { Route as AuthedAppSocialRouteImport } from './routes/_authed/_app/social'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAdminAuditRouteImport } from './routes/_authed/admin/audit'
 import { Route as AuthedAdminBoundariesRouteImport } from './routes/_authed/admin/boundaries'
@@ -34,6 +38,7 @@ import { Route as AuthedSettingsBrainRouteImport } from './routes/_authed/settin
 import { Route as AuthedSettingsDiagnoseRouteImport } from './routes/_authed/settings/diagnose'
 import { Route as AuthedSettingsDiagnoseCompaniesRouteImport } from './routes/_authed/settings/diagnose-companies'
 import { Route as AuthedSettingsMcpRouteImport } from './routes/_authed/settings/mcp'
+import { Route as AuthedAppAgentAgentIdRouteImport } from './routes/_authed/_app/agent/$agentId'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
 import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/channel/new'
@@ -53,6 +58,11 @@ const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LocalConnectRoute = LocalConnectRouteImport.update({
+  id: '/local-connect',
+  path: '/local-connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignRoute = SignRouteImport.update({
   id: '/sign',
   path: '/sign',
@@ -65,6 +75,11 @@ const AuthedAppRoute = AuthedAppRouteImport.update({
 const AuthedAdminRouteRoute = AuthedAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedFocusRoute = AuthedFocusRouteImport.update({
+  id: '/focus',
+  path: '/focus',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedOnboardingRoute = AuthedOnboardingRouteImport.update({
@@ -87,6 +102,11 @@ const AuthedAppBotRoute = AuthedAppBotRouteImport.update({
   path: '/bot',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppBrainRoute = AuthedAppBrainRouteImport.update({
+  id: '/brain',
+  path: '/brain',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppMarketRoute = AuthedAppMarketRouteImport.update({
   id: '/market',
   path: '/market',
@@ -100,6 +120,11 @@ const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
 const AuthedAppSkillsRoute = AuthedAppSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppSocialRoute = AuthedAppSocialRouteImport.update({
+  id: '/social',
+  path: '/social',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
@@ -173,6 +198,11 @@ const AuthedSettingsMcpRoute = AuthedSettingsMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
   getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
+const AuthedAppAgentAgentIdRoute = AuthedAppAgentAgentIdRouteImport.update({
+  id: '/agent/$agentId',
+  path: '/agent/$agentId',
+  getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
   id: '/agents/',
@@ -256,14 +286,18 @@ const AuthedAdminPluginsKeyToolsToolRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
+  '/local-connect': typeof LocalConnectRoute
   '/sign': typeof SignRoute
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
+  '/focus': typeof AuthedFocusRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/bot': typeof AuthedAppBotRoute
+  '/brain': typeof AuthedAppBrainRoute
   '/market': typeof AuthedAppMarketRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
+  '/social': typeof AuthedAppSocialRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/admin/computers': typeof AuthedAdminComputersRoute
@@ -278,6 +312,7 @@ export interface FileRoutesByFullPath {
   '/settings/mcp': typeof AuthedSettingsMcpRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
+  '/agent/$agentId': typeof AuthedAppAgentAgentIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
   '/company/$companyId': typeof AuthedAppCompanyCompanyIdRoute
@@ -295,12 +330,16 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
+  '/local-connect': typeof LocalConnectRoute
   '/sign': typeof SignRoute
+  '/focus': typeof AuthedFocusRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/bot': typeof AuthedAppBotRoute
+  '/brain': typeof AuthedAppBrainRoute
   '/market': typeof AuthedAppMarketRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
+  '/social': typeof AuthedAppSocialRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/admin/computers': typeof AuthedAdminComputersRoute
@@ -315,6 +354,7 @@ export interface FileRoutesByTo {
   '/settings/mcp': typeof AuthedSettingsMcpRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
+  '/agent/$agentId': typeof AuthedAppAgentAgentIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
   '/company/$companyId': typeof AuthedAppCompanyCompanyIdRoute
@@ -333,15 +373,19 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
+  '/local-connect': typeof LocalConnectRoute
   '/sign': typeof SignRoute
   '/_authed/admin': typeof AuthedAdminRouteRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
+  '/_authed/focus': typeof AuthedFocusRoute
   '/_authed/onboarding': typeof AuthedOnboardingRoute
   '/_authed/_app/bot': typeof AuthedAppBotRoute
+  '/_authed/_app/brain': typeof AuthedAppBrainRoute
   '/_authed/_app/market': typeof AuthedAppMarketRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
+  '/_authed/_app/social': typeof AuthedAppSocialRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
   '/_authed/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/_authed/admin/computers': typeof AuthedAdminComputersRoute
@@ -357,6 +401,7 @@ export interface FileRoutesById {
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+  '/_authed/_app/agent/$agentId': typeof AuthedAppAgentAgentIdRoute
   '/_authed/_app/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/_authed/_app/channel/new': typeof AuthedAppChannelNewRoute
   '/_authed/_app/company/$companyId': typeof AuthedAppCompanyCompanyIdRoute
@@ -376,14 +421,18 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/local-connect'
     | '/sign'
     | '/admin'
     | '/settings'
+    | '/focus'
     | '/onboarding'
     | '/bot'
+    | '/brain'
     | '/market'
     | '/routines'
     | '/skills'
+    | '/social'
     | '/admin/audit'
     | '/admin/boundaries'
     | '/admin/computers'
@@ -398,6 +447,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/admin/'
     | '/settings/'
+    | '/agent/$agentId'
     | '/channel/$channelId'
     | '/channel/new'
     | '/company/$companyId'
@@ -415,12 +465,16 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/local-connect'
     | '/sign'
+    | '/focus'
     | '/onboarding'
     | '/bot'
+    | '/brain'
     | '/market'
     | '/routines'
     | '/skills'
+    | '/social'
     | '/admin/audit'
     | '/admin/boundaries'
     | '/admin/computers'
@@ -435,6 +489,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/admin'
     | '/settings'
+    | '/agent/$agentId'
     | '/channel/$channelId'
     | '/channel/new'
     | '/company/$companyId'
@@ -452,15 +507,19 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authed'
+    | '/local-connect'
     | '/sign'
     | '/_authed/admin'
     | '/_authed/settings'
     | '/_authed/_app'
+    | '/_authed/focus'
     | '/_authed/onboarding'
     | '/_authed/_app/bot'
+    | '/_authed/_app/brain'
     | '/_authed/_app/market'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
+    | '/_authed/_app/social'
     | '/_authed/admin/audit'
     | '/_authed/admin/boundaries'
     | '/_authed/admin/computers'
@@ -476,6 +535,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/'
     | '/_authed/admin/'
     | '/_authed/settings/'
+    | '/_authed/_app/agent/$agentId'
     | '/_authed/_app/channel/$channelId'
     | '/_authed/_app/channel/new'
     | '/_authed/_app/company/$companyId'
@@ -494,6 +554,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
+  LocalConnectRoute: typeof LocalConnectRoute
   SignRoute: typeof SignRoute
 }
 
@@ -504,6 +565,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/local-connect': {
+      id: '/local-connect'
+      path: '/local-connect'
+      fullPath: '/local-connect'
+      preLoaderRoute: typeof LocalConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign': {
@@ -525,6 +593,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AuthedAdminRouteRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/focus': {
+      id: '/_authed/focus'
+      path: '/focus'
+      fullPath: '/focus'
+      preLoaderRoute: typeof AuthedFocusRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/onboarding': {
@@ -555,6 +630,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppBotRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/brain': {
+      id: '/_authed/_app/brain'
+      path: '/brain'
+      fullPath: '/brain'
+      preLoaderRoute: typeof AuthedAppBrainRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/market': {
       id: '/_authed/_app/market'
       path: '/market'
@@ -574,6 +656,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/skills'
       preLoaderRoute: typeof AuthedAppSkillsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/social': {
+      id: '/_authed/_app/social'
+      path: '/social'
+      fullPath: '/social'
+      preLoaderRoute: typeof AuthedAppSocialRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/admin/': {
@@ -673,6 +762,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/mcp'
       preLoaderRoute: typeof AuthedSettingsMcpRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
+    }
+    '/_authed/_app/agent/$agentId': {
+      id: '/_authed/_app/agent/$agentId'
+      path: '/agent/$agentId'
+      fullPath: '/agent/$agentId'
+      preLoaderRoute: typeof AuthedAppAgentAgentIdRouteImport
+      parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/agents/': {
       id: '/_authed/_app/agents/'
@@ -843,10 +939,13 @@ const AuthedSettingsRouteRouteWithChildren =
 
 interface AuthedAppRouteChildren {
   AuthedAppBotRoute: typeof AuthedAppBotRoute
+  AuthedAppBrainRoute: typeof AuthedAppBrainRoute
   AuthedAppMarketRoute: typeof AuthedAppMarketRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
+  AuthedAppSocialRoute: typeof AuthedAppSocialRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
+  AuthedAppAgentAgentIdRoute: typeof AuthedAppAgentAgentIdRoute
   AuthedAppChannelChannelIdRoute: typeof AuthedAppChannelChannelIdRoute
   AuthedAppChannelNewRoute: typeof AuthedAppChannelNewRoute
   AuthedAppCompanyCompanyIdRoute: typeof AuthedAppCompanyCompanyIdRoute
@@ -856,10 +955,13 @@ interface AuthedAppRouteChildren {
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppBotRoute: AuthedAppBotRoute,
+  AuthedAppBrainRoute: AuthedAppBrainRoute,
   AuthedAppMarketRoute: AuthedAppMarketRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
+  AuthedAppSocialRoute: AuthedAppSocialRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,
+  AuthedAppAgentAgentIdRoute: AuthedAppAgentAgentIdRoute,
   AuthedAppChannelChannelIdRoute: AuthedAppChannelChannelIdRoute,
   AuthedAppChannelNewRoute: AuthedAppChannelNewRoute,
   AuthedAppCompanyCompanyIdRoute: AuthedAppCompanyCompanyIdRoute,
@@ -875,6 +977,7 @@ interface AuthedRouteChildren {
   AuthedAdminRouteRoute: typeof AuthedAdminRouteRouteWithChildren
   AuthedSettingsRouteRoute: typeof AuthedSettingsRouteRouteWithChildren
   AuthedAppRoute: typeof AuthedAppRouteWithChildren
+  AuthedFocusRoute: typeof AuthedFocusRoute
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
 }
 
@@ -882,6 +985,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRouteRoute: AuthedAdminRouteRouteWithChildren,
   AuthedSettingsRouteRoute: AuthedSettingsRouteRouteWithChildren,
   AuthedAppRoute: AuthedAppRouteWithChildren,
+  AuthedFocusRoute: AuthedFocusRoute,
   AuthedOnboardingRoute: AuthedOnboardingRoute,
 }
 
@@ -890,6 +994,7 @@ const AuthedRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
+  LocalConnectRoute: LocalConnectRoute,
   SignRoute: SignRoute,
 }
 export const routeTree = rootRouteImport
