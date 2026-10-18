@@ -28,6 +28,8 @@ import { AgentBrowserModeSelect } from "@/components/agents/agent-browser-mode";
 import { AgentIdentitySettings } from "@/components/agents/agent-identity-settings";
 import { AgentPhoneSettings } from "@/components/agents/agent-phone-settings";
 import { AgentShellSettings } from "@/components/agents/agent-shell-settings";
+import { AgentEnginePanel } from "@/components/agents/agent-engine-panel";
+import { AgentAppInstancePanel } from "@/components/agents/agent-app-instance-panel";
 import { CloudComputerPanel } from "@/components/agents/cloud-computer-panel";
 import { ManusMailPanel } from "@/components/agents/manus-mail-panel";
 import { HandoffPanel } from "@/components/agents/handoff-panel";
@@ -123,11 +125,13 @@ import { readToolName } from "@/lib/plugins/tool-name";
  */
 export function AgentDialog({
   agentId,
+  initialSection,
   open,
   onClose,
 }: {
   /** Which coworker to show. Null renders nothing but keeps the dialog mounted for its exit. */
   agentId: string | null;
+  initialSection?: SectionId;
   open: boolean;
   onClose: () => void;
 }) {
@@ -139,7 +143,7 @@ export function AgentDialog({
           max-h-[85svh] still caps it on a short display, where the main pane scrolls. */}
       <DialogContent className="overflow-hidden p-0 md:max-h-[680px] md:max-w-[700px] lg:max-w-[800px] mobile:top-0 mobile:left-0 mobile:h-svh mobile:max-h-none mobile:w-screen mobile:max-w-none mobile:translate-x-0 mobile:translate-y-0 mobile:rounded-none mobile:border-0 mobile:bg-[#07080c] mobile:bg-[radial-gradient(120%_50%_at_10%_-10%,rgba(56,189,248,0.12),transparent_55%),radial-gradient(90%_40%_at_100%_0%,rgba(167,139,250,0.1),transparent_50%)] mobile:pt-[env(safe-area-inset-top)]">
         {/* Keyed by coworker so the section and edit state never carry over from another one. */}
-        {agentId ? <AgentDialogBody agentId={agentId} key={agentId} /> : null}
+        {agentId ? <AgentDialogBody agentId={agentId} initialSection={initialSection} key={`${agentId}:${initialSection ?? "general"}`} /> : null}
       </DialogContent>
     </Dialog>
   );
@@ -151,7 +155,7 @@ const SECTIONS = [
   { id: "voice", name: "Stimme", icon: IconMicrophone },
   { id: "keys", name: "API-Keys", icon: IconKey },
   { id: "access", name: "Access", icon: IconPuzzle },
-  { id: "brain", name: "Brain", icon: IconBrain },
+  { id: "brain", name: "Spark", icon: IconBrain },
   { id: "model", name: "Modell", icon: IconCpu },
   { id: "mcp", name: "MCP", icon: IconPlug },
   { id: "handoff", name: "Handoff", icon: IconArrowsExchange },
@@ -161,8 +165,8 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-function AgentDialogBody({ agentId }: { agentId: string }) {
-  const [section, setSection] = useState<SectionId>("general");
+function AgentDialogBody({ agentId, initialSection }: { agentId: string; initialSection?: SectionId }) {
+  const [section, setSection] = useState<SectionId>(initialSection ?? "general");
   const agent = useQuery(agentQueryOptions(agentId));
 
   if (agent.isPending) {
@@ -419,6 +423,14 @@ function GeneralSection({
 
       <div className="flex flex-col gap-2">
         <p className="px-1 text-xs font-medium text-muted-foreground">
+          Engine (Stufe 2)
+        </p>
+        <AgentEnginePanel agentId={agentId} />
+        <AgentAppInstancePanel agentId={agentId} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="px-1 text-xs font-medium text-muted-foreground">
           Cloud-Computer
         </p>
         <CloudComputerPanel agentId={agentId} />
@@ -433,22 +445,22 @@ function GeneralSection({
 
       <Item variant="muted">
         <ItemContent>
-          <ItemTitle>Start channel</ItemTitle>
+          <ItemTitle>Gespräch öffnen</ItemTitle>
           <ItemDescription>
-            Open a new channel with this coworker.
+            Das eine, dauerhafte Gespräch mit diesem Agenten.
           </ItemDescription>
         </ItemContent>
         <ItemActions>
           <Button
             onClick={() =>
               void navigate({
-                search: { agent: agentId },
-                to: "/channel/new",
+                params: { agentId },
+                to: "/agent/$agentId",
               })
             }
             size="sm"
           >
-            Start
+            Öffnen
           </Button>
         </ItemActions>
       </Item>
