@@ -1,3 +1,4 @@
+import { cp, mkdir, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,6 +12,43 @@ type RunCommand = (command: string[], cwd: string) => Promise<void>;
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultAppDir = resolve(scriptDir, "..");
 const defaultRootDir = resolve(defaultAppDir, "..");
+
+/*
+ * Mirror the freshly built app into the bundled desktop runtime.
+ *
+ * The Connect desktop browser (apps/connect-app/runtime/connect/apps/app/dist/)
+ * is the surface the user actually loads when they launch Connect.exe — it
+ * does not read apps/app/dist at runtime. Without this mirror every change
+ * would land in the dev dist while the running app keeps serving the stale
+ * bundle, which is exactly how the "stuck on the loading screen" regression
+ * slipped in.
+ *
+ * Skipped silently when the desktop runtime is not present in this checkout,
+ * so the same script stays usable in pure-app development worktrees.
+ */
+async function mirrorAppDistToDesktopRuntime(paths: BuildCachePaths) {
+  const candidate = resolve(
+    paths.rootDir,
+    "connect-app",
+    "runtime",
+    "connect",
+    "apps",
+    "app",
+    "dist",
+  );
+  let info: Awaited<ReturnType<typeof stat>>;
+  try {
+    info = await stat(candidate);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!info.isDirectory()) return;
+  await mkdir(candidate, { recursive: true });
+  await cp(join(paths.appDir, "dist", "index.html"), join(candidate, "index.html"));
+  await cp(join(paths.appDir, "dist", "assets"), join(candidate, "assets"), { recursive: true });
+  console.log(`Mirrored app/dist -> ${candidate}`);
+}
 
 function pathsFromEnvironment(): BuildCachePaths {
   return {
@@ -57,11 +95,12 @@ export async function prepareProductionBuild(
       process.execPath,
       "--bun",
       join("node_modules", "vite", "bin", "vite.js"),
-      "build",
+    "build",
     ],
     paths.appDir,
   );
   await writeBuildCacheManifest(paths, process.env);
+  await mirrorAppDistToDesktopRuntime(paths);
   return "rebuilt";
 }
 
