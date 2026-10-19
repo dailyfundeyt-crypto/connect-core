@@ -22,6 +22,8 @@ import type { McpToolDef } from "./router";
 import { buildAgentsTools } from "./handlers/agents";
 import { buildBrowserTools } from "./handlers/browser";
 import { buildMiniAppsTools } from "./handlers/mini-apps";
+import { buildKnowledgeTools } from "./handlers/knowledge";
+import { buildMarketTools } from "./handlers/market";
 
 /**
  * Registry-Build-Deps. Werden vom Mount-Punkt in `app.ts` gesetzt.
@@ -65,6 +67,12 @@ export function buildConnectMcpToolRegistry(deps: ConnectMcpBuildDeps): McpToolD
 
   // mini-apps.ts (Commit 3): 3 Tools — keine externen Deps nötig
   tools.push(...buildMiniAppsTools({}));
+
+  // knowledge.ts (Commit 4): 3 Stub-Tools — Spark-Notes (Integration Stufe 6+)
+  tools.push(...buildKnowledgeTools({}));
+
+  // market.ts (Commit 4): 3 Stub-Tools — Crypto/Finance (Integration Stufe 6+)
+  tools.push(...buildMarketTools({}));
 
   registry = tools;
   return registry;
