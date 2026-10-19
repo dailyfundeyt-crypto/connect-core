@@ -15,40 +15,11 @@ export type AgentModelId =
   | "auto"
   | "agy-default"
   | "agy-pro"
-  | "agy-fast"
-  | "gpt-5"
-  | "gpt-5-mini"
-  | "gpt-4.1"
-  | "o3"
-  | "o4-mini"
-  | "claude-sonnet"
-  | "claude-opus"
-  | "claude-haiku"
-  | "grok"
-  | "grok-2"
-  | "gemini"
-  | "gemini-2.5-pro"
-  | "cursor-composer"
-  | "cursor-fast"
-  | "cursor-thinking"
-  | "manus"
-  | "manus-1.5"
-  | "lovable"
-  | "lovable-fast"
-  | "qwen"
-  | "qwen-plus"
-  | "qwen-max";
+  | "agy-fast";
 
 export type AgentModelFamily =
-  | "connect"
   | "antigravity"
-  | "manus"
-  | "chatgpt"
-  | "claude"
-  | "grok"
-  | "cursor"
-  | "lovable"
-  | "qwen";
+  | "connect";
 
 export type AgentModelOption = {
   id: AgentModelId;
@@ -61,52 +32,14 @@ export const AGENT_MODELS: AgentModelOption[] = [
   { id: "agy-default", label: "Antigravity Default", provider: "Antigravity" },
   { id: "agy-pro", label: "Antigravity Pro", provider: "Antigravity" },
   { id: "agy-fast", label: "Antigravity Fast", provider: "Antigravity" },
-  { id: "gpt-5", label: "GPT-5", provider: "ChatGPT" },
-  { id: "gpt-5-mini", label: "GPT-5 Mini", provider: "ChatGPT" },
-  { id: "gpt-4.1", label: "GPT-4.1", provider: "ChatGPT" },
-  { id: "o3", label: "o3", provider: "ChatGPT" },
-  { id: "o4-mini", label: "o4-mini", provider: "ChatGPT" },
-  { id: "claude-sonnet", label: "Sonnet 4", provider: "Claude" },
-  { id: "claude-opus", label: "Opus 4", provider: "Claude" },
-  { id: "claude-haiku", label: "Haiku", provider: "Claude" },
-  { id: "grok", label: "Grok 3", provider: "xAI" },
-  { id: "grok-2", label: "Grok 2", provider: "xAI" },
-  { id: "gemini", label: "Gemini", provider: "Google" },
-  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "Google" },
-  { id: "cursor-composer", label: "Composer", provider: "Cursor" },
-  { id: "cursor-fast", label: "Cursor Fast", provider: "Cursor" },
-  { id: "cursor-thinking", label: "Cursor Thinking", provider: "Cursor" },
-  { id: "manus", label: "Manus", provider: "Manus" },
-  { id: "manus-1.5", label: "Manus 1.5", provider: "Manus" },
-  { id: "lovable", label: "Lovable", provider: "Lovable" },
-  { id: "lovable-fast", label: "Lovable Fast", provider: "Lovable" },
-  { id: "qwen", label: "Qwen", provider: "Alibaba" },
-  { id: "qwen-plus", label: "Qwen Plus", provider: "Alibaba" },
-  { id: "qwen-max", label: "Qwen Max", provider: "Alibaba" },
 ];
 
 /** Full catalog — Connect agents can pick any of these. */
 export const CONNECT_MODEL_IDS: AgentModelId[] = AGENT_MODELS.map((m) => m.id);
 
 export const MODEL_POOLS: Record<AgentModelFamily, AgentModelId[]> = {
-  connect: CONNECT_MODEL_IDS,
   antigravity: ["auto", "agy-default", "agy-pro", "agy-fast"],
-  manus: ["auto", "manus", "manus-1.5"],
-  chatgpt: ["auto", "gpt-5", "gpt-5-mini", "gpt-4.1", "o3", "o4-mini"],
-  claude: ["auto", "claude-sonnet", "claude-opus", "claude-haiku"],
-  grok: ["auto", "grok", "grok-2"],
-  cursor: [
-    "auto",
-    "cursor-composer",
-    "cursor-fast",
-    "cursor-thinking",
-    "gpt-5",
-    "claude-sonnet",
-    "claude-opus",
-    "gemini-2.5-pro",
-  ],
-  lovable: ["auto", "lovable", "lovable-fast"],
-  qwen: ["auto", "qwen", "qwen-plus", "qwen-max"],
+  connect: ["auto"],
 };
 
 export type ModelFamilyMeta = {
@@ -127,52 +60,12 @@ export const MODEL_FAMILIES: ModelFamilyMeta[] = [
   {
     id: "antigravity",
     label: "Model One · Antigravity",
-    hint: "External · unsichtbares Terminal (agy CLI) — Browser-Use, Sandbox, Login via Google",
-  },
-  {
-    id: "manus",
-    label: "Model One · Manus",
-    hint: "External · API-Key — Manus Open API (mehr Features mit Key)",
-  },
-  {
-    id: "chatgpt",
-    label: "Model One · ZGPT",
-    hint: "External · unsichtbares Terminal (CLI) — Browser Use & Sandbox",
+    hint: "External · CLI — Browser-Use, Sandbox, Login via Google",
   },
   {
     id: "connect",
     label: "Model Two · Hermes",
     hint: "Local Provider — Connect-API / AG-UI",
-  },
-  {
-    id: "claude",
-    label: "Claude",
-    hint: "Beta — Anthropic",
-    beta: true,
-  },
-  {
-    id: "grok",
-    label: "Grok",
-    hint: "Beta — xAI",
-    beta: true,
-  },
-  {
-    id: "cursor",
-    label: "Cursor",
-    hint: "Beta — Cursor Composer / Routing",
-    beta: true,
-  },
-  {
-    id: "lovable",
-    label: "Lovable",
-    hint: "Beta — Lovable",
-    beta: true,
-  },
-  {
-    id: "qwen",
-    label: "Qwen",
-    hint: "Beta — Cloud-Computer Runtime",
-    beta: true,
   },
 ];
 
@@ -191,36 +84,16 @@ export function isBetaModelFamily(id: AgentModelFamily): boolean {
 }
 
 const FAMILY_DEFAULT_MODEL: Record<AgentModelFamily, AgentModelId> = {
-  connect: "auto",
   antigravity: "agy-default",
-  manus: "manus",
-  chatgpt: "gpt-5",
-  claude: "claude-sonnet",
-  grok: "grok",
-  cursor: "cursor-composer",
-  lovable: "lovable",
-  qwen: "qwen",
+  connect: "auto",
 };
 
 const FAMILY_TO_CLI: Partial<Record<AgentModelFamily, CliTarget>> = {
   antigravity: "antigravity",
-  manus: "manus",
-  chatgpt: "chatgpt",
-  claude: "claude",
-  grok: "grok",
-  cursor: "cursor",
-  lovable: "lovable",
 };
 
 const CLI_TO_FAMILY: Record<CliTarget, AgentModelFamily> = {
   antigravity: "antigravity",
-  manus: "manus",
-  codex: "chatgpt",
-  chatgpt: "chatgpt",
-  claude: "claude",
-  grok: "grok",
-  cursor: "cursor",
-  lovable: "lovable",
 };
 
 const MODEL_KEY = "connect.agent-models";
