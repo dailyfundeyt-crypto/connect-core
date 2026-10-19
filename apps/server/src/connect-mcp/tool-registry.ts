@@ -20,6 +20,8 @@ import type { AgentMcpDeps } from "../agent-hub/agent-mcp-routes";
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { McpToolDef } from "./router";
 import { buildAgentsTools } from "./handlers/agents";
+import { buildBrowserTools } from "./handlers/browser";
+import { buildMiniAppsTools } from "./handlers/mini-apps";
 
 /**
  * Registry-Build-Deps. Werden vom Mount-Punkt in `app.ts` gesetzt.
@@ -54,6 +56,15 @@ export function buildConnectMcpToolRegistry(deps: ConnectMcpBuildDeps): McpToolD
     });
     tools.push(...agentsTools);
   }
+
+  // browser.ts (Commit 3): 4 Tools — funktionieren auch ohne database
+  // (CDP-Browser läuft im Server-Prozess)
+  tools.push(...buildBrowserTools({
+    ...(deps.database ? { database: deps.database } : {}),
+  }));
+
+  // mini-apps.ts (Commit 3): 3 Tools — keine externen Deps nötig
+  tools.push(...buildMiniAppsTools({}));
 
   registry = tools;
   return registry;

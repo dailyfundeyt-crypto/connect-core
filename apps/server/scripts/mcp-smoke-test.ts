@@ -16,7 +16,10 @@ const url = process.env.DATABASE_URL || "postgres://connect:connect@localhost:55
 async function main() {
   console.log(`[smoke] connecting to ${url}`);
   const sql = postgres(url);
-  const db = drizzle(sql);
+  // Wir casten auf `any` weil der Server-`Database`-Type Bun-SQL erwartet
+  // und der Smoke-Test mit postgres-js läuft (das Schema wird hier nicht
+  // gebraucht — wir nutzen nur `db.execute(sql\`...\`)`).
+  const db = drizzle(sql) as unknown as import("../src/db/client").Database;
 
   console.log("[smoke] creating probe token (60s lifetime)...");
   const probe = await createConnectMcpToken(db, {
