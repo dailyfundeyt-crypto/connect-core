@@ -1,8 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
-  IconArrowRight,
   IconBuildingStore,
   IconCategory,
   IconCheck,
@@ -12,7 +10,6 @@ import {
   IconPlugConnected,
   IconRobot,
   IconSparkles,
-  IconStar,
   IconTool,
   IconUpload,
   IconX,
@@ -21,8 +18,6 @@ import { useCompanySwitcher } from "@/components/companies/company-switcher";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
-import { agentListQueryOptions, isSharedWithYou, type AgentProfile } from "@/lib/agents/queries";
 import {
   type MarketListing,
   type MarketPricing,

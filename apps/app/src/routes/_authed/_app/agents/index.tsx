@@ -215,24 +215,6 @@ function MarketplaceScreen() {
     [query, tick],
   );
 
-  const { inUse, unused } = useMemo(() => {
-    const inChannelIds = new Set<string>();
-    for (const ch of channels.data ?? []) {
-      for (const id of ch.agentIds) inChannelIds.add(id);
-    }
-    const used: AgentProfile[] = [];
-    const idle: AgentProfile[] = [];
-    for (const agent of mine) {
-      if (inChannelIds.has(agent.id)) used.push(agent);
-      else idle.push(agent);
-    }
-    const byName = (a: AgentProfile, b: AgentProfile) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-    used.sort(byName);
-    idle.sort(byName);
-    return { inUse: used, unused: idle };
-  }, [mine, channels.data]);
-
   const loading = loadingAgents || (channels.isPending && !channels.data);
   const showCreate = isCreating === true;
   const showProfile = !showCreate && selectedAgentId !== undefined;
@@ -469,20 +451,11 @@ function MarketplaceScreen() {
               {loading ? (
                 <Skeleton className="h-[180px]" />
               ) : mine.length > 0 ? (
-                <>
-                  <AgentSection
-                    agents={inUse}
-                    onStart={startFromMarketplace}
-                    startBusy={starting}
-                    title="In Benutzung"
-                  />
-                  <AgentSection
-                    agents={unused}
-                    onStart={startFromMarketplace}
-                    startBusy={starting}
-                    title="Unbenutzt"
-                  />
-                </>
+                <AgentSection
+                  agents={mine}
+                  onStart={startFromMarketplace}
+                  startBusy={starting}
+                />
               ) : failed && agents === undefined ? (
                 <Empty className="h-[180px] border border-dashed border-destructive">
                   <EmptyHeader>
@@ -581,12 +554,10 @@ function MarketplaceScreen() {
 
 function AgentSection({
   agents,
-  title,
   onStart,
   startBusy,
 }: {
   agents: AgentProfile[];
-  title: string;
   /**
    * Start a chat with this bot. When invoked from the Marketplace without an active company,
    * the parent opens a company picker first and only then creates the channel.
@@ -594,50 +565,43 @@ function AgentSection({
   onStart: (agentId: string, agentName: string) => void;
   startBusy: boolean;
 }) {
+  if (agents.length === 0) {
+    return (
+      <p className="mt-3 text-sm text-muted-foreground">Keine Agents.</p>
+    );
+  }
   return (
-    <section>
-      <h3 className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-        {title}
-        <span className="ml-2 font-normal tabular-nums text-muted-foreground/70">
-          {agents.length}
-        </span>
-      </h3>
-      {agents.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">Keine Agents.</p>
-      ) : (
-        <div className="mt-3 grid grid-cols-[repeat(auto-fill,144px)] gap-4">
-          {agents.map((agent, index) => (
-            <StaggerItem index={index} key={agent.id}>
-              {/*
-               * The card used to be one big link to the agent profile, which left no place to
-               * assign it to a company: the only route to a roster was creating the bot from
-               * inside a company workspace. Assignment is now a control on the card, outside the
-               * link, so clicking it does not also navigate.
-               */}
-              <div className="flex flex-col gap-1.5">
-                <Link
-                  search={{ agent: agent.id, tab: "mine" }}
-                  className="block"
-                  to="/agents"
-                >
-                  <AgentCard agent={agent} />
-                </Link>
-                <AssignCompanyButton agentId={agent.id} />
-                <Button
-                  className="mt-0.5"
-                  disabled={startBusy}
-                  onClick={() => onStart(agent.id, agent.name)}
-                  size="sm"
-                  type="button"
-                >
-                  Start
-                </Button>
-              </div>
-            </StaggerItem>
-          ))}
-        </div>
-      )}
-    </section>
+    <div className="grid grid-cols-[repeat(auto-fill,144px)] gap-4">
+      {agents.map((agent, index) => (
+        <StaggerItem index={index} key={agent.id}>
+          {/*
+           * The card used to be one big link to the agent profile, which left no place to
+           * assign it to a company: the only route to a roster was creating the bot from
+           * inside a company workspace. Assignment is now a control on the card, outside the
+           * link, so clicking it does not also navigate.
+           */}
+          <div className="flex flex-col gap-1.5">
+            <Link
+              search={{ agent: agent.id, tab: "mine" }}
+              className="block"
+              to="/agents"
+            >
+              <AgentCard agent={agent} />
+            </Link>
+            <AssignCompanyButton agentId={agent.id} />
+            <Button
+              className="mt-0.5"
+              disabled={startBusy}
+              onClick={() => onStart(agent.id, agent.name)}
+              size="sm"
+              type="button"
+            >
+              Start
+            </Button>
+          </div>
+        </StaggerItem>
+      ))}
+    </div>
   );
 }
 
