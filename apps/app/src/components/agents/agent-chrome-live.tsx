@@ -37,6 +37,11 @@ export function useAgentChromeFrame(
     if (!active) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // When the server says the agent browser cannot run (no desktop binary),
+    // the loop must stop — otherwise the user gets spammed with the same
+    // "Profil nicht erreichbar" toast every 850 ms. The error stays visible
+    // until they change the runtime or close the panel.
+    let aborted = false;
 
     const tick = async () => {
       try {
@@ -57,12 +62,24 @@ export function useAgentChromeFrame(
           setSrc(next);
           setError(null);
           failures.current = 0;
+          firedUnavailable.current = false;
           const header = res.headers.get("x-connect-page-url");
           setPageUrl(header ? safeDecode(header) : "");
         } else {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          setError(body?.error ?? `Vorschau nicht verfügbar (${res.status})`);
+          const body = (await res.json().catch(() => null)) as
+            | { error?: string; needsDesktop?: boolean }
+            | null;
+          const detail =
+            body?.error ?? `Vorschau nicht verfügbar (${res.status})`;
+          setError(detail);
           failures.current += 1;
+          // Server explicitly told us the desktop launcher is missing — stop
+          // the polling loop so the user is not hit with the same toast.
+          // The error stays on screen until the user takes an action
+          // (manual start, runtime change, panel close).
+          if (body?.needsDesktop) {
+            aborted = true;
+          }
         }
       } catch {
         if (!cancelled) setError("Vorschau nicht erreichbar.");
@@ -73,7 +90,7 @@ export function useAgentChromeFrame(
         firedUnavailable.current = true;
         unavailableRef.current?.();
       }
-      if (!cancelled) timer = setTimeout(tick, intervalMs);
+      if (!cancelled && !aborted) timer = setTimeout(tick, intervalMs);
     };
     void tick();
     return () => {

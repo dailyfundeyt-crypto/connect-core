@@ -459,12 +459,6 @@ function DetailPanel({
 function MarketScreen() {
   const { item } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const location = useLocation();
-  const {
-    data: agents,
-    isPending: loading,
-    isError: failed,
-  } = useQuery(agentListQueryOptions());
   const { listings, install, uninstall, toggleAutoStart, isAutoStart } =
     useMarketListings();
   const { active: activeCompany } = useCompanySwitcher();
@@ -488,9 +482,6 @@ function MarketScreen() {
     tools: false,
     software: false,
   });
-  // „Meine Connect-Bots" ist eine eigene Sektion über dem Marketplace
-  // (geklappt: nein — der User soll seine Bots immer sehen).
-  const [myBotsCollapsed, setMyBotsCollapsed] = useState(false);
 
   const sectionListings = (id: SectionId) => {
     const q = perSectionSearch[id].trim().toLowerCase();
@@ -513,8 +504,6 @@ function MarketScreen() {
     for (const l of listings) if (l.kind === id) set.add(l.category);
     return Array.from(set);
   };
-
-  const explore: AgentProfile[] = (agents ?? []).filter(isSharedWithYou);
 
   const selectedListing = useMemo(
     () => (item ? listings.find((l) => l.id === item) ?? null : null),
@@ -550,83 +539,19 @@ function MarketScreen() {
           </button>
         </div>
 
-        {/* Meine Connect-Bots — eigene Sektion, immer oben. */}
-        <section className="mt-8 rounded-2xl border border-white/10 bg-white/[0.015] p-4 sm:p-5">
-          <button
-            type="button"
-            onClick={() => setMyBotsCollapsed((c) => !c)}
-            className="flex w-full items-center justify-between gap-3 text-left"
-            aria-expanded={!myBotsCollapsed}
-          >
-            <div className="flex items-center gap-2">
-              <IconStar className="size-4 text-sky-400" />
-              <h2 className="text-[15px] font-semibold tracking-tight">
-                Meine Connect-Bots
-              </h2>
-              <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground/80">
-                {loading
-                  ? "…"
-                  : `${explore.length} ${explore.length === 1 ? "Bot" : "Bots"}`}
-              </span>
-            </div>
-            <IconChevronDown
-              className={cn(
-                "size-4 text-muted-foreground/60 transition-transform",
-                myBotsCollapsed && "-rotate-90",
-              )}
-            />
-          </button>
-          {!myBotsCollapsed ? (
-            <div className="mt-3">
-              {loading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-40" />
-                  <div className="grid grid-cols-1 gap-x-10 gap-y-1 sm:grid-cols-2">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton className="h-14 rounded-xl" key={i} />
-                    ))}
-                  </div>
-                </div>
-              ) : explore.length ? (
-                <div className="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2">
-                  {explore.map((agent, index) => (
-                    <StaggerItem index={index} key={agent.id}>
-                      <Link
-                        className="flex items-center justify-between rounded-xl px-2 py-2 outline-none transition hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-ring"
-                        search={{ item: agent.id }}
-                        to={location.pathname as "/" as never}
-                      >
-                        <div>
-                          <p className="text-sm font-semibold">{agent.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {agent.title}
-                          </p>
-                        </div>
-                        <IconArrowRight className="size-4 text-muted-foreground/60" />
-                      </Link>
-                    </StaggerItem>
-                  ))}
-                </div>
-              ) : failed ? (
-                <Empty className="mt-2 h-[120px] border border-dashed border-destructive">
-                  <EmptyHeader>
-                    <EmptyTitle className="text-destructive">
-                      Connect-Bots konnten nicht geladen werden.
-                    </EmptyTitle>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                <Empty className="mt-2 h-[120px] border border-dashed">
-                  <EmptyHeader>
-                    <EmptyTitle className="text-muted-foreground">
-                      Niemand hat einen Bot mit dir geteilt.
-                    </EmptyTitle>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </div>
-          ) : null}
-        </section>
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-xs text-muted-foreground">
+          <IconRobot className="size-3.5" />
+          <span>
+            Deine persönlichen Bots findest du unter{" "}
+            <Link
+              className="font-semibold text-sky-300 underline-offset-2 hover:underline"
+              to="/agents"
+            >
+              Meine Bots
+            </Link>{" "}
+            in der Sidebar.
+          </span>
+        </div>
 
         {/* Marketplace-Sektionen — Companies / Agents / MCP / Tools / Software. */}
         {SECTIONS.map((s) => {

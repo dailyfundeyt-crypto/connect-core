@@ -591,7 +591,25 @@ export function createConnectWorkspaceRoutes(
     const kind = context.req.query("profileKind") === "manus" ? "manus" : "default";
     const targetId = context.req.query("targetId")?.trim() || undefined;
     const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
-    const shot = await cdpScreenshot(cdpPortFor(profileDir), targetId);
+    const port = cdpPortFor(profileDir);
+    // If nothing is listening on the CDP port at all, no browser window was
+    // ever launched for this profile. The client should NOT keep polling in a
+    // tight loop — instead the user has to take an action (start the bot's
+    // browser via the picker, or close the panel). We mark this case with
+    // `needsDesktop: true` so the client can break the loop.
+    const portOpen = await cdpPortOpen(port);
+    if (!portOpen) {
+      return context.json(
+        {
+          ok: false,
+          needsDesktop: true,
+          error:
+            "Helium-Profil noch nicht gestartet — klicke im Browser-Menü auf „Start", oder wechsle den Runtime (Ubuntu-Sandbox / Manus / Cloud).",
+        },
+        503,
+      );
+    }
+    const shot = await cdpScreenshot(port, targetId);
     if (!shot.ok || !shot.bytes) {
       return context.json({ ok: false, error: shot.error ?? "Keine Vorschau." }, 503);
     }
@@ -884,6 +902,22 @@ async function cdpScreenshot(
   const data = typeof res.result.data === "string" ? res.result.data : "";
   if (!data) return { ok: false, error: "Leerer Screenshot." };
   return { ok: true, bytes: Uint8Array.from(Buffer.from(data, "base64")), url: res.url };
+}
+
+/**
+ * Cheap port check — does anything listen on the CDP port for this profile?
+ * Used to short-circuit the screenshot loop when no browser was ever started,
+ * so the client is not hammered with "Profil nicht erreichbar" every 850 ms.
+ */
+async function cdpPortOpen(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/json/version`, {
+      signal: AbortSignal.timeout(800),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 type ChromeLaunch = { ok: true; binary: string } | { ok: false; detail: string };
