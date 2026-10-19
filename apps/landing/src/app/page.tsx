@@ -5,6 +5,7 @@ import { HowItWorks } from "@/components/how-it-works";
 import { OnboardingVideo } from "@/components/onboarding";
 import { Compare } from "@/components/compare";
 import { InstallSection } from "@/components/install-section";
+import { CommunitySection } from "@/components/community-section";
 import { Cta } from "@/components/cta";
 import { Footer } from "@/components/footer";
 
@@ -19,6 +20,7 @@ export default function LandingPage() {
         <OnboardingVideo />
         <Compare />
         <InstallSection />
+        <CommunitySection />
         <Cta />
       </main>
       <Footer />

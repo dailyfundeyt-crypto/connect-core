@@ -1,259 +1,128 @@
-import { IconBrain, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import { IconBrain, IconFolder, IconX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useCallback, useState } from "react";
 import { BrainActivity } from "@/components/brain/brain-activity";
-import { BrainBrowser } from "@/components/brain/brain-browser";
 import { BrainGraph } from "@/components/brain/brain-graph";
 import { BrainLocationEditor } from "@/components/brain/brain-location-editor";
-import { BrainScopeEditor } from "@/components/brain/brain-scope-editor";
+import { SparkLogo } from "@/components/brand/spark-logo";
 import { Skeleton } from "@/components/ui/skeleton";
-import { agentListQueryOptions } from "@/lib/agents/queries";
-import {
-  areaLabel,
-  type BrainAreaId,
-  type BrainProject,
-  brainAgentsQueryOptions,
-  brainStatusQueryOptions,
-  connectAgentSlug,
-  findBrainEntry,
-} from "@/lib/brain/queries";
-import { cn } from "@/lib/utils";
+import { brainStatusQueryOptions } from "@/lib/brain/queries";
+import { useConnectOnPc } from "@/lib/brain/pc-mode";
 
+const TITLE = "Spark nicht verfügbar";
+
+/*
+ * helium-mobilefix: "nicht localhost" hiess frueher automatisch "gehostet/online". Ueber den
+ * Handy-Tunnel (*.trycloudflare.com) ist der Server aber der PC – dort gilt der PC-Modus, sobald
+ * die Brain-API des PCs antwortet (useConnectOnPc).
+ */
 export function BrainUnavailable({ reason }: { reason?: string }) {
+  const { pc, pending } = useConnectOnPc();
+  const hosted = !pc && !pending;
+  // The fallback reason repeats the title word for word – show it only when it says something new.
+  const detail = reason && reason.trim() && !reason.trim().startsWith(TITLE) ? reason.trim() : null;
+  const text = hosted
+    ? "Spark liegt auf deinem PC. Öffne Connect über deinen PC, um es hier zu sehen."
+    : (detail ?? "Der Spark-Ordner wurde nicht gefunden. Wähle unten den richtigen Ordner.");
   return (
     <div className="flex flex-col gap-6">
       {/*
-       * The folder picker comes first, and that is the point.
-       *
-       * "Brain nicht verfügbar" is exactly the state in which somebody needs to
-       * change the folder — a moved vault, a new PC, a wrong path from a restore.
-       * Hiding the only control that fixes the message behind the message would
-       * leave nothing to do but edit `connect.env` by hand.
+       * Locally the folder picker comes right after the message: a moved vault or a
+       * wrong path is exactly the state in which somebody needs to change the folder.
+       * On the hosted version there is no folder to pick, so it stays hidden.
        */}
       <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center" data-testid="brain-unavailable">
-        <IconBrain className="size-8 opacity-40" />
-        <p className="font-medium">Brain nicht verfügbar</p>
-        <p className="max-w-md text-sm text-muted-foreground">
-          {reason ?? "Der Brain-Ordner ist auf diesem Server nicht erreichbar."}{" "}
-          Der Brain liegt nur auf diesem PC und wird nur von der lokalen
-          Connect-Version angezeigt.
-        </p>
+        <SparkLogo size={36} />
+        <p className="font-medium">{TITLE}</p>
+        <p className="max-w-md text-sm text-muted-foreground">{text}</p>
       </div>
-      <BrainLocationEditor />
-    </div>
-  );
-}
-
-type Row = {
-  slug: string;
-  name: string;
-  kind: string;
-  connectAgentId?: string;
-  read: BrainAreaId[];
-  write: BrainAreaId[];
-  explicit: boolean;
-};
-
-function Chips({ list, empty, projects }: { list: string[]; empty: string; projects?: BrainProject[] }) {
-  if (!list.length) return <span className="text-xs text-muted-foreground">{empty}</span>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {list.map((id) => (
-        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]" key={id}>
-          {id.startsWith("Projekt:") ? "Projekt " : ""}
-          {areaLabel(id, projects)}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function AgentsOverview() {
-  const brain = useQuery(brainAgentsQueryOptions());
-  const connect = useQuery(agentListQueryOptions());
-  const [open, setOpen] = useState<string | null>(null);
-
-  const rows = useMemo<Row[]>(() => {
-    const data = brain.data;
-    if (!data?.available) return [];
-    const defaults = data.defaults ?? { read: [], write: [] };
-    const out: Row[] = data.agents.map((entry) => ({
-      slug: entry.slug,
-      name: entry.name ?? entry.slug,
-      kind: entry.kind ?? "agent",
-      connectAgentId: entry.connectAgentId,
-      read: entry.read,
-      write: entry.write,
-      explicit: true,
-    }));
-    const known = new Set(out.map((row) => row.slug));
-    for (const agent of connect.data ?? []) {
-      if (findBrainEntry(data.agents, agent)) continue;
-      const slug = connectAgentSlug(agent.name);
-      if (known.has(slug)) continue;
-      known.add(slug);
-      out.push({ slug, name: agent.name, kind: "connect", connectAgentId: agent.id, ...defaults, explicit: false });
-    }
-    const seen = new Set([...(data.memoryFolders ?? []), ...Object.keys(data.activity ?? {})]);
-    for (const slug of seen) {
-      if (known.has(slug) || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) continue;
-      known.add(slug);
-      out.push({ slug, name: slug, kind: "unbekannt", ...defaults, explicit: false });
-    }
-    return out;
-  }, [brain.data, connect.data]);
-
-  if (brain.isPending) return <Skeleton className="h-40 w-full" />;
-  const activity = brain.data?.activity ?? {};
-
-  return (
-    <div className="overflow-hidden rounded-xl border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/40 text-xs text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 text-left font-medium">Agent</th>
-            <th className="px-3 py-2 text-left font-medium">Darf lesen</th>
-            <th className="px-3 py-2 text-left font-medium">Darf schreiben</th>
-            <th className="px-3 py-2 text-left font-medium">Genutzt</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const used = activity[row.slug];
-            const isOpen = open === row.slug;
-            return [
-              <tr
-                className={cn("cursor-pointer border-t align-top hover:bg-foreground/[0.03]", isOpen && "bg-foreground/[0.03]")}
-                key={row.slug}
-                onClick={() => setOpen(isOpen ? null : row.slug)}
-              >
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-1 font-medium">
-                    {isOpen ? <IconChevronDown className="size-3.5" /> : <IconChevronRight className="size-3.5" />}
-                    {row.name}
-                  </div>
-                  <div className="pl-4.5 font-mono text-[11px] text-muted-foreground">
-                    {row.slug} · {row.kind}
-                    {row.explicit ? "" : " · Standard-Rechte"}
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  <Chips empty="nichts" list={row.read} projects={brain.data?.projects} />
-                </td>
-                <td className="px-3 py-2">
-                  <Chips empty="nichts" list={row.write} projects={brain.data?.projects} />
-                </td>
-                <td className="px-3 py-2 text-xs text-muted-foreground">
-                  {used ? (
-                    <>
-                      {used.reads} gelesen · {used.writes} geschrieben
-                      {used.denied ? <span className="text-destructive"> · {used.denied} abgelehnt</span> : null}
-                      <br />
-                      zuletzt {used.last}
-                    </>
-                  ) : (
-                    "noch nicht"
-                  )}
-                </td>
-              </tr>,
-              isOpen ? (
-                <tr className="border-t bg-muted/10" key={`${row.slug}-edit`}>
-                  <td className="px-3 py-3" colSpan={4}>
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <BrainScopeEditor
-                        connectAgentId={row.connectAgentId}
-                        kind={row.kind}
-                        name={row.name}
-                        read={row.read}
-                        slug={row.slug}
-                        write={row.write}
-                      />
-                      <div className="flex flex-col gap-2">
-                        <span className="text-xs font-medium text-muted-foreground">Letzte Aktivität</span>
-                        <BrainActivity agent={row.slug} limit={8} />
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ) : null,
-            ];
-          })}
-        </tbody>
-      </table>
+      {hosted || pending ? null : <BrainLocationEditor />}
     </div>
   );
 }
 
 export function BrainSettingsPage() {
   const status = useQuery(brainStatusQueryOptions());
+  const navigate = useNavigate();
   const [selected, setSelected] = useState("index.md");
-  const readerRef = useRef<HTMLElement>(null);
-  const openFromGraph = useCallback((path: string) => {
-    setSelected(path);
-    readerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const openFromGraph = useCallback((path: string) => setSelected(path), []);
   if (status.isPending) return <Skeleton className="h-40 w-full" />;
   const data = status.data;
   if (!data?.available) return <BrainUnavailable reason={data && !data.available ? data.reason : undefined} />;
 
   return (
-    <div className="flex flex-col gap-8" data-testid="brain-settings">
-      <section className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border bg-muted/20 px-4 py-3 text-sm">
-        <span className="flex items-center gap-1.5 font-medium">
-          <IconBrain className="size-4" /> Verbunden
-        </span>
-        <span className="font-mono text-xs text-muted-foreground">{data.path}</span>
-        <span className="text-muted-foreground">
-          {data.files} Brain-Notizen{data.vaultFiles ? ` · ${data.vaultFiles} Vault-Notizen (nur lesen)` : ""}
-        </span>
-        {data.head ? (
-          <span className="text-muted-foreground">
-            letzter Stand <span className="font-mono">{data.head.hash}</span> · {data.head.subject}
-          </span>
-        ) : null}
-      </section>
-
-      {/*
-       * Where the folder lives is a setting, not a readout, so it sits directly
-       * under the line that reports the folder in force: read the path there,
-       * change it here.
-       */}
-      <BrainLocationEditor />
-
-      <section className="flex flex-col gap-3">
-        <BrainGraph onOpen={openFromGraph} selected={selected} />
-      </section>
-
-      {/*
-       * The file tree moved out of the settings.
-       *
-       * Reading a library of 2 093 notes is not a setting, and having it here meant
-       * opening a note from `Plannung` meant walking through every other settings
-       * section to get there and back again to leave. It is now a tab in Spark,
-       * beside the notes written in the app, at `?level=3&vault=1`.
-       *
-       * What stays is the two blocks that are genuinely configuration: the status
-       * line above, and the folder editor beneath it. Choosing where the Brain
-       * lives is a setting; browsing what is in it is not.
-       */}
-
-      <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-base font-semibold">Agents und Zugriff</h2>
-          <p className="text-sm text-muted-foreground">
-            Welche Bereiche jeder Agent lesen und beschreiben darf (gespeichert in <code>Brain/agents.json</code>) und
-            was er laut <code>log.md</code> tatsächlich genutzt hat. Zeile anklicken zum Bearbeiten. Connect-Agents
-            bekommen ihre Brain-Werkzeuge nur mit diesen Rechten – jeder Zugriff wird geprüft und protokolliert.
-            Für externe Tools (ChatGPT, Claude, Manus …) sind es Regeln, an die sie sich halten sollen.
-          </p>
+    <div
+      className="relative flex min-h-[calc(100svh-3.5rem)] flex-col overflow-hidden bg-[#f6f5f2] md:h-full md:min-h-0"
+      data-testid="brain-settings"
+    >
+      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-black/[0.06] px-4 pr-16 md:pl-6 md:pr-20">
+        <div className="flex min-w-0 items-center gap-3">
+          <SparkLogo size={32} />
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold tracking-tight text-[#24231f]">Spark</h1>
+            <p className="truncate text-xs text-[#85827b]">
+              {data.files.toLocaleString("de-DE")} Notizen{data.vaultFiles ? ` · ${data.vaultFiles.toLocaleString("de-DE")} Vault-Notizen` : ""}
+            </p>
+          </div>
         </div>
-        <AgentsOverview />
-      </section>
+        <div className="flex items-center gap-2">
+        <button
+          className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-[#24231f] px-3 text-xs font-medium text-[#f6f5f2] transition-colors hover:bg-black"
+          data-testid="open-brain-page"
+          onClick={() => void navigate({ to: "/brain" })}
+          type="button"
+        >
+          <SparkLogo size={16} />
+          Spark-Seite (Graph, Routinen, Braucht dich)
+        </button>
+        <button
+          aria-expanded={locationOpen}
+          className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-black/[0.08] bg-white/70 px-3 text-xs font-medium text-[#4e4b45] transition-colors hover:bg-white"
+          onClick={() => setLocationOpen((open) => !open)}
+          type="button"
+        >
+          <IconFolder className="size-4" stroke={1.7} />
+          Datenquelle
+        </button>
+        </div>
+      </header>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold">Letzte Aktivität</h2>
-        <BrainActivity limit={25} />
-      </section>
+      <BrainGraph
+        className="min-h-0 flex-1"
+        fullPage
+        onOpen={openFromGraph}
+        rootLabel={data.vaultPath?.split(/[\\/]/).filter(Boolean).pop() ?? data.path.split(/[\\/]/).filter(Boolean).pop() ?? "Brain"}
+        selected={selected}
+      />
+
+      <details className="shrink-0 border-t border-black/[0.06] bg-[#f6f5f2] px-4 py-2 md:px-6">
+        <summary className="cursor-pointer text-xs font-medium text-[#6e6b65] outline-none transition-colors hover:text-[#24231f]">
+          Letzte Aktivität
+        </summary>
+        <div className="pb-3 pt-2">
+          <BrainActivity limit={25} />
+        </div>
+      </details>
+
+      {locationOpen ? (
+        <div className="absolute top-[4.25rem] right-16 z-30 w-[min(30rem,calc(100vw-5rem))] overflow-hidden rounded-xl border border-black/10 bg-[#fbfaf8] shadow-2xl md:right-20">
+          <div className="flex justify-end bg-white/80 px-3 pt-2">
+            <button
+              aria-label="Datenquelle schließen"
+              className="rounded-md p-1 text-[#85827b] hover:bg-black/[0.05] hover:text-[#24231f]"
+              onClick={() => setLocationOpen(false)}
+              type="button"
+            >
+              <IconX className="size-4" />
+            </button>
+          </div>
+          <div className="p-2">
+            <BrainLocationEditor />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

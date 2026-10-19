@@ -18,7 +18,7 @@ import { agentHub, DEFAULT_BASE_URLS, HubError, type ModelProvider, UI_KEY_SLOTS
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const LOOPBACK_IP = /^(127\.|::1$|::ffff:127\.)/;
-const PROVIDERS: ModelProvider[] = ["default", "openai", "anthropic", "ollama-local", "ollama-cloud", "openai-compatible", "codex-cli", "claude-cli"];
+const PROVIDERS: ModelProvider[] = ["default", "openai", "anthropic", "ollama-local", "ollama-cloud", "openai-compatible", "codex-cli", "claude-cli", "antigravity-cli"];
 
 function hostnameOf(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -177,9 +177,13 @@ export function createAgentHubRoutes(
     const settings = await hub().modelSettings(agentId);
     if (!settings) return context.json({ ok: true, text: "Standardmodell von Connect (globale Einstellung)." });
     const started = Date.now();
-    if (settings.provider === "codex-cli" || settings.provider === "claude-cli") {
+    if (settings.provider === "codex-cli" || settings.provider === "claude-cli" || settings.provider === "antigravity-cli") {
       try {
-        const model = createCliModel({ kind: settings.provider === "codex-cli" ? "codex" : "claude", model: settings.model, agentId });
+        const kind: "codex" | "claude" | "antigravity" =
+          settings.provider === "codex-cli" ? "codex" :
+          settings.provider === "claude-cli" ? "claude" :
+          "antigravity";
+        const model = createCliModel({ kind, model: settings.model, agentId });
         const result = await model.doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "Antworte nur mit dem Wort OK." }] }], abortSignal: AbortSignal.timeout(180_000) });
         return context.json({ ok: true, text: result.content[0]?.text.trim().slice(0, 200) ?? "", ms: Date.now() - started });
       } catch (error) {
@@ -223,7 +227,7 @@ export function createAgentHubRoutes(
   /** Anbieter-CLIs (Codex, Claude): installiert? angemeldet? Der Login selbst bleibt bei der CLI. */
   routes.get("/cli-providers", async (context) => {
     const providers = [
-      ...(await Promise.all([cliStatus("codex"), cliStatus("claude")])),
+      ...(await Promise.all([cliStatus("codex"), cliStatus("claude"), cliStatus("antigravity")])),
       await gbotStatus(),
       ...(await extraCliProviderStatus()),
     ];

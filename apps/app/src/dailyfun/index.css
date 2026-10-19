@@ -1,0 +1,763 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 0%;
+
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 0%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 89.4%;
+    --input: 0 0% 89.4%;
+    --ring: 0 0% 0%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 20%;
+    --sidebar-primary: 0 0% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 95.9%;
+    --sidebar-accent-foreground: 0 0% 10%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Custom accent colors */
+    --red-accent: #E4002B;
+    --blue-accent: #007BFF;
+    
+    /* Custom icon navigation colors */
+    --icon-default: 26 26% 10%;
+    --icon-hover: 177 88% 50%;
+
+    /* Liquid Glass tokens - light mode uses tinted glass for visibility */
+    --glass-bg: 220 20% 96% / 0.6;
+    --glass-bg-strong: 220 20% 94% / 0.75;
+    --glass-border: 220 10% 80% / 0.4;
+    --glass-border-strong: 220 10% 70% / 0.5;
+    --glass-highlight: 0 0% 100% / 0.7;
+    --glass-blur: 20px;
+    --glass-blur-strong: 40px;
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+    --glass-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
+    --glass-inner-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+  }
+
+  .dark {
+    --background: 0 0% 10%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 83.1%;
+    --sidebar-background: 0 0% 12%;
+    --sidebar-foreground: 0 0% 80%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 0 0% 10%;
+    --sidebar-accent: 0 0% 20%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Liquid Glass dark mode */
+    --glass-bg: 0 0% 100% / 0.06;
+    --glass-bg-strong: 0 0% 100% / 0.12;
+    --glass-border: 0 0% 100% / 0.12;
+    --glass-border-strong: 0 0% 100% / 0.2;
+    --glass-highlight: 0 0% 100% / 0.15;
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    --glass-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.4);
+    --glass-inner-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 98%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 0 0% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 90%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 90%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 90%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 0 0% 20%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 20%;
+    --sidebar-primary: 0 0% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 95.9%;
+    --sidebar-accent-foreground: 0 0% 10%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .theme-red {
+    --background: 0 70% 15%;
+    --foreground: 0 0% 98%;
+    --card: 0 60% 20%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 60% 20%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 80% 60%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 0 50% 30%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 40% 25%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 0 70% 50%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 40% 30%;
+    --input: 0 40% 30%;
+    --ring: 0 80% 60%;
+  }
+
+  .theme-blue {
+    --background: 220 60% 18%;
+    --foreground: 0 0% 98%;
+    --card: 220 50% 25%;
+    --card-foreground: 0 0% 98%;
+    --popover: 220 50% 25%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 220 90% 60%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 220 40% 35%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 220 30% 30%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 220 80% 55%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 30% 35%;
+    --input: 220 30% 35%;
+    --ring: 220 90% 60%;
+  }
+
+  .theme-green {
+    --background: 145 50% 18%;
+    --foreground: 0 0% 98%;
+    --card: 145 40% 25%;
+    --card-foreground: 0 0% 98%;
+    --popover: 145 40% 25%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 145 70% 50%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 145 35% 35%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 145 25% 30%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 145 65% 45%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 145 25% 35%;
+    --input: 145 25% 35%;
+    --ring: 145 70% 50%;
+  }
+
+  .theme-yellow {
+    --background: 42 80% 25%;
+    --foreground: 0 0% 10%;
+    --card: 42 70% 35%;
+    --card-foreground: 0 0% 10%;
+    --popover: 42 70% 35%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 42 95% 55%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 42 60% 45%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 42 50% 40%;
+    --muted-foreground: 0 0% 20%;
+    --accent: 42 90% 50%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 42 50% 45%;
+    --input: 42 50% 45%;
+    --ring: 42 95% 55%;
+  }
+
+  .theme-orange {
+    --background: 30 70% 25%;
+    --foreground: 0 0% 10%;
+    --card: 30 60% 35%;
+    --card-foreground: 0 0% 10%;
+    --popover: 30 60% 35%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 30 90% 55%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 30 50% 45%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 30 40% 40%;
+    --muted-foreground: 0 0% 20%;
+    --accent: 30 85% 50%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 40% 45%;
+    --input: 30 40% 45%;
+    --ring: 30 90% 55%;
+  }
+
+  .theme-pink {
+    --background: 320 50% 15%;
+    --foreground: 0 0% 98%;
+    --card: 320 40% 22%;
+    --card-foreground: 0 0% 98%;
+    --popover: 320 40% 22%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 320 70% 60%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 320 35% 32%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 320 25% 28%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 320 65% 55%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 320 25% 32%;
+    --input: 320 25% 32%;
+    --ring: 320 70% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    position: relative;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    font-display: swap;
+  }
+
+  /* Apple-style button animations and effects */
+  .apple-toggle {
+    position: relative;
+    overflow: hidden;
+    transform-origin: center;
+  }
+
+  .apple-toggle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease-out;
+  }
+
+  .apple-toggle:hover::before {
+    left: 100%;
+  }
+
+  .apple-toggle:active {
+    transform: scale(0.96) translateY(1px);
+    transition: all 75ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  /* Enhanced fade and scale animations */
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.2s ease-out;
+  }
+
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scale-in {
+    0% {
+      transform: scale(0.8);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  /* Enhanced pulse animation for globe icon */
+  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.1);
+      opacity: 0.8;
+    }
+  }
+
+  .animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Mobile-specific enhancements */
+  @media (max-width: 640px) {
+    .apple-toggle {
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+  }
+
+  /* Subtle organic background lines - adapts to theme */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.5;
+    background-image: 
+      /* Red curved lines */
+      radial-gradient(ellipse 800px 200px at 20% 10%, transparent 40%, rgba(228, 0, 43, 0.08) 50%, transparent 60%),
+      radial-gradient(ellipse 600px 150px at 80% 30%, transparent 40%, rgba(228, 0, 43, 0.06) 50%, transparent 60%),
+      radial-gradient(ellipse 400px 100px at 40% 70%, transparent 40%, rgba(228, 0, 43, 0.05) 50%, transparent 60%),
+      /* Blue curved lines */
+      radial-gradient(ellipse 700px 180px at 70% 20%, transparent 40%, rgba(0, 123, 255, 0.07) 50%, transparent 60%),
+      radial-gradient(ellipse 500px 120px at 30% 50%, transparent 40%, rgba(0, 123, 255, 0.06) 50%, transparent 60%),
+      radial-gradient(ellipse 350px 90px at 90% 80%, transparent 40%, rgba(0, 123, 255, 0.05) 50%, transparent 60%);
+  }
+  
+  /* Dark mode adjustments */
+  .dark body::before {
+    opacity: 0.3;
+  }
+
+  /* Ensure content appears above background lines */
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Scroll Gradient Background */
+  .scroll-gradient-enabled body {
+    position: relative;
+    background: var(--gradient-start);
+    transition: background-color var(--gradient-transition, 0.8s) ease;
+  }
+
+  .scroll-gradient-enabled body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    background: var(--gradient-end);
+    opacity: var(--scroll-opacity, 0);
+    transition: opacity var(--gradient-transition, 0.8s) ease;
+  }
+
+  .scroll-gradient-enabled #root {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+/* Custom utility classes for the new color scheme */
+@layer utilities {
+  .text-red-accent {
+    color: var(--red-accent);
+  }
+  
+  .text-blue-accent {
+    color: var(--blue-accent);
+  }
+  
+  .bg-red-accent {
+    background-color: var(--red-accent);
+  }
+  
+  .bg-blue-accent {
+    background-color: var(--blue-accent);
+  }
+  
+  .border-red-accent {
+    border-color: var(--red-accent);
+  }
+  
+  .border-blue-accent {
+    border-color: var(--blue-accent);
+  }
+
+  .font-signature {
+    font-family: 'Great Vibes', cursive;
+  }
+
+  /* Liquid text animation */
+  .liquid-text {
+    background: linear-gradient(45deg, #5E40E3, #8B5CF6, #A855F7, #5E40E3);
+    background-size: 400% 400%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: liquidFlow 4s ease-in-out infinite;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+  }
+
+  @keyframes liquidFlow {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  /* Performance optimizations */
+  .will-change-transform {
+    will-change: transform;
+  }
+  
+  .will-change-opacity {
+    will-change: opacity;
+  }
+  
+  .gpu-accelerated {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+  }
+
+  /* Subtle text effect for articles - Apple style readability */
+  .glow-text {
+    text-shadow: 0 0 2px rgba(26, 26, 26, 0.1);
+    font-weight: 400;
+    line-height: 1.6;
+    color: rgba(26, 26, 26, 0.95);
+  }
+
+  /* Liquid Glass utility classes */
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--glass-shadow), var(--glass-inner-shadow);
+    transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+
+  .glass:hover {
+    background: hsl(var(--glass-bg-strong));
+    border-color: hsl(var(--glass-border-strong));
+    box-shadow: var(--glass-shadow-hover), var(--glass-inner-shadow);
+  }
+
+  .glass-strong {
+    background: hsl(var(--glass-bg-strong));
+    backdrop-filter: blur(var(--glass-blur-strong));
+    -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+    border: 1px solid hsl(var(--glass-border-strong));
+    box-shadow: var(--glass-shadow), var(--glass-inner-shadow);
+  }
+
+  .glass-button {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--glass-inner-shadow);
+    transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+
+  .glass-button:hover {
+    background: hsl(var(--glass-bg-strong));
+    border-color: hsl(var(--glass-border-strong));
+    box-shadow: var(--glass-shadow), var(--glass-inner-shadow);
+    transform: translateY(-1px);
+  }
+
+  .glass-button:active {
+    transform: scale(0.97) translateY(0);
+    box-shadow: var(--glass-inner-shadow);
+  }
+
+  .glass-nav {
+    background: hsl(var(--glass-bg-strong));
+    backdrop-filter: blur(var(--glass-blur-strong));
+    -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--glass-shadow), var(--glass-inner-shadow);
+  }
+
+  .glass-card {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--glass-shadow), var(--glass-inner-shadow);
+    transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+
+  .glass-card:hover {
+    background: hsl(var(--glass-bg-strong));
+    border-color: hsl(var(--glass-border-strong));
+    box-shadow: var(--glass-shadow-hover), var(--glass-inner-shadow);
+    transform: translateY(-2px);
+  }
+
+  /* Apple-style animations and interactions */
+  .apple-button {
+    @apply transition-all duration-200 ease-apple;
+    @apply active:scale-95 active:transition-all active:duration-75;
+    transform-origin: center;
+  }
+  
+  .apple-nav-item {
+    @apply transition-all duration-300 ease-apple;
+    @apply hover:scale-110 hover:bg-muted/20;
+    @apply active:scale-95 active:transition-all active:duration-100;
+    @apply focus:ring-2 focus:ring-primary/30 focus:ring-offset-2;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+  }
+  
+  .apple-nav-item.active {
+    @apply bg-primary/10 shadow-lg;
+    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+  
+  /* Apple-style language switcher */
+  .apple-language-badge {
+    @apply transition-all duration-300 ease-apple-spring;
+    @apply hover:scale-110 hover:shadow-md hover:bg-primary/10;
+    @apply active:scale-95 active:transition-all active:duration-100;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  /* Apple-style popup animation */
+  .apple-popup-animation {
+    animation: applePopup 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes applePopup {
+    0% {
+      opacity: 0;
+      transform: scale(0.8) translateY(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* Particle container */
+  .particle-container {
+    position: relative;
+    overflow: visible;
+  }
+
+  /* Enhanced particles animation - more particles */
+  .particles {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .particles::before,
+  .particles::after {
+    content: '';
+    position: absolute;
+    width: 1.5px;
+    height: 1.5px;
+    background: linear-gradient(45deg, #007BFF, #E4002B);
+    border-radius: 50%;
+    animation: floatParticle 8s ease-in-out infinite;
+    opacity: 0.3;
+    box-shadow: 0 0 4px rgba(0, 123, 255, 0.4);
+  }
+
+  .particles::before {
+    top: 15%;
+    left: 8%;
+    animation-delay: 0s;
+    animation-duration: 7s;
+  }
+
+  .particles::after {
+    top: 70%;
+    right: 12%;
+    animation-delay: 2s;
+    animation-duration: 9s;
+  }
+
+  /* Add more particles with pseudo-elements */
+  .particle-container::before,
+  .particle-container::after {
+    content: '';
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    background: linear-gradient(135deg, #00D4AA, #007BFF);
+    border-radius: 50%;
+    animation: floatParticle 10s ease-in-out infinite;
+    opacity: 0.25;
+    box-shadow: 0 0 3px rgba(228, 0, 43, 0.3);
+    pointer-events: none;
+  }
+
+  .particle-container::before {
+    top: 40%;
+    left: 85%;
+    animation-delay: 1.5s;
+    animation-duration: 8s;
+  }
+
+  .particle-container::after {
+    top: 80%;
+    left: 20%;
+    animation-delay: 4s;
+    animation-duration: 6s;
+  }
+
+  @keyframes floatParticle {
+    0%, 100% {
+      transform: translateY(0px) translateX(0px) scale(1);
+      opacity: 0.15;
+    }
+    25% {
+      transform: translateY(-8px) translateX(4px) scale(1.1);
+      opacity: 0.4;
+    }
+    50% {
+      transform: translateY(-4px) translateX(-4px) scale(0.9);
+      opacity: 0.3;
+    }
+    75% {
+      transform: translateY(-12px) translateX(6px) scale(1.05);
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes floatBubble {
+    0% {
+      transform: translateY(0) translateX(0) scale(1);
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.8;
+    }
+    50% {
+      transform: translateY(-50vh) translateX(30px) scale(1.1);
+      opacity: 0.6;
+    }
+    90% {
+      opacity: 0.4;
+    }
+    100% {
+      transform: translateY(-120vh) translateX(-20px) scale(0.8);
+      opacity: 0;
+    }
+  }
+
+  /* Additional particle variations for Apple Intelligence feel */
+  .particle-container:nth-child(odd) .particles::before {
+    background: linear-gradient(135deg, #007BFF, #00D4AA);
+    animation-delay: 0.8s;
+    width: 2px;
+    height: 2px;
+  }
+
+  .particle-container:nth-child(even) .particles::after {
+    background: linear-gradient(135deg, #E4002B, #FF6B6B);
+    animation-delay: 2.5s;
+    width: 1.8px;
+    height: 1.8px;
+  }
+
+  .particle-container:nth-child(3n) .particles::before {
+    background: linear-gradient(90deg, #00D4AA, #007BFF);
+    top: 25%;
+    left: 60%;
+    animation-delay: 1.2s;
+  }
+
+  .particle-container:nth-child(4n) .particles::after {
+    background: linear-gradient(180deg, #E4002B, #007BFF);
+    top: 50%;
+    right: 25%;
+    animation-delay: 3.5s;
+  }
+
+  .animate-float-bubble {
+    animation: floatBubble 20s ease-in-out infinite;
+  }
+}

@@ -1,0 +1,9 @@
+/* helium-mobilefix: Seiten mit eigener Handy-Kopfzeile brauchen die Rahmen-Kopfzeile nicht. */
+.connect-mobile-frame:has([data-testid="mobile-company-profile"], #settings-scroll, [data-mobile-own-header])
+  > .connect-mobile-frame-header {
+  display: none;
+}
+/* Desktop-Seiten im Handy-Rahmen: nichts darf breiter als der Bildschirm werden. */
+.connect-mobile-frame-body {
+  max-width: 100vw;
+}

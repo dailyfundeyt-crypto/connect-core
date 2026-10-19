@@ -22,7 +22,6 @@ export function AgentBrainPanel({ agentId, agentName }: { agentId: string; agent
   }
   const entry = findBrainEntry(agents.data.agents, { id: agentId, name: agentName });
   const slug = entry?.slug ?? connectAgentSlug(agentName);
-  const defaults = agents.data.defaults ?? { read: [], write: [] };
   const used = agents.data.activity?.[slug];
 
   return (
@@ -30,25 +29,31 @@ export function AgentBrainPanel({ agentId, agentName }: { agentId: string; agent
       <section className="flex flex-col gap-1 text-sm">
         <p>
           Kürzel im Brain: <code className="rounded bg-muted px-1">{slug}</code>
-          {entry ? null : <span className="text-muted-foreground"> · noch kein Eintrag, es gelten die Standard-Rechte</span>}
+          {entry ? null : <span className="text-muted-foreground"> · noch kein Eintrag, der Bot hat keinen Brain-Zugriff</span>}
         </p>
         <p className="text-muted-foreground">
           Notizen dieses Agents liegen in <code>Memory/{slug}/</code>.{" "}
           {used ? `${used.writes}× geschrieben, ${used.reads}× gelesen, zuletzt ${used.last}.` : "Bisher keine Aktivität."}
         </p>
-        <Link className="inline-flex items-center gap-1 text-xs text-primary hover:underline" to="/settings/brain">
+        <Link className="inline-flex items-center gap-1 text-xs text-primary hover:underline" hash="brain" to="/settings">
           Ganzes Brain öffnen <IconExternalLink className="size-3" />
         </Link>
       </section>
       <section className="flex flex-col gap-2">
         <h3 className="text-sm font-medium">Zugriff</h3>
+        {!entry ? (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+            Dieser Bot hat noch keinen Brain-Zugriff. Wähle unten ausdrücklich aus, was er lesen oder schreiben darf.
+            Bis du die Rechte speicherst, erhält er keine Brain-Werkzeuge.
+          </p>
+        ) : null}
         <BrainScopeEditor
           connectAgentId={agentId}
           kind={entry?.kind ?? "connect"}
           name={entry?.name ?? agentName}
-          read={entry?.read ?? defaults.read}
+          read={entry?.read ?? []}
           slug={slug}
-          write={entry?.write ?? defaults.write}
+          write={entry?.write ?? []}
         />
         <p className="text-xs text-muted-foreground">
           Gespeichert in Brain/agents.json, fest an diesen Agent gebunden. Connect gibt ihm damit die Brain-Werkzeuge und

@@ -1,0 +1,10 @@
+11:14:26 [vite] (client) Re-optimizing dependencies because vite config has changed
+
+  VITE v7.3.6  ready in 2039 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://172.27.128.1:5173/
+  ➜  Network: http://172.20.208.1:5173/
+  ➜  Network: http://192.168.178.68:5173/
+11:42:10 [vite] (client) hmr update /src/routes/_authed/_app/index.tsx, /src/styles.css
+11:42:17 [vite] (client) hmr update /src/routes/_authed/_app/index.tsx, /src/styles.css

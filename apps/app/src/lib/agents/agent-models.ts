@@ -13,6 +13,9 @@ import {
 
 export type AgentModelId =
   | "auto"
+  | "agy-default"
+  | "agy-pro"
+  | "agy-fast"
   | "gpt-5"
   | "gpt-5-mini"
   | "gpt-4.1"
@@ -38,6 +41,7 @@ export type AgentModelId =
 
 export type AgentModelFamily =
   | "connect"
+  | "antigravity"
   | "manus"
   | "chatgpt"
   | "claude"
@@ -54,6 +58,9 @@ export type AgentModelOption = {
 
 export const AGENT_MODELS: AgentModelOption[] = [
   { id: "auto", label: "Auto", provider: "Connect" },
+  { id: "agy-default", label: "Antigravity Default", provider: "Antigravity" },
+  { id: "agy-pro", label: "Antigravity Pro", provider: "Antigravity" },
+  { id: "agy-fast", label: "Antigravity Fast", provider: "Antigravity" },
   { id: "gpt-5", label: "GPT-5", provider: "ChatGPT" },
   { id: "gpt-5-mini", label: "GPT-5 Mini", provider: "ChatGPT" },
   { id: "gpt-4.1", label: "GPT-4.1", provider: "ChatGPT" },
@@ -83,6 +90,7 @@ export const CONNECT_MODEL_IDS: AgentModelId[] = AGENT_MODELS.map((m) => m.id);
 
 export const MODEL_POOLS: Record<AgentModelFamily, AgentModelId[]> = {
   connect: CONNECT_MODEL_IDS,
+  antigravity: ["auto", "agy-default", "agy-pro", "agy-fast"],
   manus: ["auto", "manus", "manus-1.5"],
   chatgpt: ["auto", "gpt-5", "gpt-5-mini", "gpt-4.1", "o3", "o4-mini"],
   claude: ["auto", "claude-sonnet", "claude-opus", "claude-haiku"],
@@ -111,11 +119,16 @@ export type ModelFamilyMeta = {
 
 /**
  * Two production tiers + Beta:
- *   Model One  — external (Manus API / ZGPT Terminal)
- *   Model Two  — Hermes (local Connect API)
+ *   Model One  — Antigravity CLI (agy, lokal) | Manus API (cloud) | ZGPT Terminal
+ *   Model Two  — Hermes (lokal)
  * Global Settings → Model Provider is the chat router (Plan 047).
  */
 export const MODEL_FAMILIES: ModelFamilyMeta[] = [
+  {
+    id: "antigravity",
+    label: "Model One · Antigravity",
+    hint: "External · unsichtbares Terminal (agy CLI) — Browser-Use, Sandbox, Login via Google",
+  },
   {
     id: "manus",
     label: "Model One · Manus",
@@ -179,6 +192,7 @@ export function isBetaModelFamily(id: AgentModelFamily): boolean {
 
 const FAMILY_DEFAULT_MODEL: Record<AgentModelFamily, AgentModelId> = {
   connect: "auto",
+  antigravity: "agy-default",
   manus: "manus",
   chatgpt: "gpt-5",
   claude: "claude-sonnet",
@@ -189,6 +203,7 @@ const FAMILY_DEFAULT_MODEL: Record<AgentModelFamily, AgentModelId> = {
 };
 
 const FAMILY_TO_CLI: Partial<Record<AgentModelFamily, CliTarget>> = {
+  antigravity: "antigravity",
   manus: "manus",
   chatgpt: "chatgpt",
   claude: "claude",
@@ -198,6 +213,7 @@ const FAMILY_TO_CLI: Partial<Record<AgentModelFamily, CliTarget>> = {
 };
 
 const CLI_TO_FAMILY: Record<CliTarget, AgentModelFamily> = {
+  antigravity: "antigravity",
   manus: "manus",
   codex: "chatgpt",
   chatgpt: "chatgpt",

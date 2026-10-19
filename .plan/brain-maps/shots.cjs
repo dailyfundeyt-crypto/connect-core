@@ -1,0 +1,36 @@
+﻿const { chromium } = require(process.env.PW_CORE);
+const out = process.argv[2];
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  page.on("pageerror", (e) => console.log("pageerror", e.message.slice(0, 200)));
+  const go = async (url) => { await page.goto(url, { waitUntil: "domcontentloaded" }); await page.waitForTimeout(3000); const de = page.locator("text=Weiter auf Deutsch"); if (await de.count()) { await de.first().click(); await page.waitForTimeout(1500); } await page.waitForSelector('[data-testid="brain-maps-graph"]', { timeout: 60000 }); await page.waitForTimeout(2500); };
+  const base = "http://127.0.0.1:3199";
+  await go(`${base}/brain`);
+  await page.waitForSelector("text=kaputte Links", { timeout: 60000 }).catch(() => {});
+  await page.screenshot({ path: `${out}/01-brain-ringe.png` });
+  await page.click("button:has-text(\"Kreis\")"); await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/07-brain-kreis.png` });
+  await page.click("button:has-text(\"Bereiche\")"); await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/08-brain-bereiche.png` });
+  await page.click("button:has-text(\"Ringe\")"); await page.waitForTimeout(800);
+  await page.click("text=Links");
+  await page.selectOption('[data-testid="brain-maps-agent"]', "grok-bot-0e6f4b99");
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${out}/02-brain-links-agent.png` });
+  await page.selectOption('[data-testid="brain-maps-agent"]', "");
+  await page.click("text=Zeitachse");
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${out}/03-brain-zeitachse.png` });
+  await go(`${base}/brain?focus=${encodeURIComponent("Knowledge/Brain/Projects/Projekt Spark.md")}`);
+  await page.waitForSelector('[data-testid="brain-maps-detail"] li', { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${out}/04-brain-detail-rechte.png` });
+  await page.fill('[data-testid="brain-maps-search"]', "spark");
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${out}/05-brain-suche.png` });
+  await page.fill('[data-testid="brain-maps-search"]', "");
+  await page.click('[data-testid="brain-maps-open"]');
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: `${out}/06-brain-oeffnen-editor.png` });
+  await browser.close();
+})().catch((e) => { console.error(e); process.exit(1); });
+

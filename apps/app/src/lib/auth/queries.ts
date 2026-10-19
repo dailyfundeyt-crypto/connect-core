@@ -15,6 +15,7 @@ export type OnboardingStatus = {
 export type AuthenticatedUser = {
   id: string;
   email: string;
+  emailVerified?: boolean;
   name?: string | null;
   image?: string | null;
   role: "admin" | "user";

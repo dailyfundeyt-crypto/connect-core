@@ -5,11 +5,34 @@
  * id (`connectAgentId`). No entry means no access. Nothing here overwrites: writing is append-only,
  * and new files are created only where the area allows it (Inbox: new files only).
  */
-import type { BrainAgentEntry, BrainArea, BrainProject } from "./store";
+import type { BrainAgentEntry, BrainArea, BrainFileRule, BrainProject } from "./store";
 
 export type BrainOp = "read" | "append" | "create";
 
 export class BrainDenied extends Error {}
+
+/** Die genaueste Datei-/Ordner-Regel eines Agenten fuer einen Pfad (Ordner enden auf "/"). */
+export function fileRule(entry: BrainAgentEntry, path: string): BrainFileRule | undefined {
+  const p = path.toLowerCase();
+  let best: BrainFileRule | undefined;
+  for (const rule of entry.files ?? []) {
+    const rp = rule.path.toLowerCase();
+    const hit = rp.endsWith("/") ? p.startsWith(rp) : p === rp;
+    if (hit && (!best || rp.length > best.path.length)) best = rule;
+  }
+  return best;
+}
+
+/** Darf der Agent diese Datei schreiben (generierte Dateien, Pulse)? Vault und log.md nie. */
+export function canWrite(entry: BrainAgentEntry, path: string, projects: BrainProject[] = []): boolean {
+  if (path.startsWith("Vault/") || path.toLowerCase() === "log.md") return false;
+  const rule = fileRule(entry, path);
+  if (rule && typeof rule.write === "boolean") return rule.write;
+  const area = areaOf(path, entry.slug, projects);
+  if (!area || area === "log" || !has(entry.write, area)) return false;
+  if (area === "Kern") return ROOT_APPENDABLE.has(path);
+  return true;
+}
 
 const ROOT_APPENDABLE = new Set(["hot.md", "index.md"]);
 
@@ -50,6 +73,12 @@ export function areaOf(path: string, slug: string, projects: BrainProject[] = []
       return "Skills";
     case "_templates":
       return "Kern";
+    case "Maps":
+      return "Kern";
+    case "Pulse":
+      return "log";
+    case "Drafts":
+      return "Inbox";
     case "Memory":
       if (parts.length === 2) return "Kern";
       return parts[1] === slug ? "Memory:eigen" : "Memory";
@@ -92,11 +121,13 @@ function has(list: BrainArea[], area: BrainArea) {
 }
 
 export function canRead(entry: BrainAgentEntry, path: string, projects: BrainProject[] = []): boolean {
+  const rule = fileRule(entry, path);
+  if (rule && typeof rule.read === "boolean") return rule.read;
   const area = areaOf(path, entry.slug, projects);
   return area !== null && has(entry.read, area);
 }
 
-/** Throws BrainDenied with the reason in German, or returns the area. */
+/** Throws BrainDenied with the reason in German, or returns the area. Datei-Regeln gehen vor Bereichen. */
 export function assertAllowed(
   entry: BrainAgentEntry,
   path: string,
@@ -105,31 +136,42 @@ export function assertAllowed(
   projects: BrainProject[] = [],
 ): BrainArea {
   const area = areaOf(path, entry.slug, projects);
-  if (!area) throw new BrainDenied(`Kein Zugriff: "${path}" liegt in keinem Brain-Bereich.`);
-  const project = area.startsWith("Projekt:") ? projects.find((p) => `Projekt:${p.id}` === area) : undefined;
-  const label = project ? `Projekt ${project.name}` : (AREA_DE[area] ?? area);
+  const rule = fileRule(entry, path);
+  if (!area && !rule) throw new BrainDenied(`Kein Zugriff: "${path}" liegt in keinem Brain-Bereich.`);
+  const project = area?.startsWith("Projekt:") ? projects.find((p) => `Projekt:${p.id}` === area) : undefined;
+  const label = project ? `Projekt ${project.name}` : area ? (AREA_DE[area] ?? area) : path;
   if (op === "read") {
-    if (!has(entry.read, area)) throw new BrainDenied(`Kein Lesezugriff auf ${label} für ${entry.slug}.`);
+    if (rule && typeof rule.read === "boolean") {
+      if (!rule.read) throw new BrainDenied(`Kein Lesezugriff auf "${path}" fuer ${entry.slug} (Datei-Regel).`);
+      return (area ?? "Shared") as BrainArea;
+    }
+    if (!area || !has(entry.read, area)) throw new BrainDenied(`Kein Lesezugriff auf ${label} fuer ${entry.slug}.`);
     return area;
   }
   if (path.startsWith("Vault/")) {
-    throw new BrainDenied("Vault-Notizen außerhalb des Brains sind schreibgeschützt. Ergänzungen an die Projekt-Übersicht in Projects/ anhängen.");
+    throw new BrainDenied("Vault-Notizen ausserhalb des Brains sind schreibgeschuetzt. Ergaenzungen an die Projekt-Uebersicht in Projects/ anhaengen.");
   }
-  if (!has(entry.write, area)) throw new BrainDenied(`Kein Schreibzugriff auf ${label} für ${entry.slug}.`);
-  if (area === "log") throw new BrainDenied("log.md schreibt Connect selbst – direkt schreiben ist nicht erlaubt.");
+  if (path.toLowerCase() === "log.md") throw new BrainDenied("log.md schreibt Connect selbst - direkt schreiben ist nicht erlaubt.");
+  if (rule && typeof rule.write === "boolean") {
+    if (!rule.write) throw new BrainDenied(`Kein Schreibzugriff auf "${path}" fuer ${entry.slug} (Datei-Regel).`);
+    if (op === "create" && exists) throw new BrainDenied(`"${path}" gibt es schon. Ueberschreiben ist nicht erlaubt - nutze brain_append.`);
+    return (area ?? "Shared") as BrainArea;
+  }
+  if (!area || !has(entry.write, area)) throw new BrainDenied(`Kein Schreibzugriff auf ${label} fuer ${entry.slug}.`);
+  if (area === "log") throw new BrainDenied("log.md schreibt Connect selbst - direkt schreiben ist nicht erlaubt.");
   const parts = path.split("/");
   if (area === "Kern") {
     if (parts.length !== 1 || !ROOT_APPENDABLE.has(path)) {
-      throw new BrainDenied(`"${path}" ist geschützt (Regeln, Vorlagen, agents.json) und wird nur von Stefan geändert.`);
+      throw new BrainDenied(`"${path}" ist geschuetzt (Regeln, Vorlagen, Karten, agents.json) und wird nur von Stefan geaendert.`);
     }
     if (op === "create") throw new BrainDenied("Im Kern werden keine neuen Dateien angelegt.");
   }
   if (area === "Inbox") {
-    if (op === "append") throw new BrainDenied("In der Inbox werden nur neue Dateien angelegt, bestehende werden nicht verändert.");
-    if (exists) throw new BrainDenied(`"${path}" gibt es schon – in der Inbox nur neue Dateien.`);
+    if (op === "append") throw new BrainDenied("In der Inbox werden nur neue Dateien angelegt, bestehende werden nicht veraendert.");
+    if (exists) throw new BrainDenied(`"${path}" gibt es schon - in der Inbox nur neue Dateien.`);
   }
   if (op === "create" && exists) {
-    throw new BrainDenied(`"${path}" gibt es schon. Überschreiben ist nicht erlaubt – nutze brain_append.`);
+    throw new BrainDenied(`"${path}" gibt es schon. Ueberschreiben ist nicht erlaubt - nutze brain_append.`);
   }
   if (op === "append" && !exists && area !== "Memory:eigen" && area !== "Memory" && area !== "Daily") {
     throw new BrainDenied(`"${path}" gibt es nicht. Neue Dateien mit brain_write anlegen.`);

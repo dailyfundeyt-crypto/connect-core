@@ -1,0 +1,8 @@
+﻿git : Cloning into 'dailyfun'...
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-1e026b36-ec17-4999-a5c0-3a0ccd8a6b90.ps1:101 Zeichen:1
++ git clone https://github.com/dailyfundeyt-crypto/dailyfun.git 2>&1 |  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Cloning into 'dailyfun'...:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+

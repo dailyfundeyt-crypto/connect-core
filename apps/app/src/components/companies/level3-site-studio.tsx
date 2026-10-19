@@ -11,7 +11,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { BrainNoteReader } from "@/components/brain/brain-note-reader";
-import { NotesPanel } from "@/components/companies/notes-panel";
 import { VaultNoteEditor } from "@/components/companies/vault-note-editor";
 import { cn } from "@/lib/utils";
 import { brainTreeQueryOptions } from "@/lib/brain/queries";
@@ -135,7 +134,7 @@ export function Level3SiteStudio({
           <Button
             aria-label={split ? "Split-Screen schließen" : "Split-Screen öffnen"}
             aria-pressed={split}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 mr-12"
             onClick={() => setSplit((open) => !open)}
             size="sm"
             title={split ? "Split-Screen schließen" : "Notizen neben dem Browser"}
@@ -184,7 +183,7 @@ export function Level3SiteStudio({
           <Button
             aria-label={split ? "Split-Screen schließen" : "Split-Screen öffnen"}
             aria-pressed={split}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 mr-12"
             onClick={() => setSplit((open) => !open)}
             size="sm"
             title={split ? "Split-Screen schließen" : "Notizen neben dem Browser"}
@@ -429,11 +428,22 @@ function NotesOrVaultPane({
   );
 
   if (!vaultPath) {
-return (
-    <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
-      <NotesPanel companyId={companyId} folders={folders} />
-    </div>
-  );
+    return (
+      <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
+        {/*
+         * The local notes pane is gone. The list on the left and the file on
+         * disk are the only two things this panel ever showed, and with the
+         * list now living in the sidebar, the panel's job when nothing is
+         * open is to say so. A blank white box is the worst possible answer
+         * here -- it looks like the app is broken.
+         */}
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+          <p className="max-w-sm text-center text-sm text-muted-foreground">
+            Wähle links eine Notiz aus der Plannung oder lege oben eine neue an.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -450,7 +460,7 @@ return (
        * `files` is still built above for the tree the reader used for its own
        * navigation; it is passed along so nothing about the surrounding pane changes.
        */}
-      <VaultNoteEditor onBack={() => setOpenVaultPath(companyId, null)} path={vaultPath} />
+      <VaultNoteEditor companyId={companyId} onBack={() => setOpenVaultPath(companyId, null)} path={vaultPath} />
     </div>
   );
 }

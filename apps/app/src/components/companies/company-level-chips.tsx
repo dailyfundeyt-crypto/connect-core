@@ -1,6 +1,5 @@
 import {
   IconBrowser,
-  IconBuilding,
   IconChevronLeft,
   IconMessages,
   IconBolt,
@@ -19,15 +18,14 @@ import { listCompanies } from "@/lib/companies/store";
 import { notifyDesktopLevel } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
 
-/** Focus · Messages · Browser · Unternehmen */
+/** Focus · Messages · Browser */
 const MODE_ICONS = {
   1: IconBolt,
   2: IconMessages,
   3: IconBrowser,
-  4: IconBuilding,
 } as const;
 
-const MODES = [1, 2, 3, 4] as const;
+const MODES = [1, 2, 3] as const;
 
 /**
  * Mode emblems in the sidebar header rail.

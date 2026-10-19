@@ -90,8 +90,12 @@ export const Channel = memo(function Channel({
   const navigate = useNavigate();
   const isOpen = useParams({
     strict: false,
-    select: (params) =>
-      (params as { channelId?: string }).channelId === channelId,
+    select: (params) => {
+      if (participantIds.length === 1) {
+        return (params as { agentId?: string }).agentId === participantIds[0];
+      }
+      return (params as { channelId?: string }).channelId === channelId;
+    },
   });
   const revealed = useTypedReveal(summary);
   const setPinned = useMutation(setChannelPinnedMutationOptions(queryClient));
@@ -162,13 +166,16 @@ export const Channel = memo(function Channel({
     window.setTimeout(() => setAssignNote(null), 2500);
   };
 
+  const isSingleAgent = participantIds.length === 1;
+  const linkProps = isSingleAgent
+    ? { to: "/agent/$agentId" as const, params: { agentId: participantIds[0]! } }
+    : { to: "/channel/$channelId" as const, params: { channelId } };
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger>
           <Link
-            to="/channel/$channelId"
-            params={{ channelId }}
+            {...linkProps}
             type="button"
             className="flex w-full flex-row items-center gap-2.5 rounded-xl px-2 py-2 hover:bg-sidebar-accent [contain-intrinsic-size:auto_3.25rem] [content-visibility:auto] group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-0!"
             activeProps={{

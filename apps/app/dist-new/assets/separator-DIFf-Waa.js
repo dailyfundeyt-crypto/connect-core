@@ -1,0 +1,1 @@
+import{j as o,g as s}from"./index-l4ot6MQQ.js";import{J as e}from"./textarea-DSlFfDeI.js";function n({className:a,orientation:r="horizontal",...t}){return o.jsx(e,{"data-slot":"separator",orientation:r,className:s("shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",a),...t})}export{n as S};

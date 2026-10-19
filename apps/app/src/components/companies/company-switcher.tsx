@@ -1,6 +1,13 @@
-import { IconPlus, IconSettings, IconBuilding } from "@tabler/icons-react";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import {
+  IconBuilding,
+  IconCheck,
+  IconChevronDown,
+  IconPlus,
+  IconSettings,
+} from "@tabler/icons-react";
+import { useNavigate, useParams, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { COMPANY_APP_OPEN_EVENT } from "@/company-apps/registry";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,13 +25,26 @@ import {
   subscribeCompanies,
 } from "@/lib/companies/store";
 import { appConfig } from "@/lib/generated/application-config";
+import { useLocale } from "@/lib/i18n/use-locale";
 import { cn } from "@/lib/utils";
 
 const ACTIVE_KEY = "connect.activeCompanyId";
 
+/** Stored id, tolerant of older JSON-quoted values ("\"spark\""). */
+function readStoredActiveId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_KEY);
+    if (!raw) return null;
+    return raw.startsWith('"') ? (JSON.parse(raw) as string) : raw;
+  } catch {
+    return null;
+  }
+}
+
 function readActiveId(companies: ConnectCompany[]): string | null {
   if (typeof window === "undefined") return companies[0]?.id ?? null;
-  const stored = window.localStorage.getItem(ACTIVE_KEY);
+  const stored = readStoredActiveId();
   if (stored && companies.some((c) => c.id === stored)) return stored;
   return companies[0]?.id ?? null;
 }
@@ -41,7 +61,7 @@ function writeActiveId(id: string) {
  */
 function readBrandCompanyId(companies: ConnectCompany[]): string | null {
   if (typeof window === "undefined") return null;
-  const stored = window.localStorage.getItem(ACTIVE_KEY);
+  const stored = readStoredActiveId();
   return stored && companies.some((c) => c.id === stored) ? stored : null;
 }
 
@@ -67,24 +87,32 @@ function applyDocumentBrand(company: ConnectCompany | null) {
 }
 
 /**
- * Company switcher — brand mark in the mode icon rail.
- * Shows the picked company's logo (Connect logo on Home / no pick);
- * open the menu to pick a company.
+ * One source of truth for the company menu: the desktop rail (CompanySwitcher) and the mobile
+ * profile sheet both read companies / active company / actions from here, so a switch in either
+ * place updates the whole app at once (localStorage + "connect-active-company" event).
  */
-export function CompanySwitcher() {
+export function useCompanySwitcher() {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams({ strict: false }) as { companyId?: string };
   const [companies, setCompanies] = useState(listCompanies);
   const [activeId, setActiveId] = useState<string | null>(() =>
     readActiveId(listCompanies()),
   );
-  const [open, setOpen] = useState(false);
+  // German unless the user explicitly picked another language (Stefan works in German).
+  const { locale } = useLocale();
+  const de = !locale || locale === "de";
   const [brandId, setBrandId] = useState<string | null>(() =>
     readBrandCompanyId(listCompanies()),
   );
 
   useEffect(() => {
-    const sync = () => setBrandId(readBrandCompanyId(listCompanies()));
+    const sync = () => {
+      const next = listCompanies();
+      setCompanies(next);
+      setActiveId(readActiveId(next));
+      setBrandId(readBrandCompanyId(next));
+    };
     sync();
     const onStorage = (event: StorageEvent) => {
       if (event.key === null || event.key === ACTIVE_KEY) {
@@ -102,31 +130,85 @@ export function CompanySwitcher() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => {
-      const next = listCompanies();
-      setCompanies(next);
-      setActiveId(readActiveId(next));
-    };
-    refresh();
-    return subscribeCompanies(refresh);
-  }, []);
-
-  useEffect(() => {
     if (params.companyId && companies.some((c) => c.id === params.companyId)) {
-      writeActiveId(params.companyId);
+      if (readStoredActiveId() !== params.companyId) writeActiveId(params.companyId);
       setActiveId(params.companyId);
     }
   }, [params.companyId, companies]);
 
-  useEffect(() => {
-    const onActive = () => setActiveId(readActiveId(listCompanies()));
-    window.addEventListener("connect-active-company", onActive);
-    return () => window.removeEventListener("connect-active-company", onActive);
-  }, []);
-
   const active =
     (activeId ? getCompany(activeId) : undefined) ?? companies[0] ?? null;
   const brand = (brandId ? getCompany(brandId) : undefined) ?? null;
+
+  /** Make `company` active everywhere; `navigateTo: false` keeps the current page (mobile). */
+  const select = (company: ConnectCompany, opts?: { navigateTo?: boolean }) => {
+    writeActiveId(company.id);
+    setActiveId(company.id);
+    if (opts?.navigateTo === false) return;
+    const level = getActiveLevel();
+    if (level === 2) {
+      setActiveLevel(2);
+      void navigate({ to: "/" });
+      return;
+    }
+    void navigate({
+      to: "/company/$companyId",
+      params: { companyId: company.id },
+      search: { level },
+    });
+  };
+
+  const openProfile = () => {
+    const id = active?.id;
+    if (!id) return;
+    // Firmenprofil = dailyfun (https://github.com/dailyfundeyt-crypto/dailyfun)
+    // als rechtes Panel im Messages-Workspace. Wir bleiben auf der aktuellen
+    // Route (oder gehen zur Messages-View), falls der User auf einer anderen
+    // Connect-Seite war, und dispatchen das COMPANY_APP_OPEN_EVENT, damit die
+    // Messages-View die dailyfun-App als Panel einblendet.
+    if (location.pathname !== "/") {
+      void navigate({ to: "/" });
+    }
+    window.dispatchEvent(
+      new CustomEvent(COMPANY_APP_OPEN_EVENT, { detail: { appId: "dailyfun" } }),
+    );
+  };
+
+  const newCompany = () => void navigate({ to: "/company/new" });
+  const manageCompanies = () => void navigate({ to: "/settings", hash: "companies" });
+
+  const labels = {
+    title: de ? "Firmen" : "Companies",
+    profile: de ? "Firmenprofil" : "Company profile",
+    create: de ? "Neue Firma" : "New company",
+    manage: de ? "Firmen verwalten" : "Manage companies",
+    empty: de ? "Noch keine Firmen in diesem Konto." : "No companies in this account yet.",
+    active: de ? "Aktiv" : "Active",
+    pick: de ? "Firma wählen" : "Pick a company",
+  };
+
+  return {
+    companies,
+    active,
+    activeId: active?.id ?? null,
+    brand,
+    select,
+    openProfile,
+    newCompany,
+    manageCompanies,
+    labels,
+  };
+}
+
+/**
+ * Company switcher — brand mark top left in the desktop sidebar rail.
+ * Shows the picked company's logo (and, with `showLabel`, its name); click opens the
+ * company menu (logo, name, subtitle per company + Firmenprofil / Neue Firma / Firmen verwalten).
+ */
+export function CompanySwitcher({ showLabel = false }: { showLabel?: boolean } = {}) {
+  const sw = useCompanySwitcher();
+  const { companies, active, brand, labels } = sw;
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     applyDocumentBrand(brand);
@@ -137,83 +219,50 @@ export function CompanySwitcher() {
     window.setTimeout(action, 0);
   };
 
-  const select = (company: ConnectCompany) => {
-    writeActiveId(company.id);
-    setActiveId(company.id);
-    const level = getActiveLevel();
-    closeThen(() => {
-      if (level === 2) {
-        setActiveLevel(2);
-        void navigate({ to: "/" });
-        return;
-      }
-      void navigate({
-        to: "/company/$companyId",
-        params: { companyId: company.id },
-        search: { level },
-      });
-    });
-  };
-
-  const openProfile = () => {
-    const id = active?.id;
-    if (!id) return;
-    closeThen(() => {
-      void navigate({
-        to: "/company/$companyId",
-        params: { companyId: id },
-        search: { level: 2, profile: true },
-      });
-    });
-  };
-
   const menu = (
     <DropdownMenuContent align="start" className="w-72 rounded-xl p-1.5">
       <DropdownMenuGroup>
-        <DropdownMenuLabel>Companies</DropdownMenuLabel>
+        <DropdownMenuLabel>{labels.title}</DropdownMenuLabel>
+        {companies.length === 0 ? (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">{labels.empty}</p>
+        ) : null}
         {companies.map((company) => (
           <DropdownMenuItem
-            className="items-start gap-2.5 rounded-lg py-2"
+            className={cn(
+              "items-start gap-2.5 rounded-lg py-2",
+              company.id === active?.id && "bg-accent/60",
+            )}
             key={company.id}
-            onClick={() => select(company)}
+            onClick={() => closeThen(() => sw.select(company))}
           >
             <CompanyMark company={company} size={32} />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{company.name}</p>
               <p className="line-clamp-2 text-xs text-muted-foreground">
                 {company.description}
               </p>
             </div>
+            {company.id === active?.id ? (
+              <IconCheck aria-label={labels.active} className="mt-1 size-4 shrink-0 text-muted-foreground" />
+            ) : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
         {active ? (
-          <DropdownMenuItem onClick={openProfile}>
+          <DropdownMenuItem onClick={() => closeThen(sw.openProfile)}>
             <IconBuilding className="size-4" />
-            Company profile
+            {labels.profile}
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem
-          onClick={() =>
-            closeThen(() => {
-              void navigate({ to: "/company/new" });
-            })
-          }
-        >
+        <DropdownMenuItem onClick={() => closeThen(sw.newCompany)}>
           <IconPlus className="size-4" />
-          New company
+          {labels.create}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() =>
-            closeThen(() => {
-              void navigate({ to: "/settings", hash: "companies" });
-            })
-          }
-        >
+        <DropdownMenuItem onClick={() => closeThen(sw.manageCompanies)}>
           <IconSettings className="size-4" />
-          Manage companies
+          {labels.manage}
         </DropdownMenuItem>
       </DropdownMenuGroup>
     </DropdownMenuContent>
@@ -224,7 +273,10 @@ export function CompanySwitcher() {
       <DropdownMenuTrigger
         aria-label="Unternehmen wechseln"
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg outline-none transition-colors",
+          "flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-lg outline-none transition-colors",
+          showLabel
+            ? "max-w-[9.5rem] px-1 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+            : "w-8 justify-center",
           "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
           "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
           open &&
@@ -247,6 +299,14 @@ export function CompanySwitcher() {
             <ConnectBrandMark size={22} />
           )}
         </span>
+        {showLabel ? (
+          <>
+            <span className="min-w-0 truncate text-[13px] font-medium text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+              {brand?.name ?? labels.pick}
+            </span>
+            <IconChevronDown className="size-3.5 shrink-0 text-sidebar-foreground/45 group-data-[collapsible=icon]:hidden" />
+          </>
+        ) : null}
       </DropdownMenuTrigger>
       {menu}
     </DropdownMenu>
@@ -280,7 +340,7 @@ function ConnectBrandMark({ size = 22 }: { size?: number }) {
   );
 }
 
-function CompanyMark({
+export function CompanyMark({
   company,
   size = 36,
 }: {

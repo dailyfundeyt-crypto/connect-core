@@ -1,0 +1,26 @@
+feat(connect-mcp): add knowledge + market tools (6 stubs, Stufe 6 Integration)
+
+Stufe 5 Commit 4: Stub-Tools für Knowledge und Finance.
+Jeder Stub gibt eine ehrliche Antwort, was passieren würde,
+wenn die Integration existiert - damit Perplexity/Grok/Claude
+wissen, was kommen wird.
+
+Knowledge-Tools (3):
+  list_knowledge_sources - Spark-Notes / Workspace-Docs
+  read_spark_note       - einzelne Note lesen
+  write_spark_note      - Note schreiben / aktualisieren
+
+Market-Tools (3):
+  crypto_quote          - BTC/ETH/SOL Kurse
+  finance_summary       - persoenliche Finanzen
+  market_news           - Markt-Nachrichten
+
+Manifest zeigt jetzt 19 Tools:
+  6 agents + 4 browser + 3 mini-apps + 3 knowledge + 3 market
+
+Live verifiziert:
+  crypto_quote BTC      -> Stub mit {symbol: BTC, currency: USD}
+  list_knowledge_sources -> Stub mit {query: swarm plan}
+
+Next: Commit 5-7 (UI + Token-Admin) + Commit 8 (Admin-Page)
+  + Commit 9 (run_swarm Orchestrator).

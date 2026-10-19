@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; width: 290px; font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: #07080c; color: #e7e9ee; }
+  .wrap { padding: 16px; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .head img { width: 28px; height: 28px; border-radius: 8px; }
+  .head b { font-size: 15px; letter-spacing: .2px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 10px #f59e0b; }
+  .ok .dot { background: #10b981; box-shadow: 0 0 10px #10b981; }
+  .muted { color: #8b90a0; font-size: 12px; margin-top: 8px; }
+  button { margin-top: 12px; width: 100%; padding: 9px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); color: #e7e9ee; font: inherit; cursor: pointer; }
+  button.primary { background: linear-gradient(180deg,#fff,#d7dae3); color: #07080c; border: 0; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head"><img src="icons/icon48.png" alt="" /><b>Connect Sync</b></div>
+  <div id="pill" class="pill"><span class="dot"></span><span id="state">…</span></div>
+  <div id="detail" class="muted"></div>
+  <div class="muted">Nur lokal: 127.0.0.1:3101 · Tabs und Befehle laufen über deine Connect App zur Handy-Version (Mein Helium).</div>
+  <button id="reconnect">Neu verbinden</button>
+  <button id="shots" class="primary">Screenshots erlauben</button>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

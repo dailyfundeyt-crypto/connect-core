@@ -24,6 +24,7 @@ import { buildBrowserTools } from "./handlers/browser";
 import { buildMiniAppsTools } from "./handlers/mini-apps";
 import { buildKnowledgeTools } from "./handlers/knowledge";
 import { buildMarketTools } from "./handlers/market";
+import { buildModelOneTools } from "./handlers/model-one";
 
 /**
  * Registry-Build-Deps. Werden vom Mount-Punkt in `app.ts` gesetzt.

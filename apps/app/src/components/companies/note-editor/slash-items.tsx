@@ -3,16 +3,22 @@ import {
   IconCheck,
   IconChevronDown,
   IconCode,
+  IconColumns3,
   IconH1,
   IconH2,
   IconH3,
+  IconLink,
+  IconLayoutColumns,
   IconList,
   IconListNumbers,
   IconMath,
+  IconMicrophone,
+  IconMovie,
   IconPhoto,
   IconTable,
   IconToggleLeft,
   IconVariable,
+  IconWindow,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import type { NoteBlockType } from "@/lib/companies/notes";
@@ -56,7 +62,13 @@ export const SLASH_ITEMS: SlashItem[] = [
    * for the thing rather than looking it up.
    */
   { id: "table", keywords: ["table", "tabelle", "tabellen"], label: "Tabelle", group: "Fortgeschritten", icon: <IconTable className="size-4" stroke={1.5} />, type: "table" },
-  { id: "image", keywords: ["image", "bild", "foto"], label: "Bild", hint: "Einfügen oder ziehen", group: "Medien", icon: <IconPhoto className="size-4" stroke={1.5} />, type: "image" },
+  { id: "columns", keywords: ["columns", "spalten", "layout", "spalte"], label: "Spalten", group: "Layout", icon: <IconColumns3 className="size-4" stroke={1.5} />, type: "columns" },
+  { id: "divider-styled", keywords: ["trenner-stil", "divider-stil", "linie-stil"], label: "Trennlinie (stilvoll)", group: "Layout", icon: <IconLayoutColumns className="size-4" stroke={1.5} />, type: "divider" },
+  { id: "audio", keywords: ["audio", "sound", "musik", "aufnahme"], label: "Audio", group: "Medien", icon: <IconMicrophone className="size-4" stroke={1.5} />, type: "audio" },
+  { id: "video", keywords: ["video", "mp4", "film"], label: "Video", group: "Medien", icon: <IconMovie className="size-4" stroke={1.5} />, type: "image" },
+  { id: "iframe", keywords: ["iframe", "embed", "youtube", "loom", "figma", "excalidraw"], label: "Einbettung", hint: "YouTube, Loom, Figma …", group: "Medien", icon: <IconWindow className="size-4" stroke={1.5} />, type: "iframe" },
+  { id: "image", keywords: ["image", "bild", "foto", "foto", "media", "medien"], label: "Bild & Medien", hint: "Bild oder Video", group: "Medien", icon: <IconPhoto className="size-4" stroke={1.5} />, type: "image" },
+  { id: "webclip", keywords: ["webclip", "clip", "url", "webseite", "website"], label: "Webclip", hint: "URL einfügen → Vorschau", group: "Medien", icon: <IconLink className="size-4" stroke={1.5} />, type: "paragraph" },
 ];
 
 /** Markdown triggers, exactly the characters Notion uses. */

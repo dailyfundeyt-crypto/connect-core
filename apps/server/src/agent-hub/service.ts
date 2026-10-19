@@ -29,7 +29,7 @@ import {
 import { errorText, type ListedTool, McpManager, type ServerStatus } from "./mcp-manager";
 import { createCliModel } from "./cli-model";
 
-export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible" | "codex-cli" | "claude-cli";
+export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible" | "codex-cli" | "claude-cli" | "antigravity-cli";
 
 export type AgentModelSettings = {
   provider: ModelProvider;
@@ -315,7 +315,18 @@ class AgentHub {
   /** The model a built-in agent runs on, or null for the deployment default (old global BOT_* setting). */
   async resolveModel(agentId: string): Promise<AgentModelOverride | null> {
     const settings = await this.modelSettings(agentId);
-    if (!settings || settings.provider === "default" || !settings.model) return null;
+    if (!settings || settings.provider === "default" || !settings.model) {
+      // Hermes-Standard: ohne eigenes Modell und ohne echten OPENAI_API_KEY (Platzhalter "sk-local...")
+      // lief jeder Hermes-Agent in "Incorrect API key" und antwortete nie. Dann unsichtbar die
+      // Codex-CLI mit dem ChatGPT-Login dieses PCs nehmen (kein API-Key, kein Konsolenfenster).
+      const envKey = process.env.OPENAI_API_KEY?.trim() ?? "";
+      const placeholder = !envKey || /^sk-local|placeholder/i.test(envKey);
+      if (placeholder && process.env.CONNECT_HERMES_DEFAULT_CLI !== "off") {
+        const cliModel = process.env.CONNECT_HERMES_DEFAULT_MODEL?.trim() || "gpt-5.6-terra";
+        return { model: createCliModel({ kind: "codex", model: cliModel, agentId }), apiKey: "cli-login", label: `codex-cli/${cliModel}` };
+      }
+      return null;
+    }
     const label = `${settings.provider}/${settings.model}`;
     let key: string | null = null;
     if (settings.credentialId) {
@@ -332,6 +343,14 @@ class AgentHub {
         return { model: createCliModel({ kind: "codex", model: settings.model, agentId }), apiKey: "cli-login", label };
       case "claude-cli":
         return { model: createCliModel({ kind: "claude", model: settings.model, agentId }), apiKey: "cli-login", label };
+      /**
+       * Antigravity: Go-Binary `agy`, Browser-Use ist eingebaut. Der
+       * Agent klickt selbst, sobald der Prompt Web-Aktionen braucht —
+       * kein zusätzliches Tool nötig. Modell `auto` überlässt der CLI
+       * die Default-Wahl.
+       */
+      case "antigravity-cli":
+        return { model: createCliModel({ kind: "antigravity", model: settings.model, agentId }), apiKey: "cli-login", label };
       case "ollama-local":
         return { model: await openAiChatModel(baseURL ?? "", key || "ollama", settings.model, "ollama"), apiKey: key || "ollama", label };
       case "ollama-cloud":

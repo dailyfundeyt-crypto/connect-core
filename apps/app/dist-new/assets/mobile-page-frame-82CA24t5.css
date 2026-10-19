@@ -1,0 +1,1 @@
+.connect-mobile-frame:has([data-testid=mobile-company-profile],#settings-scroll,[data-mobile-own-header])>.connect-mobile-frame-header{display:none}.connect-mobile-frame-body{max-width:100vw}

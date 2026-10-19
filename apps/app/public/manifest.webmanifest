@@ -1,13 +1,13 @@
 {
   "name": "Connect",
   "short_name": "Connect",
-  "description": "AI coworkers on your machine — channels, agents, and browser.",
+  "description": "Connect – KI-Agenten, Kanäle und Browser.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#ffffff",
-  "theme_color": "#0f172a",
+  "background_color": "#07080c",
+  "theme_color": "#07080c",
   "lang": "de",
   "icons": [
     {
@@ -21,6 +21,19 @@
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Fokus",
+      "short_name": "Fokus",
+      "url": "/focus",
+      "icons": [
+        {
+          "src": "/brand/connect-logo.png",
+          "sizes": "512x512"
+        }
+      ]
     }
   ]
 }

@@ -24,7 +24,7 @@ export type GraphEdge = { source: string; target: string; kind: "link" | "read" 
 
 const WIKILINK = /(!?)\[\[([^\]|#^]+)(?:[#^][^\]|]*)?(?:\\?\|([^\]]*))?\]\]/g;
 const MDLINK = /(!?)\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|webm|mov)$/i;
 
 /** Project of a note: MOC in Projects/ or a vault note by folder. */
 function projectFor(rel: string, projects: BrainProject[]) {
@@ -110,6 +110,28 @@ export async function buildGraph(root: string, options: { agents: boolean }) {
       hub: false,
     });
   }
+  // Project scopes represent the company/project folders configured in agents.json.
+  // Keep these hubs in both graph views so the neutral structure view can show the
+  // same connected folders without exposing agent permission edges.
+  for (const project of projects) {
+    nodes.set(`project:${project.id}`, {
+      id: `project:${project.id}`,
+      label: project.name,
+      kind: "area",
+      group: "Tool",
+      project: project.id,
+      degree: 0,
+      hub: true,
+    });
+  }
+  for (const project of projects) {
+    if (project.parent && nodes.has(`project:${project.parent}`)) {
+      edges.push({ source: `project:${project.parent}`, target: `project:${project.id}`, kind: "area" });
+    }
+    if (project.moc && nodes.has(project.moc) && nodes.has(`project:${project.id}`)) {
+      edges.push({ source: `project:${project.id}`, target: project.moc, kind: "area" });
+    }
+  }
   for (const file of files) {
     if (file.size > 2_000_000 || file.path === "log.md") continue;
     const text = await readFile(notePath(root, file.path), "utf8").catch(() => "");
@@ -129,36 +151,75 @@ export async function buildGraph(root: string, options: { agents: boolean }) {
     }
   }
   if (options.agents) {
-    const areas = ["Kern", "Shared", "Memory", "Daily", "Inbox", "Skills"];
+    const areas = ["Kern", "Shared", "Projects", "Memory", "Daily", "Inbox", "Skills", "log"];
     for (const area of areas) {
       nodes.set(`area:${area}`, { id: `area:${area}`, label: area, kind: "area", group: area, degree: 0, hub: true });
     }
     for (const file of paths) {
-      if (file.startsWith("Vault/")) continue;
       const area = areaOf(file, "", projects);
-      const key = area === "Memory:eigen" ? "Memory" : area;
-      if (key && nodes.has(`area:${key}`)) edges.push({ source: `area:${key}`, target: file, kind: "area" });
+      const project = projectFor(file, projects);
+      const target = project ? `project:${project.id}` : area ? `area:${area}` : null;
+      if (target && nodes.has(target)) edges.push({ source: target, target: file, kind: "area" });
     }
-    const norm = (a: string) => (a === "Memory:eigen" ? "Memory" : a);
     for (const entry of config.agents) {
       const id = `agent:${entry.slug}`;
       nodes.set(id, { id, label: entry.name ?? entry.slug, kind: "agent", group: "Agent", degree: 0, hub: false });
-      const read = new Set(entry.read.map(norm));
-      const write = new Set(entry.write.map(norm));
-      const targets = new Map<string, "read" | "write">();
-      for (const area of new Set([...read, ...write])) {
-        const kind = write.has(area) ? "write" : "read";
-        if (nodes.has(`area:${area}`)) targets.set(`area:${area}`, kind);
-        // Projects (alle) or Projekt:<id>: an edge to each project's overview note.
-        for (const project of projects) {
-          if (!project.moc || !nodes.has(project.moc)) continue;
-          if (area === "Projects" || area === `Projekt:${project.id}`) {
-            const all = write.has("Projects") || write.has(`Projekt:${project.id}`) ? "write" : "read";
-            targets.set(project.moc, all);
+      const access = new Map<string, "read" | "write">();
+      const addAccess = (target: string, kind: "read" | "write") => {
+        if (!nodes.has(target)) return;
+        if (kind === "write" || !access.has(target)) access.set(target, kind);
+      };
+      for (const area of entry.read) {
+        if (area === "Memory:eigen") {
+          const memoryId = `memory:${entry.slug}`;
+          nodes.set(memoryId, {
+            id: memoryId,
+            label: `${entry.name ?? entry.slug} · eigener Memory-Ordner`,
+            kind: "area",
+            group: `Memory/${entry.slug}`,
+            degree: 0,
+            hub: true,
+          });
+          for (const file of paths) {
+            if (file.startsWith(`Memory/${entry.slug}/`)) edges.push({ source: memoryId, target: file, kind: "area" });
           }
+          addAccess(memoryId, "read");
+        } else if (area === "Projects") {
+          addAccess("area:Projects", "read");
+          for (const project of projects) addAccess(`project:${project.id}`, "read");
+        } else if (area.startsWith("Projekt:")) {
+          addAccess(`project:${area.slice("Projekt:".length)}`, "read");
+        } else {
+          addAccess(`area:${area}`, "read");
         }
       }
-      for (const [target, kind] of targets) edges.push({ source: id, target, kind });
+      for (const area of entry.write) {
+        if (area === "Memory:eigen") {
+          const memoryId = `memory:${entry.slug}`;
+          if (!nodes.has(memoryId)) {
+            nodes.set(memoryId, {
+              id: memoryId,
+              label: `${entry.name ?? entry.slug} · eigener Memory-Ordner`,
+              kind: "area",
+              group: `Memory/${entry.slug}`,
+              degree: 0,
+              hub: true,
+            });
+            for (const file of paths) {
+              if (file.startsWith(`Memory/${entry.slug}/`)) edges.push({ source: memoryId, target: file, kind: "area" });
+            }
+          }
+          addAccess(memoryId, "write");
+        } else if (area === "Projects") {
+          addAccess("area:Projects", "write");
+          for (const project of projects) addAccess(`project:${project.id}`, "write");
+        } else if (area.startsWith("Projekt:")) {
+          addAccess(`project:${area.slice("Projekt:".length)}`, "write");
+        } else {
+          addAccess(`area:${area}`, "write");
+        }
+      }
+      for (const [target, kind] of access) edges.push({ source: id, target, kind });
     }
   }
   for (const edge of edges) {
@@ -242,17 +303,16 @@ export async function referencedImage(brainRoot: string, name: string) {
   if (!name || name.length > 300 || name.includes("\0") || name.includes("..") || !IMAGE_EXT.test(name)) return null;
   const norm = (value: string) => value.replace(/\\/g, "/").replace(/^(\.?\/)+/, "").toLowerCase();
   const wanted = norm(name);
-  const referenced = (await referencedImages(brainRoot, norm)).has(wanted);
-  if (!referenced) return null;
   const vault = vaultRootFor(brainRoot);
-  if (!vault || !existsSync(vault)) return null;
-  const byName = await indexVaultImages(vault);
+  const rootDir = vault && existsSync(vault) ? vault : brainRoot;
+  if (!rootDir || !existsSync(rootDir)) return null;
+  const byName = await indexVaultImages(rootDir);
   const full = byName.get(wanted) ?? byName.get(wanted.split("/").pop()!);
   if (!full) return null;
   const real = await realpath(full).catch(() => null);
-  const realVault = await realpath(vault).catch(() => vault);
-  if (!real || path.relative(realVault, real).startsWith("..")) return null;
+  const realRoot = await realpath(rootDir).catch(() => rootDir);
+  if (!real || path.relative(realRoot, real).startsWith("..")) return null;
   const info = await stat(real);
-  if (!info.isFile() || info.size > 15 * 1024 * 1024) return null;
+  if (!info.isFile() || info.size > 25 * 1024 * 1024) return null;
   return real;
 }

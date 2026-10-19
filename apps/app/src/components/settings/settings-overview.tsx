@@ -69,6 +69,7 @@ const SECTIONS: Section[] = [
       { title: "Browser-Gruppen", hash: "browser-groups" },
       { title: "Ubuntu-Maschinen", hash: "ubuntu-machines" },
       { title: "Voice", hash: "voice" },
+      { title: "Handy verbinden", hash: "handy-verbinden" },
       { title: "Connect-Agenten", hash: "connect-agenten" },
     ],
   },
@@ -112,11 +113,13 @@ const SECTIONS: Section[] = [
     icon: IconKeyboard,
     accent: "#f472b6",
     title: "Erweitert",
-    description: "Shortcuts, Deployment-Modus, Background-Agent und Codex-Nutzung.",
+    description: "Farbmodus, Shortcuts, Deployment-Modus, Background-Agent und Codex-Nutzung.",
     chips: [
+      { title: "Darstellung", hash: "appearance" },
+      { title: "Fokus", hash: "fokus" },
       { title: "Shortcuts", hash: "shortcuts" },
       { title: "Deployment", hash: "deployment-mode" },
-      { title: "Brain", hash: "brain" },
+      { title: "Spark", hash: "brain" },
       { title: "Codex", hash: "codex-usage" },
       { title: "Helium-Shell", hash: "helium-shell" },
       { title: "Benachrichtigungen", hash: "benachrichtigungen" },
@@ -174,7 +177,7 @@ function BrainPreview() {
         <IconBrain className="size-3.5" />
         {brain.data?.available
           ? "Noch keine Agenten mit Berechtigungen"
-          : "Brain nicht auf diesem Gerät"}
+          : "Spark nicht auf diesem Gerät"}
       </div>
     );
   }

@@ -638,35 +638,6 @@ function FamilyStep({
           );
         })}
       </div>
-      <p className="mt-4 px-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Beta
-      </p>
-      <div className="mt-1.5 flex flex-col gap-2">
-        {BETA_MODEL_FAMILIES.map((f) => {
-          const selected = f.id === family;
-          return (
-            <button
-              className={cn(
-                "rounded-xl border border-dashed px-3 py-2.5 text-left transition-colors",
-                selected
-                  ? "border-foreground bg-accent"
-                  : "border-border hover:bg-muted/60",
-              )}
-              key={f.id}
-              onClick={() => onPick(f.id)}
-              type="button"
-            >
-              <p className="text-sm font-medium">
-                {f.label}
-                <span className="ml-1.5 text-[10px] font-normal uppercase text-muted-foreground">
-                  Beta
-                </span>
-              </p>
-              <p className="text-xs text-muted-foreground">{f.hint}</p>
-            </button>
-          );
-        })}
-      </div>
     </StepItem>
   );
 }

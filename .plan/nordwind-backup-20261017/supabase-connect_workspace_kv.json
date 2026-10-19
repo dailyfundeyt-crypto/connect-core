@@ -1,0 +1,192 @@
+[
+ {
+  "key": "u:b3SYZ2SfoVFLeobUynfpWPR4T1Z4437L:connect-theme",
+  "value": "light",
+  "updated_at": "2026-10-05T23:13:30.790Z"
+ },
+ {
+  "key": "u:b3SYZ2SfoVFLeobUynfpWPR4T1Z4437L:connect.account",
+  "value": {
+   "name": "Stefan Kunc",
+   "email": "dailyfunen.yt@gmail.com",
+   "userId": "b3SYZ2SfoVFLeobUynfpWPR4T1Z4437L",
+   "updatedAt": "2026-10-05T23:13:30.790Z"
+  },
+  "updated_at": "2026-10-05T23:13:30.790Z"
+ },
+ {
+  "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect-theme",
+  "value": "\"light\"",
+  "updated_at": "2026-10-01T17:50:24.112Z"
+ },
+ {
+  "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.account",
+  "value": "{\"userId\":\"k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD\",\"email\":\"cntconnect3@gmail.com\",\"name\":\"CNTConnect 3\",\"updatedAt\":\"2026-10-01T17:50:24.112Z\"}",
+  "updated_at": "2026-10-01T17:50:24.112Z"
+ },
+ {
+  "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.activeCompanyId",
+  "value": "\"nordwind\"",
+  "updated_at": "2026-10-01T17:50:24.112Z"
+ },
+ {
+  "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.activeLevel",
+  "value": "3",
+  "updated_at": "2026-10-01T17:50:24.112Z"
+ },
+ {
+  "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.projects",
+  "value": "[{\"id\":\"nordwind-delivered-mupsr7if\",\"companyId\":\"nordwind\",\"name\":\"Delivered\",\"description\":\"Issues, cycles, and shipping.\",\"accent\":\"#ca8a04\",\"logo\":\"/apps/linear.png\",\"appFolder\":\"linear\",\"agentIds\":[\"connect\",\"consensus\"]},{\"id\":\"nordwind-research-mupsr7if\",\"companyId\":\"nordwind\",\"name\":\"Research\",\"description\":\"Browse, collect, and brief.\",\"accent\":\"#7c3aed\",\"logo\":\"/apps/arc.png\",\"appFolder\":\"arc\",\"agentIds\":[\"hyper\",\"spark\"]},{\"id\":\"nordwind-zentrale-mupsr7if\",\"companyId\":\"nordwind\",\"name\":\"Zentrale\",\"description\":\"Leadership and day-to-day ops.\",\"accent\":\"#0f766e\",\"logo\":\"/apps/slack.png\",\"appFolder\":\"slack\",\"agentIds\":[\"cto\",\"analysis\",\"flux\"]}]",
+  "updated_at": "2026-10-01T17:50:24.112Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect-theme",
+  "value": "light",
+  "updated_at": "2026-10-17T09:30:53.028Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.account",
+  "value": {
+   "name": "Stefan Kunc",
+   "email": "dailyfunde.yt@gmail.com",
+   "userId": "Xx3DRBa5O38j5I50bcmQxbhvDyHziizu",
+   "updatedAt": "2026-10-17T09:30:53.028Z"
+  },
+  "updated_at": "2026-10-17T09:30:53.028Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.activeCompanyId",
+  "value": "\"nordwind\"",
+  "updated_at": "2026-10-04T14:47:08.661Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.activeLevel",
+  "value": 3,
+  "updated_at": "2026-10-17T09:30:02.995Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.companies.custom",
+  "value": "[{\"id\":\"nordwind\",\"name\":\"Nordwind\",\"handle\":\"nordwind\",\"description\":\"Operations and analysis — keep work moving with clear findings.\",\"agentIds\":[\"cto\",\"analysis\",\"flux\",\"hyper\",\"spark\",\"connect\",\"consensus\",\"agent_b3a45862-1825-469f-ac71-4f114c34432a\"],\"accent\":\"linear-gradient(145deg, #0f766e 0%, #164e63 55%, #1e293b 100%)\",\"logo\":\"/companies/nordwind.png?v=5\",\"category\":\"Operations company\",\"location\":\"Remote\",\"website\":\"nordwind.local\"}]",
+  "updated_at": "2026-10-04T12:10:26.441Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts",
+  "value": "[{\"id\":\"nordwind-muok5ehl-7khvgb\",\"companyId\":\"nordwind\",\"kind\":\"update\",\"title\":\"Private · Routing note\",\"body\":\"Spark keeps private triage notes here — not shown on the employee wall.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"private\",\"source\":\"manual\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\"},{\"id\":\"nordwind-muok5ehl-empjwc\",\"companyId\":\"nordwind\",\"kind\":\"task\",\"title\":\"Linear → LUM-184\",\"body\":\"Ship Q-ready brief. Acceptance: sources attached, draft in Drive, @reviewers notified.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"public\",\"source\":\"linear\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\",\"assignedToId\":\"analysis\",\"assignedToName\":\"Analysis\",\"externalFrom\":\"Linear · LUM-184\"},{\"id\":\"nordwind-muok5ehl-qppanw\",\"companyId\":\"nordwind\",\"kind\":\"chat\",\"title\":\"Slack → Inbox\",\"body\":\"@channel can Spark pick up the customer brief from #product? Need a status by EOD.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"public\",\"source\":\"slack\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\",\"assignedToId\":\"cto\",\"assignedToName\":\"Cto\",\"externalFrom\":\"#product · Maya\"},{\"id\":\"nordwind-muok5ehl-45ra93\",\"companyId\":\"nordwind\",\"kind\":\"goal\",\"title\":\"North star · Nordwind\",\"body\":\"Every employee should understand this goal. Edit or replace it — this pinned post is the company mission.\",\"pinned\":true,\"authorName\":\"Leadership\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"public\",\"source\":\"manual\"}]",
+  "updated_at": "2026-10-04T12:10:26.441Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts.from-app-20261004",
+  "value": "[{\"id\":\"nordwind-mupuhvz0-j445cm\",\"companyId\":\"nordwind\",\"kind\":\"update\",\"title\":\"Private ┬À Routing note\",\"body\":\"Spark keeps private triage notes here ÔÇö not shown on the employee wall.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-10-01T18:05:57.660Z\",\"visibility\":\"private\",\"source\":\"manual\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\"},{\"id\":\"nordwind-mupuhvz0-hk02zq\",\"companyId\":\"nordwind\",\"kind\":\"task\",\"title\":\"Linear ÔåÆ LUM-184\",\"body\":\"Ship Q-ready brief. Acceptance: sources attached, draft in Drive, @reviewers notified.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-10-01T18:05:57.660Z\",\"visibility\":\"public\",\"source\":\"linear\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\",\"assignedToId\":\"analysis\",\"assignedToName\":\"Analysis\",\"externalFrom\":\"Linear ┬À LUM-184\"},{\"id\":\"nordwind-mupuhvz0-1h3s1n\",\"companyId\":\"nordwind\",\"kind\":\"chat\",\"title\":\"Slack ÔåÆ Inbox\",\"body\":\"@channel can Spark pick up the customer brief from #product? Need a status by EOD.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-10-01T18:05:57.660Z\",\"visibility\":\"public\",\"source\":\"slack\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\",\"assignedToId\":\"cto\",\"assignedToName\":\"Cto\",\"externalFrom\":\"#product ┬À Maya\"},{\"id\":\"nordwind-mupuhvyz-jfmvhy\",\"companyId\":\"nordwind\",\"kind\":\"goal\",\"title\":\"North star ┬À Nordwind\",\"body\":\"Every employee should understand this goal. Edit or replace it ÔÇö this pinned post is the company mission.\",\"pinned\":true,\"authorName\":\"Leadership\",\"createdAt\":\"2026-10-01T18:05:57.659Z\",\"visibility\":\"public\",\"source\":\"manual\"}]",
+  "updated_at": "2026-10-04T12:26:29.494Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts.from-helium-20261004",
+  "value": "[{\"id\":\"nordwind-muok5ehl-7khvgb\",\"companyId\":\"nordwind\",\"kind\":\"update\",\"title\":\"Private ┬À Routing note\",\"body\":\"Spark keeps private triage notes here ÔÇö not shown on the employee wall.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"private\",\"source\":\"manual\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\"},{\"id\":\"nordwind-muok5ehl-empjwc\",\"companyId\":\"nordwind\",\"kind\":\"task\",\"title\":\"Linear ÔåÆ LUM-184\",\"body\":\"Ship Q-ready brief. Acceptance: sources attached, draft in Drive, @reviewers notified.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"public\",\"source\":\"linear\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\",\"assignedToId\":\"analysis\",\"assignedToName\":\"Analysis\",\"externalFrom\":\"Linear ┬À LUM-184\"},{\"id\":\"nordwind-muok5ehl-qppanw\",\"companyId\":\"nordwind\",\"kind\":\"chat\",\"title\":\"Slack ÔåÆ Inbox\",\"body\":\"@channel can Spark pick up the customer brief from #product? Need a status by EOD.\",\"pinned\":false,\"authorName\":\"Spark\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"public\",\"source\":\"slack\",\"inboxBotId\":\"spark\",\"inboxBotName\":\"Spark\",\"assignedToId\":\"cto\",\"assignedToName\":\"Cto\",\"externalFrom\":\"#product ┬À Maya\"},{\"id\":\"nordwind-muok5ehl-45ra93\",\"companyId\":\"nordwind\",\"kind\":\"goal\",\"title\":\"North star ┬À Nordwind\",\"body\":\"Every employee should understand this goal. Edit or replace it ÔÇö this pinned post is the company mission.\",\"pinned\":true,\"authorName\":\"Leadership\",\"createdAt\":\"2026-09-30T20:28:32.793Z\",\"visibility\":\"public\",\"source\":\"manual\"}]",
+  "updated_at": "2026-10-04T12:26:29.494Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser",
+  "value": {
+   "nordwind": {
+    "engine": "full",
+    "starred": false,
+    "browsing": true,
+    "companyId": "nordwind",
+    "customUrl": "https://de.tradingview.com",
+    "tabGroups": [
+     {
+      "id": "group-mupsl5wn",
+      "label": "Hallo",
+      "appIds": [],
+      "collapsed": false
+     },
+     {
+      "id": "group-mupslvkn",
+      "label": "Hallo",
+      "appIds": [],
+      "collapsed": false
+     }
+    ],
+    "updatedAt": "2026-10-01T17:21:06.988Z",
+    "activeTool": "tradingview",
+    "customApps": [
+     {
+      "id": "split-example-notion-tradingview",
+      "url": "https://www.notion.so",
+      "icon": "notion",
+      "kind": "split",
+      "tint": "#111111",
+      "url2": "https://de.tradingview.com/chart/",
+      "blurb": "Split-Link (Beispiel – Rechtsklick › Bearbeiten)",
+      "label": "Notion + TradingView",
+      "builtin": false
+     }
+    ],
+    "connections": [],
+    "splitExampleSeeded": true,
+    "connect.level3.migrated.v2-cleared-defaults": true
+   }
+  },
+  "updated_at": "2026-10-17T09:19:17.860Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser.from-app-20261004",
+  "value": "{\"nordwind\":{\"companyId\":\"nordwind\",\"activeTool\":\"tradingview\",\"tabGroups\":[{\"label\":\"Technische\",\"collapsed\":false,\"accent\":\"technische\",\"id\":\"group-technische\",\"appIds\":[\"tradingview\",\"markettrace\",\"btcusdt\",\"prorealtime\",\"plattform\"]},{\"label\":\"Fundamentals\",\"accent\":\"fundamentals\",\"id\":\"group-fundamentals\",\"appIds\":[]},{\"label\":\"Sentimentalle\",\"accent\":\"sentimentalle\",\"id\":\"group-sentimentalle\",\"appIds\":[\"cryptopanic\",\"allcategories\"]},{\"label\":\"Sektorielle\",\"accent\":\"sektorielle\",\"id\":\"group-sektorielle\",\"appIds\":[]},{\"label\":\"Build\",\"accent\":\"build\",\"id\":\"group-build\",\"appIds\":[\"lovable\",\"cursor\",\"github\",\"laravel\"]},{\"label\":\"AI\",\"accent\":\"ai\",\"id\":\"group-ai\",\"appIds\":[\"claude\",\"chatgpt\"]}],\"customApps\":[],\"engine\":\"full\",\"updatedAt\":\"2026-10-01T17:41:58.9213859Z\",\"connections\":[],\"splitExampleSeeded\":true,\"browsing\":true,\"starred\":false}}",
+  "updated_at": "2026-10-04T12:26:29.494Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser.from-helium-20261004",
+  "value": "{\"nordwind\":{\"companyId\":\"nordwind\",\"activeTool\":\"tradingview\",\"browsing\":true,\"connections\":[],\"starred\":false,\"customApps\":[{\"id\":\"split-example-notion-tradingview\",\"kind\":\"split\",\"label\":\"Notion + TradingView\",\"blurb\":\"Split-Link (Beispiel ÔÇô Rechtsklick ÔÇ║ Bearbeiten)\",\"url\":\"https://www.notion.so\",\"url2\":\"https://de.tradingview.com/chart/\",\"icon\":\"notion\",\"tint\":\"#111111\",\"builtin\":false}],\"tabGroups\":[{\"id\":\"group-technische\",\"label\":\"Technische\",\"accent\":\"technische\",\"appIds\":[\"split-example-notion-tradingview\",\"tradingview\",\"markettrace\",\"btcusdt\",\"prorealtime\",\"plattform\"],\"collapsed\":false},{\"id\":\"group-fundamentals\",\"label\":\"Fundamentals\",\"accent\":\"fundamentals\",\"appIds\":[],\"collapsed\":true},{\"id\":\"group-sentimentalle\",\"label\":\"Sentimentalle\",\"accent\":\"sentimentalle\",\"appIds\":[\"cryptopanic\",\"allcategories\"],\"collapsed\":true},{\"id\":\"group-sektorielle\",\"label\":\"Sektorielle\",\"accent\":\"sektorielle\",\"appIds\":[\"lovable\"],\"collapsed\":false},{\"id\":\"group-build\",\"label\":\"Build\",\"accent\":\"build\",\"appIds\":[\"cursor\",\"github\",\"laravel\"]},{\"id\":\"group-ai\",\"label\":\"AI\",\"accent\":\"ai\",\"appIds\":[\"claude\",\"chatgpt\"]},{\"id\":\"group-mupsl5wn\",\"label\":\"Hallo\",\"appIds\":[],\"collapsed\":false},{\"id\":\"group-mupslvkn\",\"label\":\"Hallo\",\"appIds\":[],\"collapsed\":false}],\"engine\":\"full\",\"updatedAt\":\"2026-10-01T17:21:06.988Z\",\"customUrl\":\"https://de.tradingview.com\",\"splitExampleSeeded\":true}}",
+  "updated_at": "2026-10-04T12:26:29.494Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects",
+  "value": "[{\"id\":\"\\\"nordwind\\\"-delivered-mutsip5a\",\"companyId\":\"\\\"nordwind\\\"\",\"name\":\"Delivered\",\"description\":\"Issues, cycles, and shipping.\",\"accent\":\"#15803d\",\"logo\":\"/apps/linear.png\",\"appFolder\":\"linear\",\"agentIds\":[]},{\"id\":\"\\\"nordwind\\\"-research-mutsip59\",\"companyId\":\"\\\"nordwind\\\"\",\"name\":\"Research\",\"description\":\"Browse, collect, and brief.\",\"accent\":\"#be123c\",\"logo\":\"/apps/arc.png\",\"appFolder\":\"arc\",\"agentIds\":[]},{\"id\":\"\\\"nordwind\\\"-zentrale-mutsip59\",\"companyId\":\"\\\"nordwind\\\"\",\"name\":\"Zentrale\",\"description\":\"Leadership and day-to-day ops.\",\"accent\":\"#0369a1\",\"logo\":\"/apps/slack.png\",\"appFolder\":\"slack\",\"agentIds\":[\"agent_b3a45862-1825-469f-ac71-4f114c34432a\"]},{\"id\":\"nordwind-delivered-muojld4w\",\"companyId\":\"nordwind\",\"name\":\"Delivered\",\"description\":\"Issues, cycles, and shipping.\",\"accent\":\"#ca8a04\",\"logo\":\"/apps/linear.png\",\"appFolder\":\"linear\",\"agentIds\":[\"connect\",\"consensus\"]},{\"id\":\"nordwind-research-muojld4w\",\"companyId\":\"nordwind\",\"name\":\"Research\",\"description\":\"Browse, collect, and brief.\",\"accent\":\"#7c3aed\",\"logo\":\"/apps/arc.png\",\"appFolder\":\"arc\",\"agentIds\":[\"hyper\",\"spark\"]},{\"id\":\"nordwind-zentrale-muojld4w\",\"companyId\":\"nordwind\",\"name\":\"Zentrale\",\"description\":\"Leadership and day-to-day ops.\",\"accent\":\"#0f766e\",\"logo\":\"/apps/slack.png\",\"appFolder\":\"slack\",\"agentIds\":[\"cto\",\"analysis\",\"flux\"]}]",
+  "updated_at": "2026-10-04T17:30:03.724Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects.from-app-20261004",
+  "value": "[{\"id\":\"nordwind-delivered-muptpybz\",\"companyId\":\"nordwind\",\"name\":\"Delivered\",\"description\":\"Issues, cycles, and shipping.\",\"accent\":\"#ca8a04\",\"logo\":\"/apps/linear.png\",\"appFolder\":\"linear\",\"agentIds\":[\"connect\",\"consensus\"]},{\"id\":\"nordwind-research-muptpybz\",\"companyId\":\"nordwind\",\"name\":\"Research\",\"description\":\"Browse, collect, and brief.\",\"accent\":\"#7c3aed\",\"logo\":\"/apps/arc.png\",\"appFolder\":\"arc\",\"agentIds\":[\"hyper\",\"spark\"]},{\"id\":\"nordwind-zentrale-muptpybz\",\"companyId\":\"nordwind\",\"name\":\"Zentrale\",\"description\":\"Leadership and day-to-day ops.\",\"accent\":\"#0f766e\",\"logo\":\"/apps/slack.png\",\"appFolder\":\"slack\",\"agentIds\":[\"cto\",\"analysis\",\"flux\"]}]",
+  "updated_at": "2026-10-04T12:26:29.494Z"
+ },
+ {
+  "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects.from-helium-20261004",
+  "value": "[{\"id\":\"\\\"nordwind\\\"-delivered-mutsip5a\",\"companyId\":\"\\\"nordwind\\\"\",\"name\":\"Delivered\",\"description\":\"Issues, cycles, and shipping.\",\"accent\":\"#15803d\",\"logo\":\"/apps/linear.png\",\"appFolder\":\"linear\",\"agentIds\":[]},{\"id\":\"\\\"nordwind\\\"-research-mutsip59\",\"companyId\":\"\\\"nordwind\\\"\",\"name\":\"Research\",\"description\":\"Browse, collect, and brief.\",\"accent\":\"#be123c\",\"logo\":\"/apps/arc.png\",\"appFolder\":\"arc\",\"agentIds\":[]},{\"id\":\"\\\"nordwind\\\"-zentrale-mutsip59\",\"companyId\":\"\\\"nordwind\\\"\",\"name\":\"Zentrale\",\"description\":\"Leadership and day-to-day ops.\",\"accent\":\"#0369a1\",\"logo\":\"/apps/slack.png\",\"appFolder\":\"slack\",\"agentIds\":[\"agent_b3a45862-1825-469f-ac71-4f114c34432a\"]},{\"id\":\"nordwind-delivered-muojld4w\",\"companyId\":\"nordwind\",\"name\":\"Delivered\",\"description\":\"Issues, cycles, and shipping.\",\"accent\":\"#ca8a04\",\"logo\":\"/apps/linear.png\",\"appFolder\":\"linear\",\"agentIds\":[\"connect\",\"consensus\"]},{\"id\":\"nordwind-research-muojld4w\",\"companyId\":\"nordwind\",\"name\":\"Research\",\"description\":\"Browse, collect, and brief.\",\"accent\":\"#7c3aed\",\"logo\":\"/apps/arc.png\",\"appFolder\":\"arc\",\"agentIds\":[\"hyper\",\"spark\"]},{\"id\":\"nordwind-zentrale-muojld4w\",\"companyId\":\"nordwind\",\"name\":\"Zentrale\",\"description\":\"Leadership and day-to-day ops.\",\"accent\":\"#0f766e\",\"logo\":\"/apps/slack.png\",\"appFolder\":\"slack\",\"agentIds\":[\"cto\",\"analysis\",\"flux\"]}]",
+  "updated_at": "2026-10-04T12:26:29.494Z"
+ },
+ {
+  "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect-theme",
+  "value": "\"light\"",
+  "updated_at": "2026-10-05T22:36:35.072Z"
+ },
+ {
+  "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.account",
+  "value": {
+   "name": "Stefan Kunc",
+   "email": "stefankunc994@gmail.com",
+   "userId": "zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm",
+   "updatedAt": "2026-10-05T22:59:53.776Z"
+  },
+  "updated_at": "2026-10-05T22:59:53.776Z"
+ },
+ {
+  "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.activeCompanyId",
+  "value": "\"nordwind\"",
+  "updated_at": "2026-10-04T16:06:45.865Z"
+ },
+ {
+  "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.activeLevel",
+  "value": 2,
+  "updated_at": "2026-10-05T22:59:53.776Z"
+ },
+ {
+  "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.level3.browser",
+  "value": "{\"\\\"nordwind\\\"\":{\"companyId\":\"\\\"nordwind\\\"\",\"activeTool\":\"lovable\",\"browsing\":true,\"connections\":[],\"starred\":false,\"customApps\":[{\"id\":\"split-example-notion-tradingview\",\"kind\":\"split\",\"label\":\"Notion + TradingView\",\"blurb\":\"Split-Link (Beispiel – Rechtsklick › Bearbeiten)\",\"url\":\"https://www.notion.so\",\"url2\":\"https://de.tradingview.com/chart/\",\"icon\":\"notion\",\"tint\":\"#111111\",\"builtin\":false}],\"tabGroups\":[{\"id\":\"group-technische\",\"label\":\"Technische\",\"accent\":\"technische\",\"appIds\":[\"split-example-notion-tradingview\",\"tradingview\",\"markettrace\",\"btcusdt\",\"prorealtime\",\"plattform\"],\"collapsed\":true},{\"id\":\"group-fundamentals\",\"label\":\"Fundamentals\",\"accent\":\"fundamentals\",\"appIds\":[],\"collapsed\":false},{\"id\":\"group-sentimentalle\",\"label\":\"Sentimentalle\",\"accent\":\"sentimentalle\",\"appIds\":[\"cryptopanic\",\"allcategories\"],\"collapsed\":false},{\"id\":\"group-sektorielle\",\"label\":\"Sektorielle\",\"accent\":\"sektorielle\",\"appIds\":[]},{\"id\":\"group-build\",\"label\":\"Build\",\"accent\":\"build\",\"appIds\":[\"lovable\",\"cursor\",\"github\",\"laravel\"]},{\"id\":\"group-ai\",\"label\":\"AI\",\"accent\":\"ai\",\"appIds\":[\"claude\",\"chatgpt\"],\"collapsed\":false}],\"engine\":\"full\",\"updatedAt\":\"2026-10-04T19:26:58.633Z\",\"splitExampleSeeded\":true}}",
+  "updated_at": "2026-10-04T19:27:02.269Z"
+ },
+ {
+  "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.projects",
+  "value": "[{\"id\":\"nordwind-delivered-mutxqxq0\",\"companyId\":\"nordwind\",\"name\":\"Delivered\",\"description\":\"Issues, cycles, and shipping.\",\"accent\":\"#ca8a04\",\"logo\":\"/apps/linear.png\",\"appFolder\":\"linear\",\"agentIds\":[\"connect\",\"consensus\"]},{\"id\":\"nordwind-research-mutxqxq0\",\"companyId\":\"nordwind\",\"name\":\"Research\",\"description\":\"Browse, collect, and brief.\",\"accent\":\"#7c3aed\",\"logo\":\"/apps/arc.png\",\"appFolder\":\"arc\",\"agentIds\":[\"hyper\",\"spark\"]},{\"id\":\"nordwind-zentrale-mutxqxpz\",\"companyId\":\"nordwind\",\"name\":\"Zentrale\",\"description\":\"Leadership and day-to-day ops.\",\"accent\":\"#0f766e\",\"logo\":\"/apps/slack.png\",\"appFolder\":\"slack\",\"agentIds\":[\"cto\",\"analysis\",\"flux\"]}]",
+  "updated_at": "2026-10-04T14:48:05.967Z"
+ }
+]

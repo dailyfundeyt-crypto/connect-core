@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_task","arguments":{"agent_id":"seo-agent","title":"SEO-Audit für example.com","prompt":"Bitte mach ein SEO-Audit für example.com","priority":"normal"}}}

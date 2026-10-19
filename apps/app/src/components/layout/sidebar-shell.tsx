@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import {
   applySidebarOpen,
   parseStoredSidebarOpen,
@@ -32,6 +33,10 @@ export function SidebarShell({
     parseStoredSidebarOpen(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)),
   );
 
+  // helium-mobilefix: auf dem Handy kein heller PC-Rahmen (lab-light) – dunkel wie die Handy-Ansicht;
+  // die Seitenleiste selbst blendet `Sidebar` aus (components/ui/sidebar.tsx).
+  const mobileShell = useMobileShell();
+
   useEffect(() => {
     applySidebarOpen(open, {
       setStoredValue: (key, value) => window.localStorage.setItem(key, value),
@@ -40,7 +45,7 @@ export function SidebarShell({
 
   return (
     <SidebarProvider
-      className={className}
+      className={mobileShell ? mobileShellClassName(className) : className}
       onOpenChange={setOpen}
       open={open}
       /*
@@ -59,4 +64,10 @@ export function SidebarShell({
       {children}
     </SidebarProvider>
   );
+}
+
+/** Handy: helle PC-Klassen entfernen, dunkles Thema erzwingen. */
+function mobileShellClassName(className: string | undefined): string {
+  const kept = (className ?? "").split(/\s+/).filter((token) => token && token !== "lab-light");
+  return [...kept, "dark", "bg-[#07080c]", "text-foreground"].join(" ");
 }

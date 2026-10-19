@@ -1,4 +1,6 @@
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
+import { FocusChainSettingsPanel } from "@/components/settings/focus-chain-settings";
+import { PhoneConnectPanel } from "@/components/settings/phone-connect-panel";
 import { useQuery } from "@tanstack/react-query";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -19,6 +21,7 @@ import { SettingsOverview } from "@/components/settings/settings-overview";
 import { SettingsSidebar } from "@/components/settings/settings-sidebar";
 import { ApiKeysSettingsPanel } from "@/components/settings/api-keys-settings";
 import { CompanySettingsPanel } from "@/components/settings/company-settings";
+import { CompanyAppsSettingsPanel } from "@/components/settings/company-apps-settings";
 import { CodexUsagePanel } from "@/components/settings/codex-usage-panel";
 import { DeploymentModePanel } from "@/components/settings/deployment-mode-panel";
 import { DonatePanel } from "@/components/settings/donate-panel";
@@ -30,12 +33,15 @@ import { ConnectorGallery } from "@/components/agent-hub/connector-gallery";
 import { BrainSettingsPage } from "@/components/brain/brain-settings-page";
 import { ModelProviderSettingsPanel } from "@/components/settings/model-provider-settings";
 import { CliProvidersSettingsPanel } from "@/components/settings/cli-providers-settings";
+import { ModelOnePanel } from "@/components/settings/model-one-panel";
+import { MeinHeliumPanel } from "@/components/pc-bridge/mein-helium";
 import { ShortcutsPanel } from "@/components/settings/shortcuts-panel";
 import { StandingInstructions } from "@/components/settings/standing-instructions";
 import { SupabaseSyncCard } from "@/components/settings/supabase-sync-card";
 import { UbuntuMachinesPanel } from "@/components/settings/ubuntu-machines-settings";
 import { VoiceSettingsPanel } from "@/components/settings/voice-settings";
 import { CalendarSettingsPanel } from "@/components/calendar/calendar-settings-panel";
+import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import {
   getLabPrefs,
   subscribeLabPrefs,
@@ -185,6 +191,7 @@ function formatBytes(bytes: number): string {
 // components pages, not a settings panel.
 
 const PANELS: Record<string, React.ComponentType | null> = {
+  appearance: AppearanceSettings,
   // Konto & Sicherheit
   profile: CompanySettingsPanel,
   security: null, // rendered inline below (session list)
@@ -192,6 +199,8 @@ const PANELS: Record<string, React.ComponentType | null> = {
   "api-keys": ApiKeysSettingsPanel,
   "model-provider": ModelProviderSettingsPanel,
   "cli-providers": CliProvidersSettingsPanel,
+  "model-one": ModelOnePanel,
+  "mein-helium": MeinHeliumPanel,
   "connector-mapping": McpConnectorMappingPanel,
   "mcp": McpSettingsInlinePanel,
   "ubuntu-machines": UbuntuMachinesPanel,
@@ -207,9 +216,13 @@ const PANELS: Record<string, React.ComponentType | null> = {
   donate: DonatePanel,
   "deployment-mode": DeploymentModePanel,
   "codex-usage": CodexUsagePanel,
+  fokus: FocusChainSettingsPanel,
+  "handy-verbinden": PhoneConnectPanel,
   info: null, // rendered inline below
   privacy: null, // rendered inline below (Datenschutz)
   terms: null, // rendered inline below (Nutzungsbedingungen)
+  // Per-Company Tool-Verwaltung (Marketplace-Integration)
+  "company-tools": CompanyAppsSettingsPanel,
 };
 
 /**
@@ -271,6 +284,7 @@ const PHONE_TITLES: Record<string, string> = {
   voice: "Stimme",
   "sync-backup": "Sync & Backup",
   "browser-groups": "Browser-Gruppen",
+  "mein-helium": "Mein Helium",
   brain: "Brain",
   erweitert: "Erweitert",
   shortcuts: "Shortcuts",
@@ -278,7 +292,10 @@ const PHONE_TITLES: Record<string, string> = {
   donate: "Feedback & Unterstützen",
   "deployment-mode": "Deployment",
   "codex-usage": "Codex-Nutzung",
+  appearance: "Darstellung",
   konto: "Konto",
+  fokus: "Fokus",
+  "handy-verbinden": "Handy verbinden",
   konnektoren: "Konnektoren",
   "helium-shell": "Helium-Shell",
   "connect-agenten": "Connect-Agenten",
@@ -301,7 +318,7 @@ export function isKnownSettingsHash(hash: string): boolean {
 }
 
 /**
- * The milky desktop surface, and the only colours this page imposes.
+ * Desktop light palette, scoped to the light theme only.
  *
  * The section list and the sidebar were both written for a near-black pane with every colour
  * hardcoded: text-[#666] for a label, text-[#888] for a button, border-white/[0.06] for a divider,
@@ -312,43 +329,43 @@ export function isKnownSettingsHash(hash: string): boolean {
  * So the list now carries its own light/dark pairs on the elements that need them (see `Row` and
  * `Section`), and this stylesheet only does the two things CSS is better at than Tailwind here:
  * the surface colour, and the sidebar, which is built on tokens rather than literals. Scoping both
- * to md leaves the phone on the dark theme it is designed around.
+ * `html:not(.dark)` makes this page follow the same persisted theme as every other route.
  */
 const DESKTOP_PALETTE = `
 @media (min-width: 768px) {
-  /* The pane itself. */
-  .settings-pane { color: #1c1b19; }
+  /* Light mode overrides only. Dark mode inherits the app-wide palette and token values. */
+  html:not(.dark) .settings-pane { color: #1c1b19; }
 
   /*
    * The sidebar is a token-driven surface, so it takes a token override. Nothing else: every colour
    * on the rows is a real Tailwind class with a dark: pair, carried in the markup, so the same
    * markup is right on cream and on the phone's near-black without a stylesheet to keep in step.
    */
-  .settings-shell {
+  html:not(.dark) .settings-shell {
     --sidebar: #efece6;
     --sidebar-foreground: #1c1b19;
     --sidebar-accent: rgba(28, 27, 25, 0.07);
     --sidebar-accent-foreground: #1c1b19;
     --sidebar-border: rgba(28, 27, 25, 0.12);
   }
-  .settings-shell [data-slot="sidebar"] { background-color: #efece6; }
-  .settings-shell [data-slot="sidebar-header"] { border-color: rgba(28, 27, 25, 0.12); }
-  .settings-shell .bg-\\[\\#0a0a0a\\] { background-color: #e7e4de; }
-  .settings-shell .bg-\\[\\#111\\] { background-color: #e2dfd9; }
+  html:not(.dark) .settings-shell [data-slot="sidebar"] { background-color: #efece6; }
+  html:not(.dark) .settings-shell [data-slot="sidebar-header"] { border-color: rgba(28, 27, 25, 0.12); }
+  html:not(.dark) .settings-shell .bg-\\[\\#0a0a0a\\] { background-color: #e7e4de; }
+  html:not(.dark) .settings-shell .bg-\\[\\#111\\] { background-color: #e2dfd9; }
 
   /*
    * The panel rows inside the pane are Item cards on the shadcn token set, so on cream they keep
    * the dark theme's transparent background and white border. Both are restored here — the one
    * place where a token override is right, because these are token-driven, not literal.
    */
-  .settings-pane [data-slot="item"] {
+  html:not(.dark) .settings-pane [data-slot="item"] {
     background-color: #fff;
     border-color: rgba(28, 27, 25, 0.10);
   }
-  .settings-pane [data-slot="item"]:hover { background-color: #fbfaf8; }
-  .settings-pane [data-slot="item-title"] { color: #1c1b19; }
-  .settings-pane [data-slot="item-description"] { color: #6b6862; }
-  .settings-pane [data-slot="item-actions"] .text-\\[\\#888\\] { color: #4a4741; }
+  html:not(.dark) .settings-pane [data-slot="item"]:hover { background-color: #fbfaf8; }
+  html:not(.dark) .settings-pane [data-slot="item-title"] { color: #1c1b19; }
+  html:not(.dark) .settings-pane [data-slot="item-description"] { color: #6b6862; }
+  html:not(.dark) .settings-pane [data-slot="item-actions"] .text-\\[\\#888\\] { color: #4a4741; }
 
 
   /*
@@ -356,8 +373,8 @@ const DESKTOP_PALETTE = `
    * Tailwind v4 emits their border as a color-mix in oklab, so a rule written against the class name
    * does not match the element. Their labels still come from these two rules, which do match.
    */
-  .settings-pane .text-\[\#888\] { color: #4a4741; }
-  .settings-pane .hover\:text-white:hover { color: #1c1b19; }
+  html:not(.dark) .settings-pane .text-\[\#888\] { color: #4a4741; }
+  html:not(.dark) .settings-pane .hover\:text-white:hover { color: #1c1b19; }
 }`;
 
 
@@ -365,7 +382,7 @@ function PanelOutlet({ hash }: { hash: string }) {
   const Panel = PANELS[hash];
   if (!Panel) return null;
   return (
-    <div className="mb-8">
+    <div className={cn(hash === "brain" ? "h-full min-h-0" : "mb-8")}>
       <Panel />
     </div>
   );
@@ -667,7 +684,7 @@ function RouteComponent() {
        */}
       <div
         id="settings-scroll"
-        className="settings-pane min-h-0 flex-1 overflow-y-auto bg-transparent md:bg-[#f6f5f2]"
+        className="settings-pane min-h-0 flex-1 overflow-y-auto bg-transparent md:bg-[#f6f5f2] dark:md:bg-[#07080c]"
       >
         {/*
          * The list was written for a near-black pane: every label, divider and outline is a dark
@@ -1200,7 +1217,14 @@ function RouteComponent() {
        * the two would stack — the two sets of hashes do not overlap, so nothing is ever cut off.
        */}
       {hash && PANELS[hash] ? (
-        <div className="mx-auto w-full max-w-[560px] px-4 pb-16 pt-5 md:px-6 md:pt-8">
+        <div
+          className={cn(
+            hash === "brain"
+              ? "h-full min-h-0 w-full max-w-none px-0 py-0"
+              : "mx-auto w-full px-4 pb-16 pt-5 md:px-6 md:pt-8",
+            hash !== "brain" && (hash === "calendar" ? "max-w-6xl" : "max-w-[560px]"),
+          )}
+        >
           <PanelOutlet hash={hash} />
         </div>
       ) : null}

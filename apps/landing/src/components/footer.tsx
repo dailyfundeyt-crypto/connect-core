@@ -10,6 +10,7 @@ const footerLinks = [
       { label: "Features", href: "#features" },
       { label: "How it works", href: "#how" },
       { label: "Install", href: "#install" },
+      { label: "Community", href: "#community" },
       { label: "Download", href: "#download" },
     ],
   },
@@ -67,8 +68,10 @@ export function Footer() {
                 <Github className="h-4 w-4" />
               </a>
               <a
-                href="#"
-                aria-label="Twitter"
+                href="https://x.com/stefan_kunc"
+                aria-label="X"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="rounded-lg p-2 text-ink-400 transition hover:bg-ink-900/5 hover:text-ink-900 dark:text-cream-100/50 dark:hover:bg-cream-50/10 dark:hover:text-cream-50"
               >
                 <Twitter className="h-4 w-4" />

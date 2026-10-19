@@ -12,8 +12,8 @@
  * single worst thing this feature could do.
  */
 
-/** Where the button sits. `left` is the mirror, for people who hold the phone in the other hand. */
-export type CalendarPosition = "bottom-right" | "bottom-left";
+/** Where the button/widget sits. `top-right` is the default matching the top-right position. */
+export type CalendarPosition = "top-right" | "bottom-right" | "bottom-left";
 
 /** Which locale's date order and month names to use. */
 export type CalendarDateFormat = "de-DE" | "en-US" | "en-GB";
@@ -31,6 +31,12 @@ export type CalendarPrefs = {
   showWeekNumbers: boolean;
   /** Monday-first is the German default; the US calendar starts on Sunday. */
   weekStartsOn: "monday" | "sunday";
+  /** Language choice, e.g. German | Deutsch or English */
+  language: "de" | "en";
+  /** Calendar Type ISO 8601 vs US */
+  calendarType: "iso8601" | "us";
+  /** Events toggle under Advanced Features */
+  eventsVisible: boolean;
   /**
    * Which calendars to draw.
    *
@@ -48,13 +54,16 @@ const EVENT = "connect-calendar-prefs-changed";
 
 const DEFAULTS: CalendarPrefs = {
   visible: true,
-  theme: "system",
-  position: "bottom-right",
+  theme: "dark",
+  position: "top-right",
   hour24: true,
   dateFormat: "de-DE",
   showWeekNumbers: false,
   weekStartsOn: "monday",
-  calendarIds: [],
+  language: "de",
+  calendarType: "iso8601",
+  eventsVisible: true,
+  calendarIds: ["primary"],
   // Google's own calendar, which is the page a person means by "open my calendar".
   googleCalendarUrl: "https://calendar.google.com/calendar",
 };
@@ -81,7 +90,7 @@ function sanitize(raw: unknown): CalendarPrefs {
     theme: oneOf(value.theme, ["system", "light", "dark"] as const, DEFAULTS.theme),
     position: oneOf(
       value.position,
-      ["bottom-right", "bottom-left"] as const,
+      ["top-right", "bottom-right", "bottom-left"] as const,
       DEFAULTS.position,
     ),
     hour24: typeof value.hour24 === "boolean" ? value.hour24 : DEFAULTS.hour24,
@@ -99,6 +108,20 @@ function sanitize(raw: unknown): CalendarPrefs {
       ["monday", "sunday"] as const,
       DEFAULTS.weekStartsOn,
     ),
+    language: oneOf(
+      value.language,
+      ["de", "en"] as const,
+      DEFAULTS.language,
+    ),
+    calendarType: oneOf(
+      value.calendarType,
+      ["iso8601", "us"] as const,
+      DEFAULTS.calendarType,
+    ),
+    eventsVisible:
+      typeof value.eventsVisible === "boolean"
+        ? value.eventsVisible
+        : DEFAULTS.eventsVisible,
     calendarIds: Array.isArray(value.calendarIds)
       ? value.calendarIds.filter((id): id is string => typeof id === "string")
       : DEFAULTS.calendarIds,

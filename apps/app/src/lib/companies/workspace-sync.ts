@@ -25,8 +25,14 @@ const WORKSPACE_KEYS = [
   "connect.account",
   /** Theme: Light/Dark mode persists across sign-in/sign-out. */
   "connect-theme",
+  /** UI-Sprache (de/en/...) folgt dem Konto auf allen Geraeten (PC 3101 <-> Handy/Vercel). */
+  "connect.locale",
   /** Agent browser tabs + stored favicons (Helium -> local -> mobile). */
   "connect.agent-browser-tabs",
+  /** Fokus-Kette (Big Boss + Plan-Apps): Reihenfolge, Namen, Links (helium-focuschain2). */
+  "connect.focus.chain",
+  /** Musik & Beats: eigene Ordner/Playlists (Zuordnungen, keine Dateien) – PC und Handy gleich. */
+  "connect.music.playlists",
 ] as const;
 
 let hydrateStarted = false;
@@ -199,6 +205,8 @@ function announceWorkspaceChange() {
     "connect-level3-browser-changed",
     "connect-company-site-changed",
     "connect-lab-prefs-changed",
+    "connect-focus-chain-changed",
+    "connect-music-playlists-changed",
   ]) {
     window.dispatchEvent(new Event(name));
   }

@@ -1,5 +1,7 @@
 import { SQL } from "bun";
 import { drizzle } from "drizzle-orm/bun-sql";
+import postgres from "postgres";
+import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
 
 /**
@@ -147,11 +149,32 @@ export function createDatabase(
    */
   delete process.env.DATABASE_URL;
 
+  if (process.env.CONNECT_SERVERLESS === "1") {
+    /*
+     * Supabase's transaction pooler can hand the same backend session to separate Vercel
+     * invocations. Bun SQL's unnamed-statement mode has still produced duplicate named statement
+     * errors through this pooler in production. postgres.js has an explicit pgbouncer-safe
+     * `prepare: false` mode; use it only in Vercel so local Bun SQL behavior remains unchanged.
+     */
+    const connection = addressOf(databaseUrl);
+    const client = postgres({
+      host: connection.hostname,
+      port: connection.port,
+      username: connection.username,
+      password: connection.password,
+      database: connection.database,
+      ssl: connection.tls ? "require" : false,
+      connection: connection.connection,
+      prepare: false,
+      max: options.max ?? 2,
+      idle_timeout: 20,
+    });
+
+    return drizzlePostgres(client, { schema }) as unknown as ReturnType<typeof drizzle>;
+  }
+
   const client = new SQL({
     ...addressOf(databaseUrl),
-    // Vercel: DATABASE_URL points at the Supabase transaction pooler (6543), which cannot keep
-    // named prepared statements; idle connections are released so frozen instances do not hold them.
-    ...(process.env.CONNECT_SERVERLESS === "1" ? { prepare: false, idleTimeout: 20 } : {}),
     ...(options.max === undefined ? {} : { max: options.max }),
   });
 

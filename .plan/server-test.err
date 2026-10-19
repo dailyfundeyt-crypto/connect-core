@@ -1,0 +1,15 @@
+532302 |   const decoded = Buffer.from(value, "base64");
+532303 |   if (decoded.byteLength !== 32 || decoded.toString("base64") !== value) {
+532304 |     throw new Error("KEY_ENCRYPTION_KEY must be a base64-encoded 32-byte key");
+532305 |   }
+532306 |   if (value === PLACEHOLDER_KEY) {
+532307 |       throw new Error("KEY_ENCRYPTION_KEY is still the example key from .env.example, which is public. Generate one with: openssl rand -base64 32");
+                     ^
+error: KEY_ENCRYPTION_KEY is still the example key from .env.example, which is public. Generate one with: openssl rand -base64 32
+      at keyEncryptionKey (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\apps\server\dist\index.js:532307:13)
+      at loadConfig (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\apps\server\dist\index.js:532709:39)
+      at C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\apps\server\dist\index.js:596607:25
+note: missing sourcemaps for C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\apps\server\dist\index.js
+note: consider bundling with '--sourcemap' to get unminified traces
+
+Bun v1.4.2 (Windows x64)

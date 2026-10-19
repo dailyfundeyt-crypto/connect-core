@@ -1,0 +1,8 @@
+﻿bun : $ tsc --noEmit
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-68252137-9bd5-4d0e-925f-24ce0d96cdac.ps1:99 Zeichen:1
++ bun run typecheck 2>&1 | Out-String -Width 200 | Out-File -FilePath " ...
++ ~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ tsc --noEmit:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+

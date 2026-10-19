@@ -5,7 +5,7 @@ import {
   useNavigate,
   useParams,
 } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { FocusOverlay } from "@/components/companies/focus-overlay";
 import { LevelChromeSidebar } from "@/components/companies/level-chrome-sidebar";
@@ -27,6 +27,7 @@ import {
   MobileShell,
 } from "@/components/mobile/mobile-shell";
 import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
+import { MobilePageFrame } from "@/components/mobile/mobile-page-frame";
 
 export const Route = createFileRoute("/_authed/_app")({
   component: RouteComponent,
@@ -89,10 +90,21 @@ function RouteComponent() {
     }
   }, [location.pathname, location.search]);
 
+  // oneconv: a freshly opened /agent/<id> or old /channel/<id> link is a conversation the user
+  // asked for — it switches to Messages (2) instead of being sent back to the company page.
+  const conversationLinkRef = useRef<string | null>(null);
+
   // Browser (3) + Unternehmen (4) leave HQ work routes.
   useEffect(() => {
     if (mobileShell) return;
+    const conversationLink = /^\/(agent|channel)\/[^/]+/.test(location.pathname);
+    const freshLink = conversationLink && conversationLinkRef.current !== location.pathname;
+    if (conversationLink) conversationLinkRef.current = location.pathname;
     if (level !== 3 && level !== 4) return;
+    if (freshLink) {
+      setActiveLevel(2);
+      return;
+    }
     if (!isHqPath(location.pathname)) return;
     /*
      * Normalized, and verified against the company list. This read the raw stored value, so a
@@ -134,6 +146,16 @@ function RouteComponent() {
 
   if (mobileShell && isMobileShellPath(location.pathname)) {
     return <MobileShell />;
+  }
+  // helium-mobilefix: Handy = nie das PC-Layout. Jede andere Route (Neue Firma, Firmenprofil,
+  // Agenten, Brain, Markt …) laeuft im mobilen Vollbild-Rahmen statt in SidebarShell mit
+  // LevelChromeSidebar/AppSidebar (die unter 768px als Overlay-Sheet aufging). PC unveraendert.
+  if (mobileShell) {
+    return (
+      <MobilePageFrame>
+        <Outlet />
+      </MobilePageFrame>
+    );
   }
 
   return (

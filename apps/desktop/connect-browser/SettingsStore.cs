@@ -52,7 +52,7 @@ public sealed class SettingsStore
 
     public string ActiveCompanyId
     {
-        get { lock (_lock) return _data.ActiveCompanyId ?? "nordwind"; }
+        get { lock (_lock) return _data.ActiveCompanyId ?? "connect"; }
         set { lock (_lock) _data.ActiveCompanyId = value; Persist(); }
     }
 
@@ -257,7 +257,7 @@ public sealed class SettingsStore
 public sealed class SettingsRoot
 {
     public bool IsDark { get; set; } = true;
-    public string? ActiveCompanyId { get; set; } = "nordwind";
+    public string? ActiveCompanyId { get; set; } = "connect";
     public string? ActiveLevel { get; set; } = "2";
     public bool SidebarAppMode { get; set; } = false; // Default: WebApp-Sidebar (WPF collapsed)
     public string? ActiveTabId { get; set; }

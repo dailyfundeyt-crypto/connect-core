@@ -32,6 +32,7 @@ import {
   createBrainFolder,
   createBrainNote,
   deleteBrainFolder,
+  deleteBrainNote,
   VAULT_PREFIX,
   type BrainFileInfo,
 } from "@/lib/brain/queries";
@@ -41,6 +42,7 @@ import {
   linkVaultNoteToGroup,
   subscribeLevel3Browser,
 } from "@/lib/companies/level3-tools";
+import { setOpenVaultPath } from "@/lib/companies/notes";
 import { NewFolderDialog } from "@/components/companies/notes-sidebar-section";
 import { DeleteConfirmDialog } from "@/components/settings/delete-confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -148,6 +150,7 @@ export function VaultNotesSection({
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [targetParentFolder, setTargetParentFolder] = useState("");
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<{ path: string; name: string } | null>(null);
+  const [deleteNoteTarget, setDeleteNoteTarget] = useState<{ path: string; name: string } | null>(null);
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -189,6 +192,28 @@ export function VaultNotesSection({
       void queryClient.invalidateQueries({ queryKey: brainKeys.all });
     } catch (err) {
       console.error("[Ordner löschen] Fehler:", err);
+    }
+  };
+
+  /*
+   * The note handler is the same shape as the folder one: the dialog uses
+   * a typed-name confirmation, the server takes a `.connect-history/`
+   * safety backup before unlinking, and the brain query cache is invalidated
+   * so the sidebar tree, the editor (if the deleted file was open) and the
+   * backlinks panel all refresh themselves. When the deleted file happens
+   * to be the one currently open in the right-hand editor, we also clear
+   * the lab's "open vault path" so the panel resets to its empty state
+   * instead of staring at a 404 the next time the editor re-queries.
+   */
+  const handleDeleteNote = async () => {
+    if (!deleteNoteTarget) return;
+    try {
+      await deleteBrainNote(deleteNoteTarget.path);
+      if (companyId) setOpenVaultPath(companyId, null);
+      setDeleteNoteTarget(null);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    } catch (err) {
+      console.error("[Notiz löschen] Fehler:", err);
     }
   };
 
@@ -324,6 +349,13 @@ export function VaultNotesSection({
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onReveal?.(node.path)}>
                 Pfad kopieren
+              </ContextMenuItem>
+              <ContextMenuItem
+                className="text-destructive focus:bg-destructive/15 focus:text-destructive"
+                onClick={() => setDeleteNoteTarget({ path: node.path, name: node.name })}
+              >
+                <IconTrash className="mr-2 size-3.5" />
+                Notiz löschen
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -530,6 +562,16 @@ export function VaultNotesSection({
           onOpenChange={(open) => !open && setDeleteFolderTarget(null)}
           open={Boolean(deleteFolderTarget)}
           title="Ordner löschen"
+        />
+      ) : null}
+      {deleteNoteTarget ? (
+        <DeleteConfirmDialog
+          confirmWord={deleteNoteTarget.name}
+          description={`Möchtest du die Notiz „${deleteNoteTarget.name}.md“ wirklich löschen? Der Server legt vorher eine Sicherung in „.connect-history/“ an, sodass du den Schritt rückgängig machen kannst.`}
+          onConfirm={handleDeleteNote}
+          onOpenChange={(open) => !open && setDeleteNoteTarget(null)}
+          open={Boolean(deleteNoteTarget)}
+          title="Notiz löschen"
         />
       ) : null}
       {companyId ? (

@@ -90,6 +90,13 @@ export function moveIdToEnd(ids: string[], draggedId: string): string[] {
   return [...without, draggedId];
 }
 
+/** Move `draggedId` to the very top (beginning of the list). */
+export function moveIdToStart(ids: string[], draggedId: string): string[] {
+  if (!ids.includes(draggedId)) return ids;
+  const without = ids.filter((id) => id !== draggedId);
+  return [draggedId, ...without];
+}
+
 export const DND_PROJECT = "application/x-connect-project";
 export const DND_AGENT = "application/x-connect-agent";
 

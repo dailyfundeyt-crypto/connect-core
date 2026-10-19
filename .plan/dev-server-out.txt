@@ -1,0 +1,31 @@
+@connect/server dev: warn: File C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\packages\shared\work-owner.ts is not in the project directory and will not be watched
+@connect/server dev: warn: File C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\packages\shared\bot-prompt.ts is not in the project directory and will not be watched
+@connect/server dev: warn: File C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\packages\shared\attachments.ts is not in the project directory and will not be watched
+@connect/server dev: warn: File C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\packages\shared\handoff-markers.ts is not in the project directory and will not be watched
+@connect/server dev: warn: File C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\packages\shared\routine-firing.ts is not in the project directory and will not be watched
+@connect/server dev: warn: File C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\packages\shared\hermes-profile.ts is not in the project directory and will not be watched
+@connect/server dev: 812 |   function ErrorResponse(x) {
+@connect/server dev: 813 |     if (query) {
+@connect/server dev: 814 |       (query.cursorFn || query.describeFirst) && write(Sync)
+@connect/server dev: 815 |       errorResponse = Errors.postgres(parseError(x))
+@connect/server dev: 816 |     } else {
+@connect/server dev: 817 |       errored(Errors.postgres(parseError(x)))
+@connect/server dev:                            ^
+@connect/server dev: PostgresError: password authentication failed for user "connect"
+@connect/server dev:  severity_local: "FATAL",
+@connect/server dev:    severity: "FATAL",
+@connect/server dev:        file: "auth.c",
+@connect/server dev:     routine: "auth_failed",
+@connect/server dev:        code: "28P01"
+@connect/server dev: 
+@connect/server dev:       at ErrorResponse (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\postgres@3.4.9\node_modules\postgres\src\connection.js:817:22)
+@connect/server dev:       at handle (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\postgres@3.4.9\node_modules\postgres\src\connection.js:488:7)
+@connect/server dev:       at data (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\postgres@3.4.9\node_modules\postgres\src\connection.js:324:9)
+@connect/server dev:       at emit (node:events:100:22)
+@connect/server dev:       at addChunk (internal:streams/readable:267:47)
+@connect/server dev:       at readableAddChunkPushByteMode (internal:streams/readable:245:18)
+@connect/server dev:       at data (node:net:633:72)
+@connect/server dev:       at cachedError (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\postgres@3.4.9\node_modules\postgres\src\query.js:170:27)
+@connect/server dev:       at new Query (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\postgres@3.4.9\node_modules\postgres\src\query.js:36:24)
+@connect/server dev:       at sql (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\postgres@3.4.9\node_modules\postgres\src\index.js:112:15)
+@connect/server dev:       at listen (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\postgres@3.4.9\node_modules\postgres\src\index.js:177:32)

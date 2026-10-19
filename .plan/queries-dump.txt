@@ -1,0 +1,16 @@
+﻿deleteBrainNote(path: string): Promise<{ path: string; deleted: boolean }> {
+  const query = new URLSearchParams({ path });
+  return client<{ path: string; deleted: boolean }>(`/api/brain/note?${query.toString()}`, {
+    unwrap: true,
+    method: "DELETE",
+    fallback: "Notiz konnte nicht gelöscht werden",
+  });
+}
+
+export function brainSearchQueryOptions(q: string) {
+  return queryOptions({
+    queryKey: brainKeys.search(q),
+    enabled: q.trim().length >= 2,
+    queryFn: () =>
+      brainGet<{ available: boolean; hits: { path: string; line: number; text: string }[] }>(
+       

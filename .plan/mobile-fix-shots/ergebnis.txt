@@ -1,0 +1,32 @@
+OK   Gruppe sichtbar: Planung
+OK   Gruppe sichtbar: YouTube
+OK   Gruppe sichtbar: Stefan Kunc YouTube Kanal
+OK   Gruppe sichtbar: Bücher
+OK   Gruppe sichtbar: Studium
+OK   Gruppe sichtbar: Musik
+OK   Gruppe sichtbar: Gesundheit
+OK   Brain-Notizen-Bereich sichtbar
+OK   Brain-Ordner gelistet – 11 Ordner
+OK   keine PC-Seitenleiste (Browser)
+OK   Markdown-Ansicht geöffnet
+OK   'Im Brain zeigen' vorhanden
+OK   Breite passt (kein Querscrollen)
+OK   Neue Firma: mobiler Rahmen – http://connect-tunnel.test:3187/company/new
+OK   Neue Firma: keine PC-Seitenleiste
+OK   Neue Firma: kein 'Websearch'/'GRUPPEN'
+OK   Zurück führt zur Handy-Startseite
+OK   /company/spark?profile=true: keine PC-Seitenleiste
+OK   /settings#companies: keine PC-Seitenleiste
+OK   /settings: keine PC-Seitenleiste
+OK   /settings#browser-groups: keine PC-Seitenleiste
+OK   /settings/brain: keine PC-Seitenleiste
+OK   /settings/brain: kein 'online'-Hinweis über Tunnel
+OK   /brain: keine PC-Seitenleiste
+OK   /agents: keine PC-Seitenleiste
+OK   /company/spark?level=3: keine PC-Seitenleiste
+OK   Android: Link öffnet per Chrome-Intent (kein Popup/In-App) – Stefan Kunc YouTube Kanal -> intent://notebook.google.com/notebook/d7b2cca9-efb8-4688-be15-94a2d95b00ea?authuser=3
+OK   Vercel: Brain-Hinweis statt leer
+OK   PC /: Seitenleiste da, kein Handy-Rahmen
+OK   PC /company/spark?level=3: Seitenleiste da, kein Handy-Rahmen
+OK   PC /company/new: Seitenleiste da, kein Handy-Rahmen
+OK   PC /settings: Seitenleiste da, kein Handy-Rahmen

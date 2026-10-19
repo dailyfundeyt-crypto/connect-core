@@ -13,7 +13,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { readdir, readFile, realpath, rename, stat, writeFile, appendFile, mkdir } from "node:fs/promises";
+import { readdir, readFile, realpath, rename, stat, writeFile, appendFile, mkdir, copyFile, unlink } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -323,9 +323,177 @@ export async function writeMarkdown(
   if (mode === "create" && exists) throw new BrainPathError("Datei existiert bereits.");
   if (mode === "update" && !exists) throw new BrainPathError("Datei nicht gefunden.");
   if (!exists) await mkdir(path.dirname(full), { recursive: true });
+  if (exists) await backupBeforeWrite(root, full, content);
   await writeFile(full, content, "utf8");
   const realRoot = await realpath(root).catch(() => root);
   return { path: sep(path.relative(realRoot, full)), created: !exists };
+}
+
+/**
+ * Deletes a single Brain note. Uses the same path rules as `writeMarkdown`
+ * (no `..`, no `Vault/` prefix, no absolute paths, must end in `.md`) and
+ * a safety backup in `.connect-history/` so a stray click on "Löschen"
+ * can be reversed. Re-uses the regular edit-history backup slot, so the
+ * note's own history doesn't fill up twice.
+ *
+ * `safeMarkdownPath` resolves an existing file and throws on a missing one
+ * or anything that smells like an escape attempt; we keep that contract so
+ * the route can surface the same `BrainPathError` text the rest of the API
+ * already uses.
+ */
+export async function deleteBrainFile(
+  root: string,
+  relative: string,
+): Promise<{ path: string; deleted: boolean }> {
+  const full = await safeMarkdownPath(root, relative);
+  // `safeMarkdownPath` already guarantees a real file under `root`; double-check
+  // the file is actually a file (not a junction or symlink pointing at a folder).
+  const stat = statSync(full);
+  if (!stat.isFile()) throw new BrainPathError("Pfad ist keine Datei.");
+  // Keep the standard edit-history backup: the user can recover the note from
+  // there even after a confirmation dialog. We do this before unlinking.
+  await backupBeforeWrite(root, full);
+  const { unlink } = await import("node:fs/promises");
+  await unlink(full);
+  const realRoot = await realpath(root).catch(() => root);
+  return { path: sep(path.relative(realRoot, full)), deleted: true };
+}
+
+const HISTORY_DIR = ".connect-history";
+const HISTORY_KEEP = 30;
+const HISTORY_GAP_MS = 10 * 60_000;
+
+/**
+ * Sicherung vor jedem Ueberschreiben: `<root>/.connect-history/<ordner>/<name>.<zeit>.md`.
+ *
+ * Der Editor speichert automatisch alle paar hundert Millisekunden; eine Sicherung pro Schreibvorgang
+ * wuerde den Originalstand in Minuten aus der Rotation druecken. Deshalb: neue Sicherung nur, wenn die
+ * letzte aelter als 10 Minuten ist (der Stand vor einer Bearbeitungs-Sitzung bleibt so immer erhalten),
+ * hoechstens 30 pro Datei, die aeltesten fallen heraus. Punkt-Ordner zeigt weder Obsidian noch Connect.
+ */
+export async function backupBeforeWrite(root: string, full: string, next?: string) {
+  try {
+    const old = await readFile(full, "utf8");
+    if (next !== undefined && old === next) return;
+    const realRoot = await realpath(root).catch(() => root);
+    const rel = path.relative(realRoot, full);
+    if (rel.startsWith("..")) return;
+    const dir = path.join(realRoot, HISTORY_DIR, path.dirname(rel));
+    const name = path.basename(rel, ".md");
+    await mkdir(dir, { recursive: true });
+    const mine = (await readdir(dir).catch(() => [] as string[]))
+      .filter((n) => n.startsWith(`${name}.`) && /^\d{4}-\d{2}-\d{2}T/.test(n.slice(name.length + 1)) && n.endsWith(".md"))
+      .sort();
+    const newest = mine[mine.length - 1];
+    if (newest) {
+      const info = await stat(path.join(dir, newest)).catch(() => null);
+      if (info && Date.now() - info.mtimeMs < HISTORY_GAP_MS) return;
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    await copyFile(full, path.join(dir, `${name}.${stamp}.md`));
+    mine.push(`${name}.${stamp}.md`);
+    for (const extra of mine.slice(0, Math.max(0, mine.length - HISTORY_KEEP))) await unlink(path.join(dir, extra)).catch(() => {});
+  } catch {
+    // Ohne Sicherung wird nicht geschrieben.
+    throw new BrainPathError("Sicherung vor dem Speichern fehlgeschlagen - nichts geschrieben.");
+  }
+}
+
+/**
+ * A folder path that may not exist yet, validated the same way `writableMarkdownPath`
+ * is.
+ *
+ * The Brain has no separate "create folder" endpoint of its own — `writeMarkdown`
+ * builds parent folders with `mkdir { recursive: true }` on the way to a file. That
+ * works for the common case (a note lands in a folder that wasn't there) but it
+ * leaves a placeholder file behind, which the sidebar would render as a real note.
+ * A folder needs to be creatable on its own, the same way it is in Obsidian, so
+ * the rail can add "Mein Bereich" without inventing a `.placeholder.md` to drag the
+ * directory into existence.
+ *
+ * The path rules are `writableMarkdownPath` minus the file part: same length cap,
+ * same dotfile and `..` rejection, same Vault write-protection, no `.md` suffix
+ * because folders don't carry one. The `realpath` comparison is the same escape
+ * guard.
+ */
+async function writableFolderPath(root: string, relative: string): Promise<string> {
+  if (typeof relative !== "string" || relative.length === 0 || relative.length > 400) {
+    throw new BrainPathError("Ungültiger Pfad.");
+  }
+  if (relative.includes("\0") || /^[a-zA-Z]:/.test(relative) || relative.startsWith("/") || relative.startsWith("\\")) {
+    throw new BrainPathError("Ungültiger Pfad.");
+  }
+  const parts = relative.split(/[\\/]+/);
+  if (parts.some((part) => part === "" || part === "." || part === ".." || part.startsWith("."))) {
+    throw new BrainPathError("Ungültiger Pfad.");
+  }
+  if (relative.startsWith(VAULT_PREFIX)) throw new BrainPathError("Vault ist schreibgeschützt.");
+  const target = path.resolve(root, ...parts);
+  if (!isWritablePath(root, target)) throw new BrainPathError("Ungültiger Pfad.");
+  const realRoot = await realpath(root).catch(() => root);
+  const realTarget = await realpath(target).catch(() => null);
+  if (realTarget && !isWritablePath(realRoot, realTarget)) throw new BrainPathError("Ungültiger Pfad.");
+  return target;
+}
+
+/**
+ * Creates a folder inside the Brain and returns its relative path.
+ *
+ * The folder ends up empty. A `.gitkeep` file is left in it so a fresh `git init`
+ * and `git add .` still see the directory — that is what Obsidian-on-a-checkout
+ * relies on, and reproducing it here means a vault mirrored into Git does not
+ * silently lose the directories the user has organised their work into.
+ *
+ * Re-creating an existing folder is a no-op rather than an error: the rail
+ * sometimes re-asks for the same name (an undo, a retried dialog) and the
+ * behaviour a person expects is "it's there", not "you broke the tree".
+ */
+export async function createBrainFolder(
+  root: string,
+  relative: string,
+): Promise<{ path: string; created: boolean }> {
+  const full = await writableFolderPath(root, relative);
+  const exists = existsSync(full);
+  if (exists) {
+    if (!statSync(full).isDirectory()) {
+      throw new BrainPathError("Pfad ist keine Ordner.");
+    }
+    const realRoot = await realpath(root).catch(() => root);
+    return { path: sep(path.relative(realRoot, full)), created: false };
+  }
+  await mkdir(full, { recursive: true });
+  await writeFile(path.join(full, ".gitkeep"), "", "utf8");
+  const realRoot = await realpath(root).catch(() => root);
+  return { path: sep(path.relative(realRoot, full)), created: true };
+}
+
+/**
+ * Deletes a folder inside the Brain recursively.
+ * Prevents deleting root or escaping directories.
+ */
+export async function deleteBrainFolder(
+  root: string,
+  relative: string,
+): Promise<{ path: string; deleted: boolean }> {
+  const cleanRelative = relative.replace(/^Vault\/?/i, "");
+  const full = await writableFolderPath(root, cleanRelative);
+  const realRoot = await realpath(root).catch(() => root);
+  const realTarget = await realpath(full).catch(() => null);
+
+  if (!realTarget || !existsSync(full)) {
+    throw new BrainPathError("Ordner nicht gefunden.");
+  }
+  if (!statSync(full).isDirectory()) {
+    throw new BrainPathError("Pfad ist kein Ordner.");
+  }
+  // Never delete the root folder itself
+  if (realTarget === realRoot || full === root) {
+    throw new BrainPathError("Hauptordner kann nicht gelöscht werden.");
+  }
+
+  const { rm } = await import("node:fs/promises");
+  await rm(full, { recursive: true, force: true });
+  return { path: sep(path.relative(realRoot, full)), deleted: true };
 }
 
 /**
@@ -456,6 +624,8 @@ export type BrainAgentEntry = {
   connectAgentId?: string;
   read: BrainArea[];
   write: BrainArea[];
+  /** Datei-/Ordner-Regeln (Kern-Pfade, Vault als Vault/..; Ordner mit /). Gehen vor Bereichen. */
+  files?: BrainFileRule[];
   note?: string;
 };
 export type BrainAgentsFile = {
@@ -519,6 +689,7 @@ export async function readAgents(root: string): Promise<BrainAgentsFile> {
         ...entry,
         read: cleanAreas(entry.read),
         write: cleanAreas(entry.write),
+        files: cleanRules((entry as { files?: unknown }).files),
       })),
   };
 }
@@ -548,7 +719,7 @@ export function berlinStamp(date = new Date()) {
 /** Save one agent's scopes: rewrite agents.json atomically, add one `scope` line to log.md, commit. */
 export async function saveAgentScopes(
   root: string,
-  input: { slug: string; name?: string; kind?: string; connectAgentId?: string; read: unknown; write: unknown },
+  input: { slug: string; name?: string; kind?: string; connectAgentId?: string; read: unknown; write: unknown; files?: unknown },
 ) {
   if (!isValidSlug(input.slug)) throw new BrainPathError("Ungültiges Agent-Kürzel.");
   const file = await readAgents(root);
@@ -564,6 +735,7 @@ export async function saveAgentScopes(
     connectAgentId: clip(input.connectAgentId, 128) ?? existing?.connectAgentId,
     read,
     write,
+    files: input.files !== undefined ? cleanRules(input.files) : existing?.files,
   };
   const agents = existing
     ? file.agents.map((entry) => (entry.slug === input.slug ? next : entry))
@@ -780,4 +952,49 @@ export function saveBrainLocation(brainPath: string, vaultPath: string | null): 
   if (wanted.CONNECT_BRAIN_VAULT_PATH) process.env.CONNECT_BRAIN_VAULT_PATH = wanted.CONNECT_BRAIN_VAULT_PATH;
 
   return { brainPath: brain, vaultPath: wanted.CONNECT_BRAIN_VAULT_PATH ?? null, source: "saved" };
+}
+
+/* ------------------------------------------------------------------ *
+ * MAPS: Datei-Regeln und Brain-Kern
+ * ------------------------------------------------------------------ */
+
+export type BrainFileRule = { path: string; read?: boolean; write?: boolean };
+
+export function cleanRules(value: unknown): BrainFileRule[] {
+  if (!Array.isArray(value)) return [];
+  const out: BrainFileRule[] = [];
+  for (const item of value.slice(0, 300)) {
+    if (!item || typeof item !== "object") continue;
+    const raw = (item as { path?: unknown }).path;
+    if (typeof raw !== "string") continue;
+    const p = raw.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/^Brain\//i, "").slice(0, 300);
+    if (!p || p.startsWith("/") || /^[a-zA-Z]:/.test(p) || p.split("/").some((x) => x === "..") || p.includes("\0")) continue;
+    const read = (item as { read?: unknown }).read;
+    const write = (item as { write?: unknown }).write;
+    const rule: BrainFileRule = { path: p };
+    if (typeof read === "boolean") rule.read = read;
+    if (typeof write === "boolean") rule.write = write;
+    if (rule.read === undefined && rule.write === undefined) continue;
+    const at = out.findIndex((r) => r.path.toLowerCase() === p.toLowerCase());
+    if (at >= 0) out[at] = rule;
+    else out.push(rule);
+  }
+  return out;
+}
+
+/**
+ * Wo der Brain-Kern (agents.json, log.md, AGENTS.md) liegt, relativ zum Root: der Root selbst oder
+ * `Knowledge/Brain` / `Brain` darunter. Bei Stefan zeigt CONNECT_BRAIN_PATH auf den ganzen Vault
+ * (`Plannung`), der Kern liegt seit der Vault-Umstellung vom 06.10. in `Knowledge/Brain`.
+ */
+export function coreRelOf(root: string): string {
+  for (const rel of ["", "Knowledge/Brain", "Brain"]) {
+    if (existsSync(path.join(root, ...rel.split("/").filter(Boolean), "agents.json"))) return rel;
+  }
+  return "";
+}
+
+export function coreOf(root: string): string {
+  const rel = coreRelOf(root);
+  return rel ? path.join(root, ...rel.split("/")) : root;
 }

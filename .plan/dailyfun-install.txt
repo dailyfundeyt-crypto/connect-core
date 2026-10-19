@@ -1,0 +1,59 @@
+﻿bun : [0.12ms] ".env"
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-5d25bdbd-f49c-4171-a001-7795a4ca6072.ps1:100 Zeichen:1
++ bun add react-router-dom@^6.30.0 2>&1 | Out-String -Width 200 | Out-F ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([0.12ms] ".env":String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+bun add v1.4.2 (744846f84)
+Resolving dependencies
+Resolved, downloaded and extracted [103]
+Saved lockfile
+
++ @base-ui/react@1.8.0 (v1.9.0 available)
++ @better-auth/sso@1.7.6 (v1.7.10 available)
++ @copilotkit/react-core@1.70.1
++ @hookform/resolvers@5.9.2
++ @radix-ui/react-accordion@1.3.1
++ @radix-ui/react-alert-dialog@1.2.1
++ @radix-ui/react-aspect-ratio@1.2.0
++ @radix-ui/react-avatar@1.3.1
++ @radix-ui/react-checkbox@1.4.1
++ @radix-ui/react-collapsible@1.2.1
++ @radix-ui/react-context-menu@2.4.1
++ @radix-ui/react-dialog@1.3.1
++ @radix-ui/react-hover-card@1.2.1
++ @radix-ui/react-label@2.1.17
++ @radix-ui/react-menubar@1.2.1
++ @radix-ui/react-navigation-menu@1.4.1
++ @radix-ui/react-popover@1.3.1
++ @radix-ui/react-progress@1.2.1
++ @radix-ui/react-radio-group@1.5.1
++ @radix-ui/react-scroll-area@1.4.0
++ @radix-ui/react-select@2.4.1
++ @radix-ui/react-separator@1.2.0
++ @radix-ui/react-slider@1.6.1
++ @radix-ui/react-slot@1.5.0
++ @radix-ui/react-switch@1.4.1
++ @radix-ui/react-tabs@1.2.1
++ @radix-ui/react-toggle@1.2.1
++ @radix-ui/react-toggle-group@1.2.1
++ @supabase/supabase-js@2.118.0
++ @tanstack/react-form@1.33.5
++ @tanstack/react-start@1.168.32
++ @tanstack/router-plugin@1.168.23 (v1.168.47 available)
++ better-auth@1.7.6 (v1.7.10 available)
++ cmdk@1.1.1
++ input-otp@1.5.0
++ lucide-react@0.575.0 (v1.59.0 available)
++ react-day-picker@9.14.0 (v10.0.2 available)
++ react-hook-form@7.90.0
++ react-resizable-panels@4.14.5
++ recharts@2.15.4 (v3.10.1 available)
++ sonner@2.0.8
++ vaul@1.1.2
+
+installed react-router-dom@6.30.6
+
+110 packages installed [10.75s]
+

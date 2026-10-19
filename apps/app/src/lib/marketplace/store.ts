@@ -221,8 +221,8 @@ export function ensureMarketplaceSeed() {
       offer: "sale",
       priceLabel: "€390",
       sellerUrl: "https://example.com/sell/analysis",
-      sellerName: "Nordwind Ops",
-      companyId: "nordwind",
+      sellerName: "Connect",
+      companyId: "connect",
     },
     {
       kind: "company",

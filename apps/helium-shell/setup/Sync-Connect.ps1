@@ -1,4 +1,4 @@
-<#
+﻿<#
   Sync-Connect.ps1 - laufender ZWEI-WEGE-Abgleich Connect App (lokale DB 127.0.0.1:5544) <-> Supabase
   (connect-core, .env.supabase = Backend von connect-kunc-preview.vercel.app). Logik: sync-engine.ts.
 
@@ -105,7 +105,17 @@ try {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"; $pw = Get-BackupPassword -CreateIfMissing
     $tmp = Join-Path $env:TEMP "connect-sync-$stamp"; New-Item -ItemType Directory -Force $tmp | Out-Null
     try {
-      foreach ($s in @(@{ n = "app"; db = $app; a = @("-Fc") }, @{ n = "supabase"; db = $sb; a = @("-n", "public", "-n", "drizzle") })) {
+      # Supabase project is shared with other apps (profiles/purchases/stores/...): skip relations the
+      # connect_app role cannot read, otherwise pg_dump aborts and the sync never runs (fix 2026-10-17).
+      $sbSkip = @()
+      $env:PGPASSWORD = $sb.Password
+      try {
+        $psql = Join-Path $pgBin "psql.exe"
+        $sq = "select n.nspname||'.'||c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('public','drizzle') and c.relkind in ('r','p','S','v','m') and not has_table_privilege(c.oid,'SELECT')"
+        $rs = Invoke-Native $psql @("-d", (Get-PgConnInfo $sb), "-At", "-c", $sq)
+        if ($rs.ExitCode -eq 0) { foreach ($t in @($rs.Output)) { if ("$t".Trim()) { $sbSkip += @("-T", "$t".Trim()) } } }
+      } finally { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
+      foreach ($s in @(@{ n = "app"; db = $app; a = @("-Fc") }, @{ n = "supabase"; db = $sb; a = (@("-n", "public", "-n", "drizzle") + $sbSkip) })) {
         $plain = Join-Path $tmp "$($s.n).dump"
         $env:PGPASSWORD = $s.db.Password
         try { $r = Invoke-Native $pgDump (@("-d", (Get-PgConnInfo $s.db), "--no-owner", "--no-privileges", "--encoding=UTF8", "-f", $plain) + $s.a) } finally { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }

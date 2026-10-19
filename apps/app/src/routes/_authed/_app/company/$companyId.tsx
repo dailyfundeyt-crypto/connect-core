@@ -2,13 +2,18 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { IconChevronRight, IconPlus } from "@tabler/icons-react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { CompanyProfileX } from "@/components/companies/company-profile-x";
+import { CompanyProfileSocialSwitch } from "@/components/social/company-social-profile";
+import { MobileCompanyProfile } from "@/components/mobile/mobile-company-profile";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import { CompanySiteStudio } from "@/components/companies/company-site-studio";
 import { CompanyStockTile } from "@/components/companies/company-stock-tile";
 import { Level3SiteStudio } from "@/components/companies/level3-site-studio";
 import { ProjectProfileX } from "@/components/companies/project-profile-x";
+import { CompanyAppWorkspace, getCompanyApp } from "@/company-apps/registry";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -30,6 +35,7 @@ import { getCompany } from "@/lib/companies/store";
 import {
   type CompanyLevel,
   getActiveLevel,
+  setActiveLevel,
   subscribeLevel,
 } from "@/lib/companies/level";
 
@@ -71,7 +77,10 @@ function CompanyWorkspace() {
   } = Route.useSearch();
   const navigate = useNavigate();
   const company = getCompany(companyId);
+  const companyApp = company ? getCompanyApp(company) : null;
   const [mode, setMode] = useState<CompanyLevel>(() => getActiveLevel());
+  // Handy: eigenes dunkles Firmenprofil (helium-inappbrowser) statt Desktop-Profil/Lab/Markier-Vorschau.
+  const mobileShell = useMobileShell();
 
   useEffect(() => subscribeLevel(() => setMode(getActiveLevel())), []);
 
@@ -79,6 +88,7 @@ function CompanyWorkspace() {
     mode === 3 || mode === 4 || mode === 1 ? mode : 2;
 
   const agentsQuery = useQuery(agentListQueryOptions());
+  const currentUserQuery = useQuery(currentUserQueryOptions());
   const companyAgents = useMemo(() => {
     if (!company || !agentsQuery.data) return [];
     return company.agentIds
@@ -100,6 +110,15 @@ function CompanyWorkspace() {
     void navigate({ to: "/", replace: true });
   }, [level, profile, projectId, navigate]);
 
+  // On desktop, opening a company app from the Company area lands in Messages,
+  // where the app occupies the main pane beside the agent list. Mobile keeps its
+  // separate company page.
+  useEffect(() => {
+    if (mobileShell || level !== 4 || !companyApp) return;
+    setActiveLevel(2);
+    void navigate({ to: "/", replace: true });
+  }, [mobileShell, level, companyApp, navigate]);
+
   if (!company) {
     return (
       <>
@@ -111,6 +130,15 @@ function CompanyWorkspace() {
         </Empty>
       </>
     );
+  }
+
+  if (
+    mobileShell &&
+    !projectId &&
+    (profile || level !== 2) &&
+    !(level === 4 && companyApp)
+  ) {
+    return <MobileCompanyProfile company={company} />;
   }
 
   if (level === 2 && !profile && !projectId) {
@@ -131,10 +159,14 @@ function CompanyWorkspace() {
           level={level}
         />
       ) : level === 4 ? (
-        <CompanySiteStudio
-          companyId={company.id}
-          companyName={company.name}
-        />
+        companyApp ? (
+          <CompanyAppWorkspace app={companyApp} company={company} identity={currentUserQuery.data ?? null} />
+        ) : (
+          <CompanySiteStudio
+            companyId={company.id}
+            companyName={company.name}
+          />
+        )
       ) : (
         <Level2CompanyOverview
           agents={companyAgents}
@@ -205,11 +237,14 @@ function Level2CompanyOverview({
           project={openProject}
         />
       ) : (
-        <CompanyProfileX
+        <CompanyProfileSocialSwitch
           company={company}
-          employeeCount={company.agentIds.length}
-          projectsSlot={
-            <CompanyProjectsRich agents={agents} companyId={company.id} />
+          editor={
+            <CompanyProfileX
+              company={company}
+              employeeCount={company.agentIds.length}
+              projectsSlot={<CompanyProjectsRich agents={agents} companyId={company.id} />}
+            />
           }
         />
       )}

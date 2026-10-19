@@ -8,8 +8,8 @@
 
 import { isDesktopApp, navigateDesktopBrowser } from "@/lib/desktop-bridge";
 
-/** `split` = Split-Link: two URLs opened side by side (left / right half of the screen). */
-export type LabAppKind = "browser" | "computer" | "split";
+/** `split` = Split-Link: two URLs opened side by side (left / right half of the screen). `note` = linked Obsidian / Brain planning note. */
+export type LabAppKind = "browser" | "computer" | "split" | "note";
 
 export type LabApp = {
   id: string;
@@ -30,6 +30,8 @@ export type LabApp = {
    * (lab-favicons.ts). Wird per Workspace-Sync mitgenommen; die Handy-Browserliste zeigt es.
    */
   favicon?: string;
+  /** Vault path for linked planning notes (e.g. "MOC/02-Prompts-AI.md"). */
+  notePath?: string;
 };
 
 /** App icons in the sidebar — agents + humans open them in the Lab browser. */
@@ -1160,6 +1162,62 @@ export const DND_NOTE = "application/x-connect-note";
  * stands for "Allgemein", which has no id.
  */
 export const DND_NOTE_FROM = "application/x-connect-note-from-folder";
+
+/**
+ * Payload of a vault planning note dragged from the planning tree to a group.
+ */
+export const DND_VAULT_NOTE = "application/x-connect-vault-note";
+
+/**
+ * Add a linked reference to a vault planning note into a browser group.
+ * The original note file on disk remains untouched.
+ */
+export function linkVaultNoteToGroup(
+  companyId: string,
+  notePath: string,
+  label: string,
+  groupId: string,
+): Level3BrowserState {
+  const prev = getLevel3Browser(companyId);
+  const cleanLabel = label.replace(/\.md$/i, "").trim() || "Notiz";
+  const existing = prev.customApps.find(
+    (a) => (a.kind === "note" || !!a.notePath) && a.notePath === notePath,
+  );
+  let appId: string;
+  let customApps = [...prev.customApps];
+  if (existing) {
+    appId = existing.id;
+  } else {
+    appId = `note-link-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const newApp: LabApp = {
+      id: appId,
+      kind: "note",
+      label: cleanLabel,
+      blurb: "Planung Notiz",
+      icon: "note",
+      tint: "#0ea5e9",
+      notePath,
+      builtin: false,
+    };
+    customApps.push(newApp);
+  }
+
+  const groups = normalizeGroups(prev.tabGroups);
+  const nextGroups = groups.map((g) => {
+    if (g.id === groupId) {
+      if (!g.appIds.includes(appId)) {
+        return { ...g, appIds: [...g.appIds, appId], collapsed: false };
+      }
+      return { ...g, collapsed: false };
+    }
+    return g;
+  });
+
+  return setLevel3Browser(companyId, {
+    customApps,
+    tabGroups: nextGroups,
+  });
+}
 
 export type LabFolderNode = LabTabGroup & {
   apps: LabApp[];

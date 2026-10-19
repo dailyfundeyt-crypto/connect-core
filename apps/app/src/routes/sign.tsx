@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { ProviderLogo } from "@/components/auth/provider-logo";
 import { PremiumLanding } from "@/components/landing/premium-landing";
 import {
@@ -36,8 +36,20 @@ function SignScreen() {
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { data: options } = useQuery(authProvidersQueryOptions());
+  const navigate = useNavigate();
+  const { data: user } = useQuery({
+    ...currentUserQueryOptions(),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
   const providers = options?.providers ?? [];
   const [email, setEmail] = useState("");
+
+  useEffect(() => {
+    if (user) void navigate({ to: "/", replace: true });
+  }, [navigate, user]);
 
   /**
    * Sign in through whichever identity provider covers this address.

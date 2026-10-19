@@ -1,0 +1,28 @@
+﻿takes a `.connect-history/`
+ * safety backup before unlinking, so a confirmed delete can still be
+ * reversed through the same edit-history path the editor already uses.
+ */
+export async function deleteBrainNote(path: string): Promise<{ path: string; deleted: boolean }> {
+  const query = new URLSearchParams({ path });
+  return client<{ path: string; deleted: boolean }>(`/api/brain/note?${query.toString()}`, {
+    unwrap: true,
+    method: "DELETE",
+    fallback: "Notiz konnte nicht gelöscht werden",
+  });
+}
+
+export function brainSearchQueryOptions(q: string) {
+  return queryOptions({
+    queryKey: brainKeys.search(q),
+    enabled: q.trim().length >= 2,
+    queryFn: () =>
+      brainGet<{ available: boolean; hits: { path: string; line: number; text: string }[] }>(
+        `/api/brain/search?q=${encodeURIComponent(q.trim())}`,
+        { available: false, hits: [] },
+      ),
+  });
+}
+
+export function brainTemplatesQueryOptions() {
+  return queryOptions({
+    que

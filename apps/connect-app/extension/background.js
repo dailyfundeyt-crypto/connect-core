@@ -6,7 +6,7 @@
 // Bei JEDER Änderung an background.js, open-window.js, session-save.js oder tabs.config.js:
 //   SHELL_BUILD hier + "version" in manifest.json erhöhen, sw-<alt>.js -> sw-<neu>.js umbenennen und
 //   "background.service_worker" anpassen (setup\Set-ConnectUrl.ps1 -Bump erledigt alles).
-const SHELL_BUILD = "0.4.7";
+const SHELL_BUILD = "0.4.20";
 importScripts("tabs.config.js", "open-window.js", "session-save.js");
 // Neue Extension-Version sofort aktiv schalten (sonst wartet der neue Service Worker, bis der alte endet,
 // und Helium führt weiter den alten Code aus).
@@ -48,7 +48,41 @@ enablePanelOnAction();
 // Vom Nutzer geöffnetes normales Fenster: Connect-App-Fenster sicherstellen (kein gepinnter localhost-Tab).
 chrome.windows.onCreated.addListener((win) => { if (win && win.type === "normal") ensureSoon(1500); });
 
-// Nachrichten von connect-bridge.js (Connect-Web-UI) und der Sidebar
+// chrome.commands: Ctrl+Shift+C / Alt+Shift+S -> open sidebar action
+// Ctrl+Shift+Y -> open Helium+Connect tab (replaces old floating-notch shortcut)
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "open-floating-bar") {
+    // Open (or focus) the Helium+Connect web app on localhost:3101
+    const url = (self.CONNECT_SHELL_CONFIG || {}).connectUrl || "http://localhost:3101";
+    W.openConnect(url + "/").catch((e) => console.warn("[connect-shell] open-helium:", e));
+  }
+});
+
+// --- Favicons: Helium-Tabs (Titel + favIconUrl) an die Connect-Seite melden (Handy-Browserliste) ---
+const CONNECT_PAGE_URLS = ["http://localhost:3101/*", "http://127.0.0.1:3101/*", "http://localhost:3101/*", "http://127.0.0.1:3101/*"];
+const tabPayload = (tab) => ({
+  id: tab.id,
+  url: tab.url || "",
+  title: tab.title || "",
+  favIconUrl: tab.favIconUrl || "",
+  windowId: tab.windowId,
+  active: !!tab.active,
+});
+const isWebTab = (tab) => !!(tab && tab.url && /^https?:\/\//i.test(tab.url) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/)/i.test(tab.url));
+const broadcastTabMeta = (tab) => {
+  if (!isWebTab(tab) || !tab.favIconUrl) return;
+  chrome.tabs.query({ url: CONNECT_PAGE_URLS }, (pages) => {
+    for (const p of pages || []) {
+      if (p.id) chrome.tabs.sendMessage(p.id, { type: "tab-meta", tab: tabPayload(tab) }).catch(() => {});
+    }
+  });
+};
+const listWebTabs = () => chrome.tabs.query({}).then((tabs) => (tabs || []).filter(isWebTab).map(tabPayload));
+chrome.tabs.onUpdated.addListener((_id, info, tab) => {
+  if (info.favIconUrl || info.status === "complete") broadcastTabMeta(tab);
+});
+
+// Nachrichten von connect-bridge.js (Helium+Connect) und der Sidebar
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || typeof msg.type !== "string") return false;
   const reply = (p) => p
@@ -58,5 +92,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "open-split") { reply(W.openSplit(msg.left, msg.right)); return true; }
   if (msg.type === "session-save") { reply(S.save().then(() => S.read()).then((s) => ({ session: s }))); return true; }
   if (msg.type === "session-restore") { reply(S.restoreIfMissing()); return true; }
+  if (msg.type === "list-tabs") { reply(listWebTabs().then((tabs) => ({ tabs, agentId: msg.agentId || null }))); return true; }
+  if (msg.type === "open-connect-notch") {
+    // Open the legacy white Connect-Notch in a small popup
+    chrome.windows.create({
+      url: (self.CONNECT_SHELL_CONFIG || {}).connectUrl + "/notch",
+      type: "popup",
+      width: 360,
+      height: 480,
+      left: Math.round((screen.availWidth - 360) / 2),
+      top: 0,
+    }).catch((e) => console.warn("[connect-shell] open-connect-notch:", e));
+    return false;
+  }
+  if (msg.type === "open-companies-sheet") {
+    // Open the companies sheet in the Connect app window
+    chrome.tabs.query({ url: ["http://localhost:3101/*", "http://127.0.0.1:3101/*", "http://localhost:3101/*"] }, (tabs) => {
+      if (tabs && tabs.length) {
+        const target = tabs[0];
+        chrome.tabs.update(target.id, { active: true }).catch(() => {});
+        chrome.windows.update(target.windowId, { focused: true }).catch(() => {});
+        // Tell the Connect page to open companies sheet via DOM event
+        chrome.tabs.sendMessage(target.id, { type: "open-companies-sheet" }).catch(() => {});
+      }
+    });
+    return false;
+  }
   return false;
 });

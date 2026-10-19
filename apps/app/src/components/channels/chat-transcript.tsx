@@ -14,6 +14,7 @@ import {
 import { motion, useReducedMotion } from "motion/react";
 import {
   memo,
+  type ReactNode,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -83,6 +84,10 @@ type ChatTranscriptProps = {
    * be told, and only the thing that ended the turn knows which one happened.
    */
   stopped?: string;
+  /** oneconv: a slot above the rows, told how many rows are hidden and how to show more. */
+  header?: (info: { hiddenCount: number; showMore: () => void }) => ReactNode;
+  /** oneconv: draw only the newest N rows at first (display only, nothing is removed). */
+  initialVisible?: number;
 };
 
 /** One shared empty array, so a screen without a queue does not hand down a new one per render. */
@@ -1429,6 +1434,8 @@ export function ChatTranscript({
   queued = EMPTY_QUEUE,
   restoring = false,
   stopped,
+  header,
+  initialVisible,
 }: ChatTranscriptProps) {
   /*
    * NOT MEMOISED, AND THAT IS DELIBERATE. `useMemo` keyed on `messages` looks obviously right and
@@ -1440,7 +1447,11 @@ export function ChatTranscript({
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
    * which is where the 25x came from. This runs per render and is not worth guarding.
    */
-  const items = toVisibleChatItems(messages);
+  const allItems = toVisibleChatItems(messages);
+  /* oneconv: very long conversations draw their newest rows; "Frühere Nachrichten anzeigen" brings the rest back. */
+  const [visibleLimit, setVisibleLimit] = useState(initialVisible ?? Number.POSITIVE_INFINITY);
+  const hiddenCount = Number.isFinite(visibleLimit) ? Math.max(0, allItems.length - visibleLimit) : 0;
+  const items = hiddenCount > 0 ? allItems.slice(hiddenCount) : allItems;
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -1581,6 +1592,14 @@ export function ChatTranscript({
                 />
               ))}
             </div>
+            {header ? (
+              <div className="flex flex-col gap-6">
+                {header({
+                  hiddenCount,
+                  showMore: () => setVisibleLimit((limit) => limit + (initialVisible ?? 60)),
+                })}
+              </div>
+            ) : null}
             {items.length === 0 && restoring ? <RestoringTranscript /> : null}
             {items.map((item, index) =>
               item.kind === "tool" ? (
@@ -1637,5 +1656,25 @@ export function ChatTranscript({
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
       </MessageScroller>
     </MessageScrollerProvider>
+  );
+}
+
+
+/**
+ * oneconv: earlier parts of an agent's one conversation, read-only, drawn above the live part.
+ * Text and files only; tool lines of a closed part are not re-run or re-rendered.
+ */
+export function HistoryRows({ messages }: { messages: ReadonlyArray<Readonly<Message>> }) {
+  const items = toVisibleChatItems(messages);
+  return (
+    <>
+      {items.map((item) =>
+        item.kind === "text" ? (
+          <TranscriptMessage delay={0} key={item.id} role={item.role} text={item.text} />
+        ) : item.kind === "attachments" ? (
+          <TranscriptAttachments attachments={item.attachments} delay={0} key={item.id} />
+        ) : null,
+      )}
+    </>
   );
 }

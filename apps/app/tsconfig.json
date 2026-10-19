@@ -3,7 +3,17 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@flux/*": ["./src/company-apps/modules/flux/source/*"],
+      "@dailyfun/components/*": ["./src/dailyfun/components/*"],
+      "@dailyfun/contexts/*": ["./src/dailyfun/contexts/*"],
+      "@dailyfun/hooks/*": ["./src/dailyfun/hooks/*"],
+      "@dailyfun/lib/*": ["./src/dailyfun/lib/*"],
+      "@dailyfun/utils/*": ["./src/dailyfun/utils/*"],
+      "@dailyfun/data/*": ["./src/dailyfun/data/*"],
+      "@dailyfun/integrations/*": ["./src/dailyfun/integrations/*"],
+      "@dailyfun/pages/*": ["./src/dailyfun/pages/*"],
+      "@dailyfun/assets/*": ["./src/dailyfun/assets/*"]
     },
     "jsx": "react-jsx",
     "lib": ["ES2024", "DOM", "DOM.Iterable"]
@@ -14,5 +24,9 @@
     "vite.config.ts",
     "../shared/handoff-markers.ts",
     "../shared/listen-port.ts"
+  ],
+  "exclude": [
+    "src/company-apps",
+    "src/dailyfun"
   ]
 }

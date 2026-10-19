@@ -1470,13 +1470,13 @@ public partial class MainWindow : Window
         if (sender is not Border b) return;
         b.ContextMenu ??= new ContextMenu();
         b.ContextMenu.Items.Clear();
-        b.ContextMenu.Items.Add(new MenuItem { Header = "Nordwind", Tag = "nordwind" });
+        b.ContextMenu.Items.Add(new MenuItem { Header = "Connect", Tag = "connect" });
         b.ContextMenu.Items.Add(new MenuItem { Header = "Lumen", Tag = "lumen" });
         b.ContextMenu.Items.Add(new MenuItem { Header = "Helm", Tag = "helm" });
         b.ContextMenu.Items.Add(new MenuItem { Header = "Pulse", Tag = "pulse" });
         b.ContextMenu.PlacementTarget = b;
         b.ContextMenu.IsOpen = true;
-        SetStatus("Companies: Nordwind / Lumen / Helm / Pulse");
+        SetStatus("Companies: Connect / Lumen / Helm / Pulse");
     }
 
     private void BtnCollapse_Click(object sender, RoutedEventArgs e)

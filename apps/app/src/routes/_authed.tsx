@@ -6,6 +6,7 @@ import { CopilotProvider } from "../lib/copilot/provider";
 import { AppHotkeys } from "../lib/hotkeys/app-hotkeys";
 import { MobileThemeSync } from "../components/mobile/mobile-theme-sync";
 import { ExtensionsProvider } from "@/extensions/context";
+import { SocialQuickPostDock } from "@/components/social/social-quick-post-dock";
 
 export const Route = createFileRoute("/_authed")({
   beforeLoad: async ({ context, location }) => {
@@ -22,6 +23,15 @@ export const Route = createFileRoute("/_authed")({
      */
     if (needsOnboarding(user) && location.pathname !== "/onboarding") {
       throw redirect({ to: "/onboarding" });
+    }
+    // The public Vercel build offers the landing, authentication and onboarding only.
+    // Keep the full workspace available in the local build and send completed accounts
+    // to the local-app handoff page instead of mounting the workspace remotely.
+    if (
+      import.meta.env.VITE_CONNECT_LOCAL_APP_ONLY === "true" &&
+      location.pathname !== "/onboarding"
+    ) {
+      throw redirect({ to: "/local-connect" });
     }
   },
   // Mounted INSIDE the authed boundary, not at the root: the runtime endpoint requires a session, so
@@ -42,6 +52,7 @@ export const Route = createFileRoute("/_authed")({
             * somebody who has not signed in.
             */}
           <CalendarDock />
+          <SocialQuickPostDock />
         </CopilotProvider>
       </ExtensionsProvider>
     </SecurityGate>

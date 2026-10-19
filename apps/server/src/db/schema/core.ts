@@ -276,6 +276,33 @@ export const agents = pgTable("agents", {
   updatedAt: updatedAt(),
 });
 
+/**
+ * Browser-Tabs, die ein Agent besitzt.
+ *
+ * Stufe 1.1: pro Agent ein Tab mit eigenem persistenten Profil
+ * (Cookies, localStorage, IndexedDB). Das Profil selbst lebt unter
+ * `%LOCALAPPDATA%/ConnectAgents/browser-profiles/<agentId>/` (siehe
+ * `computer/gateway.ts` für die Isolation) — diese Tabelle merkt sich nur
+ * Metadaten, damit der Tab nach einem Server-Neustart wiederzufinden ist.
+ */
+export const agentBrowserTabs = pgTable(
+  "agent_browser_tabs",
+  {
+    tabId: text("tab_id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    url: text("url"),
+    title: text("title"),
+    profileDir: text("profile_dir").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    agentIdx: index("agent_browser_tabs_agent_idx").on(table.agentId),
+  }),
+);
+
 export const channels = pgTable(
   "channels",
   {

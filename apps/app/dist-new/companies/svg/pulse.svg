@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" shape-rendering="geometricPrecision">
+  <defs>
+    <radialGradient id="orb" cx="36%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="50%" stop-color="#0369a1"/>
+      <stop offset="100%" stop-color="#0b1a2e"/>
+    </radialGradient>
+    <radialGradient id="spec" cx="30%" cy="26%" r="32%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.65"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="#000000"/>
+  <circle cx="512" cy="512" r="434" fill="url(#orb)"/>
+  <circle cx="512" cy="512" r="434" fill="url(#spec)"/>
+  <circle cx="512" cy="512" r="434" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="4"/>
+  
+      <g transform="translate(512 512)" fill="none" stroke="#FFFFFF" stroke-width="76" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="-270,12 -150,12 -90,-170 -15,200 75,-220 150,35 270,12"/>
+      </g>
+</svg>

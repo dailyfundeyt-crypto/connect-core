@@ -11,7 +11,16 @@ const MOBILE_BG = "#07080c";
 
 /** Pfade, die auf dem Handy die eigene Handy-Ansicht bekommen. */
 export function isMobileShellPath(pathname: string): boolean {
-  return pathname === "/" || pathname === "" || pathname.startsWith("/channel/");
+  // oneconv: /agent/<id> is the conversation now; /channel/<id> forwards there.
+  return (
+    pathname === "/" ||
+    pathname === "" ||
+    pathname.startsWith("/channel/") ||
+    pathname.startsWith("/agent/") ||
+    // helium-social: Connect Social auf dem Handy bildschirmfüllend im dunklen Rahmen
+    pathname === "/social" ||
+    pathname.startsWith("/social/")
+  );
 }
 
 /** Dunkler Seitenhintergrund + Statusleistenfarbe, solange die Handy-Ansicht offen ist. */

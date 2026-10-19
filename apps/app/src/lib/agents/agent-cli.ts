@@ -8,6 +8,7 @@
 import { tryClient } from "@/lib/client";
 
 export type CliTarget =
+  | "antigravity"
   | "manus"
   | "codex"
   | "chatgpt"
@@ -43,6 +44,12 @@ export const CLI_TARGETS: {
   prompt: string;
   hint: string;
 }[] = [
+  {
+    id: "antigravity",
+    label: "Antigravity",
+    prompt: "agy>",
+    hint: "Antigravity CLI (agy) — Browser Use, Sandbox, Login via Google",
+  },
   {
     id: "manus",
     label: "Manus",

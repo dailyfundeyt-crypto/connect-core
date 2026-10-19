@@ -1,0 +1,339 @@
+﻿docker-compose :  Image ghcr.io/spiffe/spire-agent:1.15.1 Pulling 
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-a4f54521-327d-44ff-86a3-4b3674f45e64.ps1:99 Zeichen:1
++ docker-compose up -d 2>&1 | Out-File -FilePath .plan/docker-up.txt -E ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( Image ghcr.io/...1.15.1 Pulling :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ Image ghcr.io/spiffe/spire-server:1.15.1 Pulling 
+ Image busybox:1.37 Pulling 
+ 374c8756230f Already exists 0B
+ 374c8756230f Already exists 0B
+ b3f7289b664e Already exists 0B
+ b3f7289b664e Already exists 0B
+ 59f3cae2ee0f Pulling fs layer 0B
+ 3392d6b254b4 Pulling fs layer 0B
+ 5e689c61be4f Already exists 0B
+ f4c8a5a893b6 Already exists 0B
+ 68fe9bff2ad4 Pulling fs layer 0B
+ Image ghcr.io/spiffe/spire-server:1.15.1 Pulled 
+ 59f3cae2ee0f Downloading 295B
+ 59f3cae2ee0f Verifying Checksum 0B
+ 59f3cae2ee0f Download complete 0B
+ 59f3cae2ee0f Extracting 295B
+ 59f3cae2ee0f Extracting 295B
+ 59f3cae2ee0f Pull complete 0B
+ 3392d6b254b4 Downloading 162.5kB
+ 3392d6b254b4 Downloading 326.4kB
+ 68fe9bff2ad4 Downloading 32.16kB
+ 68fe9bff2ad4 Downloading 64.93kB
+ 3392d6b254b4 Downloading 490.2kB
+ 68fe9bff2ad4 Downloading 130.5kB
+ 68fe9bff2ad4 Downloading 196kB
+ 3392d6b254b4 Downloading 654kB
+ 68fe9bff2ad4 Downloading 294.3kB
+ 68fe9bff2ad4 Downloading 392.6kB
+ 68fe9bff2ad4 Downloading 490.9kB
+ 68fe9bff2ad4 Downloading 556.5kB
+ 3392d6b254b4 Downloading 817.9kB
+ 68fe9bff2ad4 Downloading 687.5kB
+ 68fe9bff2ad4 Downloading 818.6kB
+ 3392d6b254b4 Downloading 981.7kB
+ 68fe9bff2ad4 Downloading 884.1kB
+ 68fe9bff2ad4 Downloading 949.7kB
+ 68fe9bff2ad4 Downloading 1.048MB
+ 68fe9bff2ad4 Downloading 1.179MB
+ 3392d6b254b4 Downloading 1.146MB
+ 68fe9bff2ad4 Downloading 1.277MB
+ 68fe9bff2ad4 Downloading 1.441MB
+ 68fe9bff2ad4 Downloading 1.539MB
+ 68fe9bff2ad4 Downloading 1.638MB
+ 3392d6b254b4 Downloading 1.309MB
+ 68fe9bff2ad4 Downloading 1.769MB
+ 68fe9bff2ad4 Downloading 1.834MB
+ 3392d6b254b4 Downloading 1.473MB
+ 68fe9bff2ad4 Downloading 1.933MB
+ 68fe9bff2ad4 Downloading 2.162MB
+ 68fe9bff2ad4 Verifying Checksum 0B
+ 68fe9bff2ad4 Download complete 0B
+ 68fe9bff2ad4 Extracting 32.77kB
+ 3392d6b254b4 Downloading 1.637MB
+ 68fe9bff2ad4 Extracting 2.212MB
+ 68fe9bff2ad4 Pull complete 0B
+ Image busybox:1.37 Pulled 
+ 3392d6b254b4 Downloading 1.801MB
+ 3392d6b254b4 Downloading 1.965MB
+ 3392d6b254b4 Downloading 2.129MB
+ 3392d6b254b4 Downloading 2.292MB
+ 3392d6b254b4 Downloading 2.456MB
+ 3392d6b254b4 Downloading 2.784MB
+ 3392d6b254b4 Downloading 2.948MB
+ 3392d6b254b4 Downloading 3.112MB
+ 3392d6b254b4 Downloading 3.275MB
+ 3392d6b254b4 Downloading 3.439MB
+ 3392d6b254b4 Downloading 3.603MB
+ 3392d6b254b4 Downloading 3.767MB
+ 3392d6b254b4 Downloading 3.931MB
+ 3392d6b254b4 Downloading 4.095MB
+ 3392d6b254b4 Downloading 4.259MB
+ 3392d6b254b4 Downloading 4.422MB
+ 3392d6b254b4 Downloading 4.586MB
+ 3392d6b254b4 Downloading 4.75MB
+ 3392d6b254b4 Downloading 4.914MB
+ 3392d6b254b4 Downloading 5.078MB
+ 3392d6b254b4 Downloading 5.242MB
+ 3392d6b254b4 Downloading 5.405MB
+ 3392d6b254b4 Downloading 5.569MB
+ 3392d6b254b4 Downloading 5.733MB
+ 3392d6b254b4 Downloading 5.897MB
+ 3392d6b254b4 Downloading 6.061MB
+ 3392d6b254b4 Downloading 6.225MB
+ 3392d6b254b4 Downloading 6.388MB
+ 3392d6b254b4 Downloading 6.552MB
+ 3392d6b254b4 Downloading 6.716MB
+ 3392d6b254b4 Downloading 6.88MB
+ 3392d6b254b4 Downloading 7.044MB
+ 3392d6b254b4 Downloading 7.208MB
+ 3392d6b254b4 Downloading 7.371MB
+ 3392d6b254b4 Downloading 7.535MB
+ 3392d6b254b4 Downloading 7.699MB
+ 3392d6b254b4 Downloading 7.863MB
+ 3392d6b254b4 Downloading 8.027MB
+ 3392d6b254b4 Downloading 8.191MB
+ 3392d6b254b4 Downloading 8.355MB
+ 3392d6b254b4 Downloading 8.518MB
+ 3392d6b254b4 Downloading 8.682MB
+ 3392d6b254b4 Downloading 8.846MB
+ 3392d6b254b4 Downloading 9.01MB
+ 3392d6b254b4 Downloading 9.174MB
+ 3392d6b254b4 Downloading 9.338MB
+ 3392d6b254b4 Downloading 9.501MB
+ 3392d6b254b4 Downloading 9.665MB
+ 3392d6b254b4 Downloading 9.829MB
+ 3392d6b254b4 Downloading 9.993MB
+ 3392d6b254b4 Downloading 10.16MB
+ 3392d6b254b4 Downloading 10.32MB
+ 3392d6b254b4 Downloading 10.48MB
+ 3392d6b254b4 Downloading 10.65MB
+ 3392d6b254b4 Downloading 10.81MB
+ 3392d6b254b4 Downloading 10.98MB
+ 3392d6b254b4 Downloading 11.14MB
+ 3392d6b254b4 Downloading 11.3MB
+ 3392d6b254b4 Downloading 11.47MB
+ 3392d6b254b4 Downloading 11.63MB
+ 3392d6b254b4 Downloading 11.8MB
+ 3392d6b254b4 Downloading 11.96MB
+ 3392d6b254b4 Downloading 12.12MB
+ 3392d6b254b4 Downloading 12.29MB
+ 3392d6b254b4 Downloading 12.45MB
+ 3392d6b254b4 Downloading 12.62MB
+ 3392d6b254b4 Downloading 12.79MB
+ 3392d6b254b4 Downloading 12.95MB
+ 3392d6b254b4 Downloading 13.11MB
+ 3392d6b254b4 Downloading 13.28MB
+ 3392d6b254b4 Downloading 13.44MB
+ 3392d6b254b4 Downloading 13.6MB
+ 3392d6b254b4 Downloading 13.77MB
+ 3392d6b254b4 Downloading 13.93MB
+ 3392d6b254b4 Downloading 14.1MB
+ 3392d6b254b4 Downloading 14.26MB
+ 3392d6b254b4 Downloading 14.42MB
+ 3392d6b254b4 Downloading 14.59MB
+ 3392d6b254b4 Downloading 14.75MB
+ 3392d6b254b4 Downloading 14.92MB
+ 3392d6b254b4 Downloading 15.08MB
+ 3392d6b254b4 Downloading 15.24MB
+ 3392d6b254b4 Downloading 15.41MB
+ 3392d6b254b4 Downloading 15.57MB
+ 3392d6b254b4 Downloading 15.73MB
+ 3392d6b254b4 Downloading 15.9MB
+ 3392d6b254b4 Downloading 16.06MB
+ 3392d6b254b4 Verifying Checksum 0B
+ 3392d6b254b4 Download complete 0B
+ 3392d6b254b4 Extracting 163.8kB
+ 3392d6b254b4 Extracting 5.571MB
+ 3392d6b254b4 Extracting 13.27MB
+ 3392d6b254b4 Extracting 16.16MB
+ 3392d6b254b4 Pull complete 0B
+ Image ghcr.io/spiffe/spire-agent:1.15.1 Pulled 
+ Image connect-supervisor:latest Building 
+ Image connect-agent-bot:latest Building 
+ Image connect-server:latest Building 
+ Image connect-agent-langgraph:latest Building 
+ Image connect-agent-computer:latest Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 2.73kB 0.0s done
+#1 DONE 0.0s
+
+#2 [agent-computer internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.83kB 0.0s done
+#2 DONE 0.0s
+
+#3 [migrate internal] load build definition from Dockerfile
+#3 transferring dockerfile: 2.62kB done
+#3 DONE 0.1s
+
+#4 [agent-langgraph internal] load build definition from Dockerfile
+#4 transferring dockerfile: 1.07kB done
+#4 DONE 0.1s
+
+#5 [agent-bot internal] load build definition from Dockerfile
+#5 transferring dockerfile: 821B done
+#5 DONE 0.1s
+
+#6 [supervisor internal] load build definition from Dockerfile
+#6 transferring dockerfile: 1.13kB done
+#6 DONE 0.1s
+
+#7 [agent-bot internal] load metadata for docker.io/oven/bun:1.3-alpine
+#7 ...
+
+#8 [supervisor internal] load metadata for ghcr.io/spiffe/spire-server:1.15.1
+#8 DONE 0.0s
+
+#9 [supervisor internal] load metadata for docker.io/oven/bun:1.3.14-alpine
+#9 ...
+
+#10 [auth] oven/bun:pull token for registry-1.docker.io
+#10 DONE 0.0s
+
+#11 [auth] library/node:pull token for registry-1.docker.io
+#11 DONE 0.0s
+
+#12 [auth] library/ubuntu:pull token for registry-1.docker.io
+#12 DONE 0.0s
+
+#13 [migrate internal] load metadata for docker.io/oven/bun:1.3.14
+#13 CANCELED
+
+#7 [agent-langgraph internal] load metadata for docker.io/oven/bun:1.3-alpine
+#7 DONE 1.1s
+
+#14 [supervisor internal] load .dockerignore
+#14 transferring context: 343B done
+#14 DONE 0.0s
+
+#9 [supervisor internal] load metadata for docker.io/oven/bun:1.3.14-alpine
+#9 DONE 1.1s
+
+#15 [agent-bot 1/6] FROM docker.io/oven/bun:1.3-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0
+#15 DONE 0.0s
+
+#16 [supervisor stage-1 1/6] FROM docker.io/oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0
+#16 DONE 0.0s
+
+#17 [supervisor spire 1/1] FROM ghcr.io/spiffe/spire-server:1.15.1
+#17 DONE 0.0s
+
+#18 [agent-langgraph internal] load build context
+#18 transferring context: 2B done
+#18 DONE 0.0s
+
+#19 [agent-computer internal] load metadata for docker.io/library/node:24.18.1-bookworm-slim
+#19 DONE 1.1s
+
+#20 [agent-langgraph 3/6] COPY agent-langgraph/package.json agent-langgraph/bun.lock ./agent-langgraph/
+#20 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::hj0wmcx1pdw3waslqdehasyaa: "/agent-langgraph/package.json": not found
+
+#21 [agent-langgraph 4/6] RUN cd agent-langgraph && bun install --frozen-lockfile
+#21 CACHED
+
+#22 [agent-langgraph 5/6] COPY shared ./shared
+#22 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::hj0wmcx1pdw3waslqdehasyaa: "/shared": not found
+
+#23 [agent-langgraph 6/6] COPY agent-langgraph/src ./agent-langgraph/src
+#23 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::hj0wmcx1pdw3waslqdehasyaa: "/agent-langgraph/src": not found
+
+#24 [supervisor internal] load build context
+#24 transferring context: 2B done
+#24 DONE 0.0s
+
+#25 [supervisor stage-1 4/6] RUN bun install --frozen-lockfile
+#25 CACHED
+
+#26 [supervisor stage-1 5/6] COPY --from=spire /opt/spire/bin/spire-server /usr/local/bin/spire-server
+#26 CACHED
+
+#27 [supervisor stage-1 2/6] WORKDIR /app
+#27 CACHED
+
+#28 [supervisor stage-1 6/6] COPY supervisor/src ./src
+#28 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::eagul9yj23k1nmv2zkm9fm4wt: "/supervisor/src": not found
+
+#29 [supervisor stage-1 3/6] COPY supervisor/package.json supervisor/bun.lock ./
+#29 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::eagul9yj23k1nmv2zkm9fm4wt: "/supervisor/package.json": not found
+
+#30 [agent-bot internal] load build context
+#30 transferring context: 2B done
+#30 DONE 0.0s
+
+#31 [agent-bot 2/6] WORKDIR /app
+#31 CACHED
+
+#32 [agent-bot 5/7] RUN cd agent-bot && bun install --frozen-lockfile
+#32 CACHED
+
+#33 [agent-bot 3/7] RUN chown bun:bun /app
+#33 CACHED
+
+#34 [agent-bot 7/7] COPY --chown=bun:bun agent-bot/src ./agent-bot/src
+#34 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::pvln4htdmgd4htle71ooq2n4f: "/agent-bot/src": not found
+
+#35 [agent-bot 4/7] COPY --chown=bun:bun agent-bot/package.json agent-bot/bun.lock ./agent-bot/
+#35 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::pvln4htdmgd4htle71ooq2n4f: "/agent-bot/package.json": not found
+
+#36 [agent-bot 6/7] COPY --chown=bun:bun shared ./shared
+#36 ERROR: failed to calculate checksum of ref 1825f533-b53a-4d50-92b9-363976ee29d8::pvln4htdmgd4htle71ooq2n4f: "/shared": not found
+
+#37 [agent-computer internal] load metadata for docker.io/oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
+#37 DONE 1.3s
+
+#38 [agent-computer internal] load metadata for docker.io/library/ubuntu:24.04
+#38 CANCELED
+------
+ > [agent-langgraph 3/6] COPY agent-langgraph/package.json agent-langgraph/bun.lock ./agent-langgraph/:
+------
+------
+ > [agent-langgraph 5/6] COPY shared ./shared:
+------
+------
+ > [agent-langgraph 6/6] COPY agent-langgraph/src ./agent-langgraph/src:
+------
+------
+ > [supervisor stage-1 3/6] COPY supervisor/package.json supervisor/bun.lock ./:
+------
+------
+ > [supervisor stage-1 6/6] COPY supervisor/src ./src:
+------
+------
+ > [agent-bot 4/7] COPY --chown=bun:bun agent-bot/package.json agent-bot/bun.lock ./agent-bot/:
+------
+------
+ > [agent-bot 6/7] COPY --chown=bun:bun shared ./shared:
+------
+------
+ > [agent-bot 7/7] COPY --chown=bun:bun agent-bot/src ./agent-bot/src:
+------
+Dockerfile:10
+
+--------------------
+
+   8 |     # The lockfile as well as the manifest: `--frozen-lockfile` with no lockfile present resolves afresh
+
+   9 |     # and exits 0, so the file has to be here for the flag to mean anything.
+
+  10 | >>> COPY agent-langgraph/package.json agent-langgraph/bun.lock ./agent-langgraph/
+
+  11 |     RUN cd agent-langgraph && bun install --frozen-lockfile
+
+  12 |     
+
+--------------------
+
+target agent-langgraph: failed to solve: failed to compute cache key: failed to calculate checksum of ref 
+1825f533-b53a-4d50-92b9-363976ee29d8::hj0wmcx1pdw3waslqdehasyaa: "/agent-langgraph/package.json": not found
+
+
+
+View build details: docker-desktop://dashboard/build/default/default/hahgeggu1hxuezt91kgeubwv5
+

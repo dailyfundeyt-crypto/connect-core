@@ -67,8 +67,14 @@ export function InlineEditable({
    * in this effect would run after each character, move the caret to the start, and drop whatever
    * the browser had already merged into its own DOM. The last committed value is remembered so an
    * edit made anywhere else — undo, drag-and-drop, another tab — still lands.
+   *
+   * `null` and not `spans`: seeded with `spans` it equalled the prop by reference on the very first
+   * render, the guard below returned, and the text was never written into the element at all. Every
+   * block came up as an empty `contentEditable` showing only its `aria-label` placeholder — "Überschrift 1",
+   * "Zitat", "Schreib etwas …" — which is a document of block *types* with none of its text. The
+   * `null` seed means the first pass always paints, and from then on the identity check does its job.
    */
-  const committed = useRef(spans);
+  const committed = useRef<NoteSpan[] | null>(null);
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -180,6 +186,12 @@ function wrapMark(html: string, mark: NoteMark): string {
        * in the fragment, which is also how the click handler finds its way back to the store.
        */
       return `<a data-wikilink="${escapeHtml(mark.noteId)}" href="#note-${escapeHtml(mark.noteId)}">${html}</a>`;
+    case "color":
+      // The colour is read back through `marksOfElement` by inspecting the inline style, so a
+      // round-trip through the DOM does not lose the value.
+      return `<span style="color:${escapeHtml(mark.value)}">${html}</span>`;
+    case "bg":
+      return `<span style="background-color:${escapeHtml(mark.value)}">${html}</span>`;
   }
 }
 
@@ -236,6 +248,19 @@ function marksOfElement(element: HTMLElement): NoteMark[] {
     case "CODE":
       marks.push({ type: "code" });
       break;
+    case "SPAN": {
+      /*
+       * Colour and background are read back from inline styles. The wrap order is the same
+       * one the writer used (color before bg), so a single span with both reads two marks
+       * in the same order. Two separate spans would also work — the merge step joins them
+       * anyway — but a single-element wrap keeps the DOM lean.
+       */
+      const color = element.style.color;
+      const bg = element.style.backgroundColor;
+      if (color) marks.push({ type: "color", value: color });
+      if (bg) marks.push({ type: "bg", value: bg });
+      break;
+    }
     case "A": {
       const href = element.getAttribute("href");
       if (!href) break;

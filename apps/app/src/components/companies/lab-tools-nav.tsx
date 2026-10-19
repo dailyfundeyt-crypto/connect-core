@@ -1,14 +1,18 @@
 import {
+  IconArrowBarDown,
+  IconArrowBarUp,
+  IconArrowDown,
+  IconArrowUp,
   IconBrain,
   IconChartCandle,
   IconChartPie,
   IconComponents,
   IconDiamond,
+  IconFileText,
   IconFolder,
   IconFolderPlus,
   IconHammer,
   IconLayoutColumns,
-  IconNote,
   IconPencil,
   IconNews,
   IconPlus,
@@ -18,6 +22,7 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +39,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { moveIdBefore } from "@/lib/companies/sidebar-order";
+import {
+  moveIdBefore,
+  moveIdToEnd,
+  moveIdToSlot,
+  moveIdToStart,
+} from "@/lib/companies/sidebar-order";
 import {
   addCustomLabApp,
   connectTool,
@@ -43,9 +53,11 @@ import {
   disconnectTool,
   DND_LAB_APP,
   DND_LAB_GROUP,
+  DND_VAULT_NOTE,
   getConnection,
   getLevel3Browser,
   labAppsByGroup,
+  linkVaultNoteToGroup,
   LOVABLE_MCP_HINT,
   moveAppToGroup,
   removeAppFromGroups,
@@ -59,6 +71,7 @@ import {
   starSoftware,
   subscribeLevel3Browser,
   toolIconUrl,
+  unstarToBrowser,
   type LabApp,
   type Level3BrowserState,
   localWebSearchUrl,
@@ -69,7 +82,11 @@ import {
 import { openInHeliumTab, openSplitInHelium } from "@/lib/ui/open-window";
 import { NotesSidebarSection } from "@/components/companies/notes-sidebar-section";
 import { NewFolderDialog } from "@/components/companies/notes-sidebar-section";
-import { createNote, createNoteFolder, setOpenNoteId } from "@/lib/companies/notes";
+import {
+  getOpenVaultPath,
+  setOpenVaultPath,
+  subscribeNotes,
+} from "@/lib/companies/notes";
 import { BookmarkTransfer } from "@/components/companies/lab-bookmark-transfer";
 import {
   isDesktopApp,
@@ -204,6 +221,27 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOverGroup, setDragOverGroup] = useState<{
+    id: string;
+    position: "before" | "after";
+  } | null>(null);
+  /*
+   * Used by "Neue Notiz" to land the file in the Brain rather than the
+   * browser's localStorage. The Brain tree is query-cached; once a file lands
+   * there, this client tells the cache so the sidebar re-reads.
+   */
+  const queryClient = useQueryClient();
+
+  const [openVaultPath, setOpenVaultPathState] = useState<string | null>(() =>
+    getOpenVaultPath(companyId),
+  );
+
+  useEffect(() => {
+    setOpenVaultPathState(getOpenVaultPath(companyId));
+    return subscribeNotes(() =>
+      setOpenVaultPathState(getOpenVaultPath(companyId)),
+    );
+  }, [companyId]);
 
   useEffect(() => {
     setState(getLevel3Browser(companyId));
@@ -218,18 +256,6 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
     const name = window.prompt("Name der Gruppe?");
     if (!name?.trim()) return;
     setState(createTabGroup(companyId, name.trim()));
-  };
-
-  /*
-   * The note actions live in this component, not in `NotesSidebarSection`.
-   *
-   * "Neue Notiz" and "Neuer Notiz-Ordner" sit in the rail's single action row
-   * next to "App hinzufügen" and "Neue Gruppe", so the handlers have to be here
-   * too. The section only draws the list.
-   */
-  const [noteFolderDialogOpen, setNoteFolderDialogOpen] = useState(false);
-  const createNoteAtRoot = () => {
-    setOpenNoteId(companyId, createNote(companyId, null).id);
   };
 
   return (
@@ -288,12 +314,24 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
           </ContextMenu>
         ) : (
           <ul className="flex flex-col gap-0.5 px-0.5">
-            {groups.map((group) => {
+            {groups.map((group, groupIndex) => {
               const open = !group.collapsed;
               const folderDrop = dragOverId === `group:${group.id}`;
+              const isOverGroup = dragOverGroup?.id === group.id;
+              const isOverBefore = isOverGroup && dragOverGroup.position === "before";
+              const isOverAfter = isOverGroup && dragOverGroup.position === "after";
               const visual = visualFor(group.id);
               return (
-                <li key={group.id}>
+                <li
+                  key={group.id}
+                  className={cn(
+                    "relative transition-all",
+                    isOverBefore &&
+                      "before:absolute before:-top-[2px] before:left-1 before:right-1 before:h-[3px] before:rounded-full before:bg-sky-500 before:z-20",
+                    isOverAfter &&
+                      "after:absolute after:-bottom-[2px] after:left-1 after:right-1 after:h-[3px] after:rounded-full after:bg-sky-500 after:z-20",
+                  )}
+                >
                   <ContextMenu>
                     <ContextMenuTrigger
                       className={cn(
@@ -314,32 +352,68 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                         const types = [...event.dataTransfer.types];
                         if (
                           !types.includes(DND_LAB_GROUP) &&
-                          !types.includes(DND_LAB_APP)
+                          !types.includes(DND_LAB_APP) &&
+                          !types.includes(DND_VAULT_NOTE)
                         ) {
                           return;
                         }
                         event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
+                        if (types.includes(DND_LAB_GROUP)) {
+                          event.dataTransfer.dropEffect = "move";
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const isAfter = event.clientY > rect.top + rect.height / 2;
+                          setDragOverGroup({
+                            id: group.id,
+                            position: isAfter ? "after" : "before",
+                          });
+                          setDragOverId(null);
+                          return;
+                        }
+                        event.dataTransfer.dropEffect = types.includes(DND_VAULT_NOTE)
+                          ? "copy"
+                          : "move";
+                        setDragOverGroup(null);
                         setDragOverId(`group:${group.id}`);
                       }}
-                      onDragLeave={() =>
+                      onDragLeave={() => {
                         setDragOverId((id) =>
                           id === `group:${group.id}` ? null : id,
-                        )
-                      }
+                        );
+                        setDragOverGroup((prev) =>
+                          prev?.id === group.id ? null : prev,
+                        );
+                      }}
                       onDrop={(event) => {
                         event.preventDefault();
                         setDragOverId(null);
+                        const noteDataRaw = event.dataTransfer.getData(DND_VAULT_NOTE);
+                        if (noteDataRaw) {
+                          try {
+                            const { path, name } = JSON.parse(noteDataRaw);
+                            setState(linkVaultNoteToGroup(companyId, path, name, group.id));
+                          } catch {
+                            const cleanName = noteDataRaw.split("/").pop() ?? "Notiz";
+                            setState(linkVaultNoteToGroup(companyId, noteDataRaw, cleanName, group.id));
+                          }
+                          setState(setTabGroupOpen(companyId, group.id, true));
+                          setDragOverGroup(null);
+                          return;
+                        }
                         const groupId = event.dataTransfer.getData(DND_LAB_GROUP);
                         const appId = event.dataTransfer.getData(DND_LAB_APP);
                         if (groupId) {
                           const ids = groups.map((g) => g.id);
+                          const placeAfter =
+                            dragOverGroup?.id === group.id
+                              ? dragOverGroup.position === "after"
+                              : false;
                           setState(
                             reorderTabGroups(
                               companyId,
-                              moveIdBefore(ids, groupId, group.id),
+                              moveIdToSlot(ids, groupId, group.id, placeAfter),
                             ),
                           );
+                          setDragOverGroup(null);
                           return;
                         }
                         if (appId) {
@@ -348,6 +422,7 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                             setTabGroupOpen(companyId, group.id, true),
                           );
                         }
+                        setDragOverGroup(null);
                       }}
                     >
                       <LabFolderIcon apps={group.apps} />
@@ -361,7 +436,7 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                       </span>
                       <ChevronDownIcon open={open} className="ml-1" />
                     </ContextMenuTrigger>
-                    <ContextMenuContent className="min-w-52 rounded-xl p-1.5">
+                    <ContextMenuContent className="min-w-56 rounded-xl p-1.5">
                       <ContextMenuItem
                         className="gap-2 rounded-lg px-2.5 py-2"
                         onClick={() =>
@@ -378,7 +453,95 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                         <IconFolderPlus className="size-4" />
                         Neue Gruppe
                       </ContextMenuItem>
+
                       <ContextMenuSeparator />
+
+                      <ContextMenuItem
+                        className="gap-2 rounded-lg px-2.5 py-2"
+                        disabled={groupIndex === 0}
+                        onClick={() => {
+                          const ids = groups.map((g) => g.id);
+                          setState(
+                            reorderTabGroups(
+                              companyId,
+                              moveIdToStart(ids, group.id),
+                            ),
+                          );
+                        }}
+                      >
+                        <IconArrowBarUp className="size-4" />
+                        Nach ganz oben
+                      </ContextMenuItem>
+
+                      <ContextMenuItem
+                        className="gap-2 rounded-lg px-2.5 py-2"
+                        disabled={groupIndex === 0}
+                        onClick={() => {
+                          const ids = groups.map((g) => g.id);
+                          const prevGroup = groups[groupIndex - 1];
+                          if (prevGroup) {
+                            setState(
+                              reorderTabGroups(
+                                companyId,
+                                moveIdToSlot(
+                                  ids,
+                                  group.id,
+                                  prevGroup.id,
+                                  false,
+                                ),
+                              ),
+                            );
+                          }
+                        }}
+                      >
+                        <IconArrowUp className="size-4" />
+                        Eins nach oben
+                      </ContextMenuItem>
+
+                      <ContextMenuItem
+                        className="gap-2 rounded-lg px-2.5 py-2"
+                        disabled={groupIndex === groups.length - 1}
+                        onClick={() => {
+                          const ids = groups.map((g) => g.id);
+                          const nextGroup = groups[groupIndex + 1];
+                          if (nextGroup) {
+                            setState(
+                              reorderTabGroups(
+                                companyId,
+                                moveIdToSlot(
+                                  ids,
+                                  group.id,
+                                  nextGroup.id,
+                                  true,
+                                ),
+                              ),
+                            );
+                          }
+                        }}
+                      >
+                        <IconArrowDown className="size-4" />
+                        Eins nach unten
+                      </ContextMenuItem>
+
+                      <ContextMenuItem
+                        className="gap-2 rounded-lg px-2.5 py-2"
+                        disabled={groupIndex === groups.length - 1}
+                        onClick={() => {
+                          const ids = groups.map((g) => g.id);
+                          setState(
+                            reorderTabGroups(
+                              companyId,
+                              moveIdToEnd(ids, group.id),
+                            ),
+                          );
+                        }}
+                      >
+                        <IconArrowBarDown className="size-4" />
+                        Nach ganz unten
+                      </ContextMenuItem>
+
+                      <ContextMenuSeparator />
+
                       <ContextMenuItem
                         className="gap-2 rounded-lg px-2.5 py-2 text-destructive focus:text-destructive"
                         onClick={() => {
@@ -396,9 +559,9 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                       >
                         <IconTrash className="size-4" />
                         Gruppe löschen
-</ContextMenuItem>
-                      </ContextMenuContent>
-                    </ContextMenu>
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                     {/*
                      * The apps inside this folder.
                      *
@@ -426,6 +589,7 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                             onChange={setState}
                             onConnect={setConnectId}
                             onEdit={setEditingId}
+                            openVaultPath={openVaultPath}
                             setDragOverId={setDragOverId}
                             state={state}
                           />
@@ -435,6 +599,37 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
               </li>
               );
             })}
+            {groups.length > 1 ? (
+              <li
+                className={cn(
+                  "relative h-1 transition-all rounded-md",
+                  dragOverId === "groups:bottom" &&
+                    "h-2.5 bg-sky-500/20 ring-1 ring-sky-500/50 my-0.5",
+                )}
+                onDragLeave={() =>
+                  setDragOverId((id) => (id === "groups:bottom" ? null : id))
+                }
+                onDragOver={(event) => {
+                  if (event.dataTransfer.types.includes(DND_LAB_GROUP)) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDragOverId("groups:bottom");
+                    setDragOverGroup(null);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragOverId(null);
+                  const groupId = event.dataTransfer.getData(DND_LAB_GROUP);
+                  if (groupId) {
+                    const ids = groups.map((g) => g.id);
+                    setState(
+                      reorderTabGroups(companyId, moveIdToEnd(ids, groupId)),
+                    );
+                  }
+                }}
+              />
+            ) : null}
           </ul>
         )}
 
@@ -458,6 +653,7 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                   onChange={setState}
                   onConnect={setConnectId}
                   onEdit={setEditingId}
+                  openVaultPath={openVaultPath}
                   setDragOverId={setDragOverId}
                   state={state}
                 />
@@ -468,29 +664,24 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
       </div>
 
       {/*
-       * The rail actions, above the notes.
+       * The notes / planning section.
+       */}
+      <NotesSidebarSection companyId={companyId} />
+
+      {/*
+       * The rail actions, below the notes / planning section.
        *
-       * They used to sit at the very bottom, below the notes section, and that
-       * put them 559px past the bottom of a 599px viewport: with a realistic note
-       * list the two buttons and the bookmark transfer were a full screen of
-       * scrolling away, which is where "the notes pushed the buttons out" came
-       * from. They are primary actions for the rail itself, so they belong next to
-       * the apps they act on rather than below a list that grows without bound.
+       * Note + note-folder creation lives in the Planung header (`VaultNotesSection`),
+       * where the tree already lives — duplicating them here would give the user
+       * two ways to do the same thing on the same screen. The rail is for the
+       * things that are not in Plannung: a new app, a new tab group, and the
+       * bookmark transfer between the browser and the desktop one.
        */}
       <div className="flex flex-wrap items-center gap-0.5 px-0.5">
         <RailAction label="App hinzufügen" onClick={() => setAdding(true)}>
           <IconPlus className="size-3.5" stroke={1.75} />
         </RailAction>
         <RailAction label="Neue Gruppe" onClick={() => createFolder()}>
-          <IconFolderPlus className="size-3.5" stroke={1.75} />
-        </RailAction>
-        <RailAction label="Neue Notiz" onClick={() => createNoteAtRoot()}>
-          <IconNote className="size-3.5" stroke={1.75} />
-        </RailAction>
-        <RailAction
-          label="Neuer Notiz-Ordner"
-          onClick={() => setNoteFolderDialogOpen(true)}
-        >
           <IconFolderPlus className="size-3.5" stroke={1.75} />
         </RailAction>
         {/*
@@ -505,31 +696,7 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
           onChange={setState}
           state={state}
         />
-        <NewFolderDialog
-          onCreate={(name) => {
-            createNoteFolder(companyId, name);
-            setNoteFolderDialogOpen(false);
-          }}
-          onOpenChange={setNoteFolderDialogOpen}
-          open={noteFolderDialogOpen}
-        />
       </div>
-
-      {/*
-       * The notes, as a section of their own.
-       *
-       * They sit *below* the browser section rather than replacing any part of
-       * it. The first attempt at this put the notes where the "App hinzufügen"
-       * and "Neue Gruppe" buttons live, which read as though the whole sidebar
-       * had been turned into a notes app: the two buttons, the tab groups, the
-       * bookmark transfer and the grouping all disappeared at once, and nothing
-       * in the new section said they had. A section that is added has to leave
-       * the sections around it where they were.
-       *
-       * `NotesSidebarSection` owns its own `<div className="mt-3">`, so this only
-       * needs to sit in normal flow after the browser block.
-       */}
-      <NotesSidebarSection companyId={companyId} />
       {connectId ? (
         <ConnectInline
           companyId={companyId}
@@ -577,6 +744,7 @@ function AppRow({
   onChange,
   onConnect,
   onEdit,
+  openVaultPath,
 }: {
   app: LabApp;
   companyId: string;
@@ -587,9 +755,12 @@ function AppRow({
   onChange: (next: Level3BrowserState) => void;
   onConnect: (id: string) => void;
   onEdit?: (id: string) => void;
+  openVaultPath?: string | null;
 }) {
   const conn = getConnection(state, app.id);
-  const active = !state.starred && state.activeTool === app.id;
+  const active = app.notePath
+    ? openVaultPath === app.notePath
+    : (!state.starred && state.activeTool === app.id);
   const dropKey = groupId
     ? `app:${groupId}:${app.id}`
     : `app:ungrouped:${app.id}`;
@@ -608,6 +779,13 @@ function AppRow({
               )}
               draggable
               onClick={() => {
+                if (app.notePath) {
+                  if (state.starred) {
+                    onChange(unstarToBrowser(companyId));
+                  }
+                  setOpenVaultPath(companyId, app.notePath);
+                  return;
+                }
                 const targetUrl = app.url || (getConnection(state, app.id)?.projectUrl);
                 if (targetUrl) {
                   navigateDesktopBrowser(targetUrl);
@@ -625,12 +803,15 @@ function AppRow({
                 event.dataTransfer.effectAllowed = "move";
               }}
               onDragOver={(event) => {
-                if (![...event.dataTransfer.types].includes(DND_LAB_APP)) {
+                const types = [...event.dataTransfer.types];
+                if (!types.includes(DND_LAB_APP) && !types.includes(DND_VAULT_NOTE)) {
                   return;
                 }
                 event.preventDefault();
                 event.stopPropagation();
-                event.dataTransfer.dropEffect = "move";
+                event.dataTransfer.dropEffect = types.includes(DND_VAULT_NOTE)
+                  ? "copy"
+                  : "move";
                 setDragOverId(dropKey);
               }}
               onDragLeave={() =>
@@ -640,6 +821,17 @@ function AppRow({
                 event.preventDefault();
                 event.stopPropagation();
                 setDragOverId(null);
+                const noteDataRaw = event.dataTransfer.getData(DND_VAULT_NOTE);
+                if (noteDataRaw && groupId) {
+                  try {
+                    const { path, name } = JSON.parse(noteDataRaw);
+                    onChange(linkVaultNoteToGroup(companyId, path, name, groupId));
+                  } catch {
+                    const cleanName = noteDataRaw.split("/").pop() ?? "Notiz";
+                    onChange(linkVaultNoteToGroup(companyId, noteDataRaw, cleanName, groupId));
+                  }
+                  return;
+                }
                 const dragged = event.dataTransfer.getData(DND_LAB_APP);
                 if (!dragged || !groupId) return;
                 const fromGroup = event.dataTransfer.getData(
@@ -706,9 +898,11 @@ function AppRow({
               >
                 <button
                   aria-label={
-                    app.builtin
-                      ? `${app.label} aus dieser Gruppe entfernen`
-                      : `Tab ${app.label} entfernen`
+                    app.notePath
+                      ? `Notiz-Verlinkung ${app.label} entfernen`
+                      : app.builtin
+                        ? `${app.label} aus dieser Gruppe entfernen`
+                        : `Tab ${app.label} entfernen`
                   }
                   className="rounded-md p-1 text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent hover:text-destructive"
                   onClick={() => {
@@ -719,9 +913,11 @@ function AppRow({
                     onChange(removeCustomLabApp(companyId, app.id));
                   }}
                   title={
-                    app.builtin
-                      ? "Aus dieser Gruppe entfernen"
-                      : "Tab entfernen"
+                    app.notePath
+                      ? "Notiz-Verlinkung entfernen"
+                      : app.builtin
+                        ? "Aus dieser Gruppe entfernen"
+                        : "Tab entfernen"
                   }
                   type="button"
                 >
@@ -732,71 +928,107 @@ function AppRow({
           </SidebarMenuItem>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-52 rounded-xl p-1.5">
-          <ContextMenuItem
-            className="gap-2 rounded-lg px-2.5 py-2"
-            onClick={() => onChange(openLabApp(companyId, app.id))}
-          >
-            Öffnen
-          </ContextMenuItem>
-          {conn ? (
-            <ContextMenuItem
-              className="gap-2 rounded-lg px-2.5 py-2"
-              onClick={() => onChange(starSoftware(companyId, app.id))}
-            >
-              <IconStar className="size-4" />
-              ★ Software starten
-            </ContextMenuItem>
-          ) : app.builtin ? (
-            <ContextMenuItem
-              className="gap-2 rounded-lg px-2.5 py-2"
-              onClick={() => onConnect(app.id)}
-            >
-              <IconPlugConnected className="size-4" />
-              Connect
-            </ContextMenuItem>
-          ) : null}
-          {groupId ? (
-            <ContextMenuItem
-              className="gap-2 rounded-lg px-2.5 py-2"
-              onClick={() => onChange(removeAppFromGroups(companyId, app.id))}
-            >
-              <IconFolder className="size-4" />
-              Aus Gruppe entfernen
-            </ContextMenuItem>
-          ) : null}
-          {!app.builtin && onEdit ? (
-            <ContextMenuItem
-              className="gap-2 rounded-lg px-2.5 py-2"
-              onClick={() => onEdit(app.id)}
-            >
-              <IconPencil className="size-4" />
-              Bearbeiten
-            </ContextMenuItem>
-          ) : null}
-          {!app.builtin ? (
+          {app.notePath ? (
             <>
+              <ContextMenuItem
+                className="gap-2 rounded-lg px-2.5 py-2"
+                onClick={() => {
+                  if (state.starred) {
+                    onChange(unstarToBrowser(companyId));
+                  }
+                  setOpenVaultPath(companyId, app.notePath!);
+                }}
+              >
+                <IconFileText className="size-4" />
+                Notiz im Editor öffnen
+              </ContextMenuItem>
+              {groupId ? (
+                <ContextMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => onChange(removeAppFromGroups(companyId, app.id))}
+                >
+                  <IconFolder className="size-4" />
+                  Aus Gruppe entfernen
+                </ContextMenuItem>
+              ) : null}
               <ContextMenuSeparator />
               <ContextMenuItem
                 className="gap-2 rounded-lg px-2.5 py-2 text-destructive focus:text-destructive"
-                onClick={() =>
-                  onChange(removeCustomLabApp(companyId, app.id))
-                }
+                onClick={() => onChange(removeCustomLabApp(companyId, app.id))}
               >
                 <IconTrash className="size-4" />
-                App entfernen
+                Verlinkung entfernen
               </ContextMenuItem>
             </>
-          ) : conn ? (
+          ) : (
             <>
-              <ContextMenuSeparator />
               <ContextMenuItem
                 className="gap-2 rounded-lg px-2.5 py-2"
-                onClick={() => onChange(disconnectTool(companyId, app.id))}
+                onClick={() => onChange(openLabApp(companyId, app.id))}
               >
-                Trennen
+                Öffnen
               </ContextMenuItem>
+              {conn ? (
+                <ContextMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => onChange(starSoftware(companyId, app.id))}
+                >
+                  <IconStar className="size-4" />
+                  ★ Software starten
+                </ContextMenuItem>
+              ) : app.builtin ? (
+                <ContextMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => onConnect(app.id)}
+                >
+                  <IconPlugConnected className="size-4" />
+                  Connect
+                </ContextMenuItem>
+              ) : null}
+              {groupId ? (
+                <ContextMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => onChange(removeAppFromGroups(companyId, app.id))}
+                >
+                  <IconFolder className="size-4" />
+                  Aus Gruppe entfernen
+                </ContextMenuItem>
+              ) : null}
+              {!app.builtin && onEdit ? (
+                <ContextMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => onEdit(app.id)}
+                >
+                  <IconPencil className="size-4" />
+                  Bearbeiten
+                </ContextMenuItem>
+              ) : null}
+              {!app.builtin ? (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    className="gap-2 rounded-lg px-2.5 py-2 text-destructive focus:text-destructive"
+                    onClick={() =>
+                      onChange(removeCustomLabApp(companyId, app.id))
+                    }
+                  >
+                    <IconTrash className="size-4" />
+                    App entfernen
+                  </ContextMenuItem>
+                </>
+              ) : conn ? (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    className="gap-2 rounded-lg px-2.5 py-2"
+                    onClick={() => onChange(disconnectTool(companyId, app.id))}
+                  >
+                    Trennen
+                  </ContextMenuItem>
+                </>
+              ) : null}
             </>
-          ) : null}
+          )}
         </ContextMenuContent>
       </ContextMenu>
     </li>
@@ -1051,6 +1283,16 @@ function LabFolderIcon({ apps }: { apps: LabApp[] }) {
               <span className="rounded-[3px] bg-white/35" key={`empty-${i}`} />
             );
           }
+          if (app.kind === "note" || app.notePath || app.icon === "note") {
+            return (
+              <span
+                className="flex items-center justify-center overflow-hidden rounded-[3px] bg-white/90 text-sky-600"
+                key={app.id}
+              >
+                <IconFileText className="size-2.5" stroke={2} />
+              </span>
+            );
+          }
           return (
             <span
               className="flex items-center justify-center overflow-hidden rounded-[3px] bg-white/70"
@@ -1071,6 +1313,13 @@ function LabFolderIcon({ apps }: { apps: LabApp[] }) {
 
 function ToolGlyph({ icon, tint }: { icon: string; tint: string }) {
   const [failed, setFailed] = useState(false);
+  if (icon === "note" || icon === "file-text") {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-1 ring-sky-500/20">
+        <IconFileText className="size-3.5" stroke={1.75} />
+      </span>
+    );
+  }
   if (failed) {
     return (
       <span

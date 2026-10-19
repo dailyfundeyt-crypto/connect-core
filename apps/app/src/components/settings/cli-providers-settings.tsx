@@ -11,6 +11,7 @@ import {
   grokBotsQuery,
   importGrokBots,
   invalidateAgentHub,
+  startCliProviderLogin,
 } from "@/lib/agent-hub/api";
 
 /**
@@ -56,6 +57,19 @@ function LocalCliProvidersPanel({ localBridge }: { localBridge: import("@/lib/pc
     },
   });
 
+  /**
+   * Login-Buttons pro Provider. Wir koppeln sie hier an die `kind`-Liste
+   * aus `cliProvidersQuery()`. Server-seitig ist `antigravity` jetzt der
+   * dritte Anbieter — sein Knopf macht den Onboarding-Wizard im Terminal
+   * auf (siehe `startCliLogin` in `cli-model.ts`).
+   */
+  const loginMutation = useMutation({
+    mutationFn: (kind: "codex" | "claude" | "antigravity") => startCliProviderLogin(kind),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["agent-hub", "cli-providers"] });
+    },
+  });
+
   const toggle = (id: string, already: boolean) => {
     if (already) return;
     setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -95,6 +109,24 @@ function LocalCliProvidersPanel({ localBridge }: { localBridge: import("@/lib/pc
               </div>
               {"installHint" in provider && !provider.installed && typeof (provider as { installHint?: string }).installHint === "string" ? (
                 <p className="mt-1 font-mono text-[11px] text-muted-foreground">{(provider as { installHint: string }).installHint}</p>
+              ) : null}
+              {/*
+                Login-Button: nur wenn die CLI installiert ist, der User
+                aber nicht angemeldet ist. Für Antigravity öffnet das den
+                Onboarding-Wizard im Terminal (siehe `startCliLogin`).
+              */}
+              {provider.installed && provider.loggedIn === false && (provider.kind === "codex" || provider.kind === "claude" || provider.kind === "antigravity") ? (
+                <Button
+                  className="mt-2"
+                  disabled={loginMutation.isPending}
+                  onClick={() => loginMutation.mutate(provider.kind as "codex" | "claude" | "antigravity")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {loginMutation.isPending ? "Starte…" :
+                    provider.kind === "antigravity" ? "Google-Anmeldung starten" : "Anmeldung starten"}
+                </Button>
               ) : null}
             </div>
           ))}

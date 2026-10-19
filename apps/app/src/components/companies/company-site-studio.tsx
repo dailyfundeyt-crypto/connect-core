@@ -1,6 +1,8 @@
 import {
+  IconExternalLink,
   IconWorld,
 } from "@tabler/icons-react";
+import { checkEmbeddable } from "@/lib/mobile/app-links";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { SiteMarkOverlay } from "@/components/companies/site-mark-overlay";
@@ -56,6 +58,10 @@ export function CompanySiteStudio({
   );
   const [marks, setMarks] = useState(() => getSiteMark(companyId).marks);
   const openedFor = useRef<string>("");
+  /** Darf die Seite eingebettet werden? (/api/embed-check, X-Frame-Options / frame-ancestors) */
+  const [embed, setEmbed] = useState<"checking" | "ok" | "blocked">("checking");
+  const [chromeMsg, setChromeMsg] = useState<string | null>(null);
+  const autoOpened = useRef<string>("");
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const agentsQuery = useQuery(agentListQueryOptions());
   const { goBack, goForward } = useIframeBrowserNav(
@@ -101,6 +107,31 @@ export function CompanySiteStudio({
     openedFor.current = url;
     void openLabUrlInChrome(normalizeSiteUrl(url));
   }, [url, editing, keepLogin]);
+
+  useEffect(() => {
+    if (!url || editing) return;
+    let alive = true;
+    setEmbed("checking");
+    setChromeMsg(null);
+    void checkEmbeddable(normalizeSiteUrl(url)).then((r) => {
+      if (!alive) return;
+      if (r.embeddable === false) {
+        setEmbed("blocked");
+        // Automatisch im Connect-Chrome-Profil öffnen (nicht Stefans Helium), einmal pro URL.
+        if (autoOpened.current !== url && openedFor.current !== url) {
+          autoOpened.current = url;
+          void openLabUrlInChrome(normalizeSiteUrl(url)).then((res) =>
+            setChromeMsg(res.ok ? "In Connect-Chrome geöffnet." : res.error ?? "Connect-Chrome ließ sich nicht öffnen."),
+          );
+        } else if (openedFor.current === url) {
+          setChromeMsg("In Connect-Chrome geöffnet.");
+        }
+      } else setEmbed("ok");
+    });
+    return () => {
+      alive = false;
+    };
+  }, [url, editing]);
 
   const save = () => {
     const next = setCompanySiteUrl(companyId, draft);
@@ -171,6 +202,31 @@ export function CompanySiteStudio({
         </div>
       ) : null}
       <div className="relative min-h-0 w-full flex-1 bg-white">
+        {embed === "blocked" ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-neutral-50 px-6">
+            <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-6 text-center shadow-sm">
+              <span className="mx-auto flex size-11 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500">
+                <IconExternalLink className="size-5" stroke={1.6} />
+              </span>
+              <p className="mt-3 text-[15px] font-semibold tracking-tight">Diese Seite lässt sich nicht einbetten</p>
+              <p className="mt-1 text-[13px] text-neutral-500">
+                {normalizeSiteUrl(url).replace(/^https?:\/\//, "").replace(/\/$/, "")} verbietet die Anzeige in anderen Apps. Öffne sie im Connect-Chrome-Profil.
+              </p>
+              <Button
+                className="mt-4 h-10 w-full"
+                onClick={() => {
+                  void openLabUrlInChrome(normalizeSiteUrl(url)).then((res) =>
+                    setChromeMsg(res.ok ? "In Connect-Chrome geöffnet." : res.error ?? "Connect-Chrome ließ sich nicht öffnen."),
+                  );
+                }}
+                type="button"
+              >
+                In Connect-Chrome öffnen
+              </Button>
+              {chromeMsg ? <p className="mt-2 text-[12px] text-neutral-500">{chromeMsg}</p> : null}
+            </div>
+          </div>
+        ) : embed === "checking" ? null : (
         <iframe
           allow="clipboard-read; clipboard-write; fullscreen"
           className="absolute inset-0 size-full border-0 bg-white"
@@ -181,6 +237,7 @@ export function CompanySiteStudio({
           src={url}
           title={`${companyName} · Unternehmen`}
         />
+        )}
         <SiteMarkOverlay
           companyId={companyId}
           marking={marking}

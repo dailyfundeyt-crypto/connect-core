@@ -1,17 +1,17 @@
-﻿import { type QueryClient, queryOptions } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { client } from "@/lib/client";
 
 /** The Brain areas an agent may read or write (see Brain/CONVENTIONS.md). */
 export const BRAIN_AREAS = [
   { id: "Kern", label: "Kern", hint: "AGENTS, hot, index, Regeln, agents.json" },
-  { id: "Shared", label: "Shared", hint: "GeprÃ¼fte Fakten fÃ¼r alle" },
-  { id: "Projects", label: "Projekte (alle)", hint: "Alle Projekt-Ãœbersichten und ihre Vault-Notizen" },
+  { id: "Shared", label: "Shared", hint: "Geprüfte Fakten für alle" },
+  { id: "Projects", label: "Projekte (alle)", hint: "Alle Projekt-Übersichten und ihre Vault-Notizen" },
   { id: "Memory:eigen", label: "Memory (eigen)", hint: "Nur der eigene Ordner" },
   { id: "Memory", label: "Memory (alle)", hint: "Notizen aller Agents" },
-  { id: "Daily", label: "Daily", hint: "Gemeinsamer TagesÃ¼berblick" },
-  { id: "Inbox", label: "Inbox", hint: "VorschlÃ¤ge fÃ¼r Shared" },
-  { id: "Skills", label: "Skills", hint: "Wiederverwendbare AblÃ¤ufe" },
-  { id: "log", label: "Log", hint: "Ã„nderungsprotokoll" },
+  { id: "Daily", label: "Daily", hint: "Gemeinsamer Tagesüberblick" },
+  { id: "Inbox", label: "Inbox", hint: "Vorschläge für Shared" },
+  { id: "Skills", label: "Skills", hint: "Wiederverwendbare Abläufe" },
+  { id: "log", label: "Log", hint: "Änderungsprotokoll" },
 ] as const;
 /** A fixed area or one project: `Projekt:<id>` (projects come from agents.json). */
 export type BrainAreaId = (typeof BRAIN_AREAS)[number]["id"] | `Projekt:${string}`;
@@ -93,13 +93,13 @@ async function brainGet<T>(path: string, fallback: T): Promise<T> {
   const type = response.headers.get("content-type") ?? "";
   const body = type.includes("application/json") ? ((await response.json().catch(() => null)) as unknown) : null;
   if (response.status === 400) {
-    throw new Error((body as { error?: string } | null)?.error ?? "UngÃ¼ltige Anfrage");
+    throw new Error((body as { error?: string } | null)?.error ?? "Ungültige Anfrage");
   }
   if (!response.ok || !body || typeof body !== "object") return fallback;
   return body as T;
 }
 
-const NOT_AVAILABLE = "Brain nicht verfÃ¼gbar";
+const NOT_AVAILABLE = "Brain nicht verfügbar";
 
 export const brainKeys = {
   all: ["brain"] as const,
@@ -108,6 +108,8 @@ export const brainKeys = {
   tree: () => [...brainKeys.all, "tree"] as const,
   file: (path: string) => [...brainKeys.all, "file", path] as const,
   search: (q: string) => [...brainKeys.all, "search", q] as const,
+  templates: () => [...brainKeys.all, "templates"] as const,
+  webclip: (url: string) => [...brainKeys.all, "webclip", url] as const,
   log: (agent?: string) => [...brainKeys.all, "log", agent ?? "*"] as const,
   agents: () => [...brainKeys.all, "agents"] as const,
   graph: (agents: boolean) => [...brainKeys.all, "graph", agents] as const,
@@ -265,6 +267,61 @@ export async function createBrainNote(input: {
   throw new Error(last ?? "Es gibt schon zu viele Notizen mit diesem Namen.");
 }
 
+/**
+ * Creates a folder in the Brain, separate from any file.
+ *
+ * `createBrainNote` builds parent folders on the way to a `.md`, which is how the
+ * tree grows most of the time, but a folder the user wants *first* would land
+ * with a placeholder file the sidebar would list as a note. `PUT /api/brain/folder`
+ * creates the directory on its own (with a `.gitkeep` inside) so the rail's
+ * "Neuer Notiz-Ordner" is honest about the thing it made.
+ *
+ * `parent` is joined with `name` using the same `/` separator the rest of the
+ * Brain code already uses for relative paths, and a trailing slash is stripped
+ * before the request goes out -- the server's `writableFolderPath` validates the
+ * cleaned path the same way it does for files, so passing a dirty string would
+ * either be sanitised by the server or rejected with "Ungültiger Pfad.".
+ */
+export async function createBrainFolder(input: {
+  parent: string;
+  name: string;
+}): Promise<{ path: string; created: boolean }> {
+  const parent = input.parent.replace(/[\\/]+$/, "");
+  const folder = `${parent}/${input.name}`;
+  return client<{ path: string; created: boolean }>("/api/brain/folder", {
+    unwrap: true,
+    method: "PUT",
+    body: { path: folder },
+    fallback: "Ordner konnte nicht angelegt werden",
+  });
+}
+
+/**
+ * Deletes a folder in the Brain.
+ */
+export async function deleteBrainFolder(path: string): Promise<{ path: string; deleted: boolean }> {
+  const query = new URLSearchParams({ path });
+  return client<{ path: string; deleted: boolean }>(`/api/brain/folder?${query.toString()}`, {
+    unwrap: true,
+    method: "DELETE",
+    fallback: "Ordner konnte nicht gelöscht werden",
+  });
+}
+
+/**
+ * Deletes a single Brain note. The server takes a `.connect-history/`
+ * safety backup before unlinking, so a confirmed delete can still be
+ * reversed through the same edit-history path the editor already uses.
+ */
+export async function deleteBrainNote(path: string): Promise<{ path: string; deleted: boolean }> {
+  const query = new URLSearchParams({ path });
+  return client<{ path: string; deleted: boolean }>(`/api/brain/note?${query.toString()}`, {
+    unwrap: true,
+    method: "DELETE",
+    fallback: "Notiz konnte nicht gelöscht werden",
+  });
+}
+
 export function brainSearchQueryOptions(q: string) {
   return queryOptions({
     queryKey: brainKeys.search(q),
@@ -273,6 +330,29 @@ export function brainSearchQueryOptions(q: string) {
       brainGet<{ available: boolean; hits: { path: string; line: number; text: string }[] }>(
         `/api/brain/search?q=${encodeURIComponent(q.trim())}`,
         { available: false, hits: [] },
+      ),
+  });
+}
+
+export function brainTemplatesQueryOptions() {
+  return queryOptions({
+    queryKey: brainKeys.templates(),
+    queryFn: () =>
+      brainGet<{ available: boolean; templates: { path: string; mtime: string }[] }>(
+        "/api/brain/templates",
+        { available: false, templates: [] },
+      ),
+  });
+}
+
+export function brainWebclipQueryOptions(url: string) {
+  return queryOptions({
+    queryKey: brainKeys.webclip(url),
+    enabled: /^https?:\/\//i.test(url),
+    queryFn: () =>
+      brainGet<{ available: boolean; ok: boolean; title?: string; markdown?: string; siteName?: string; error?: string }>(
+        `/api/brain/webclip?url=${encodeURIComponent(url)}`,
+        { available: false, ok: false, error: "Abruf fehlgeschlagen" },
       ),
   });
 }

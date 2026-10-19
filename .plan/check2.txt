@@ -1,0 +1,3 @@
+﻿Has 'NoteTableOfContents': False
+Has 'IntersectionObserver': False
+Has 'setActive': False

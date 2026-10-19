@@ -66,6 +66,7 @@ export function PremiumLanding({
             <a className="transition-colors hover:text-white" href="#funktionen">Funktionen</a>
             <a className="transition-colors hover:text-white" href="#ablauf">So geht’s</a>
             <a className="transition-colors hover:text-white" href="#sicherheit">Sicherheit</a>
+            <a className="transition-colors hover:text-white" href="#community">Community</a>
           </nav>
           <div className="ml-auto">{signInCompact}</div>
         </div>
@@ -101,6 +102,13 @@ export function PremiumLanding({
 
         <motion.div {...rise(0.24)} className="relative z-10 mt-10 flex w-full max-w-sm flex-col items-center gap-3">
           {signIn}
+          <button
+            className="cxl-ghost w-full cursor-not-allowed opacity-60"
+            disabled
+            type="button"
+          >
+            Connect-App herunterladen · folgt
+          </button>
           {error ? (
             <p className="text-sm text-red-400" role="alert">{error}</p>
           ) : null}
@@ -192,6 +200,59 @@ export function PremiumLanding({
             ))}
           </ul>
         </motion.div>
+      </section>
+
+      {/* Community */}
+      <section className="relative mx-auto mt-36 max-w-6xl px-6" id="community">
+        <motion.div {...inView()} className="mx-auto max-w-2xl text-center">
+          <p className="cxl-eyebrow">Community</p>
+          <h2 className="cxl-h2 mt-4">Hilf Connect, sichtbar zu werden.</h2>
+          <p className="mt-4 text-[15px] leading-relaxed text-white/50">
+            Ein Stern auf GitHub hilft anderen, Connect zu entdecken. Folge uns oder komm mit der Community ins Gespräch.
+          </p>
+        </motion.div>
+        <div className="mx-auto mt-10 grid max-w-5xl gap-4 md:grid-cols-3">
+          <a
+            className="cxl-card group flex min-h-40 flex-col justify-between transition hover:border-sky-400/40"
+            href="https://github.com/dailyfundeyt-crypto/connect"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            <div className="flex items-center justify-between text-sky-300">
+              <span aria-hidden="true" className="text-xl">★</span>
+              <IconArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold">Connect auf GitHub ⭐</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-white/50">Gib dem Projekt einen Stern und unterstütze die Weiterentwicklung.</p>
+            </div>
+          </a>
+          <a
+            className="cxl-card group flex min-h-40 flex-col justify-between transition hover:border-sky-400/40"
+            href="https://x.com/stefan_kunc"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            <div className="flex items-center justify-between text-sky-300">
+              <span className="text-sm font-semibold">𝕏</span>
+              <IconArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold">Connect auf X folgen</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-white/50">Neuigkeiten und Updates von Stefan Kunc.</p>
+            </div>
+          </a>
+          <div aria-disabled="true" className="cxl-card flex min-h-40 cursor-not-allowed flex-col justify-between opacity-60">
+            <div className="flex items-center justify-between text-sky-300">
+              <IconWorldWww className="size-5" />
+              <span className="text-xs text-white/40">Link folgt</span>
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold">Connect auf Slack</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-white/50">Der Einladungslink wird später ergänzt.</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Abschluss */}

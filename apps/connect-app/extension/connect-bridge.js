@@ -1,20 +1,45 @@
-// Content-Script auf localhost:3101 (Connect-Web-UI): markiert die Seite, damit Connect weiß, dass die
-// Connect-Shell-Extension da ist, und leitet "App öffnen" an die Extension weiter
-// (apps/app/src/lib/ui/open-window.ts -> window.postMessage -> hier -> background.js -> chrome.tabs).
-// Antwortet mit "connect-shell-opened" (gleiche id), damit Connect sonst auf window.open zurückfällt.
-// Split-Links ("connect-shell-open-split", left + right) -> background.js -> open-window.js openSplit.
+// Content-Script auf Connect (localhost:3101 / Vercel): markiert die Seite und
+// leitet open-window / open-split an die Extension weiter. Zusätzlich: Tab-Meta
+// inkl. favIconUrl von Helium an Connect posten (Favicon-Pipeline).
 (() => {
-  // connectShellFeatures: was diese Extension-Version kann (Connect prüft "split" vor dem Split-Link).
   const mark = () => {
     const el = document.documentElement;
     if (!el) return;
     el.dataset.connectShell = "1";
-    el.dataset.connectShellFeatures = "open-window split";
+    el.dataset.connectShellFeatures = "open-window split tab-meta";
   };
   mark();
   document.addEventListener("DOMContentLoaded", mark, { once: true });
+
   const reply = (id, payload) =>
-    window.postMessage({ source: "connect-shell", type: "connect-shell-opened", id, ...payload }, location.origin);
+    window.postMessage(
+      { source: "connect-shell", type: "connect-shell-opened", id, ...payload },
+      location.origin,
+    );
+
+  const pushTabsToPage = (payload) => {
+    window.postMessage(
+      { source: "connect-shell", type: "connect-shell-tabs", ...payload },
+      location.origin,
+    );
+  };
+
+  const pushTabMeta = (tab) => {
+    if (!tab || typeof tab.url !== "string") return;
+    window.postMessage(
+      {
+        source: "connect-shell",
+        type: "connect-shell-tab-meta",
+        url: tab.url,
+        title: tab.title || "",
+        favIconUrl: tab.favIconUrl || tab.favicon || "",
+        agentId: tab.agentId,
+      },
+      location.origin,
+    );
+  };
+
+  // Connect → Extension
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.origin !== location.origin) return;
     const d = event.data;
@@ -25,18 +50,54 @@
       msg = { type: "open-window", url: d.url, forceNew: !!d.forceNew };
     } else if (d.type === "connect-shell-open-split" && web(d.left) && web(d.right)) {
       msg = { type: "open-split", left: d.left, right: d.right };
+    } else if (d.type === "connect-shell-list-tabs") {
+      msg = { type: "list-tabs", agentId: d.agentId || null };
     }
     if (!msg) return;
     let sent;
     try {
       sent = chrome.runtime.sendMessage(msg);
     } catch (e) {
-      // Extension neu geladen -> dieses Content-Script ist verwaist: Connect nimmt window.open.
       reply(d.id, { ok: false, error: String((e && e.message) || e) });
       return;
     }
     Promise.resolve(sent)
-      .then((r) => reply(d.id, { ok: !!(r && r.ok), mode: r && r.mode, error: r && r.error }))
+      .then((r) => {
+        reply(d.id, { ok: !!(r && r.ok), mode: r && r.mode, error: r && r.error });
+        if (r && r.ok && Array.isArray(r.tabs)) {
+          pushTabsToPage({ agentId: d.agentId || null, tabs: r.tabs });
+        }
+      })
       .catch((e) => reply(d.id, { ok: false, error: String((e && e.message) || e) }));
   });
+
+  // Extension → Content-Script (chrome.runtime.sendMessage / onMessage to tabs)
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || typeof msg.type !== "string") return;
+      if (msg.type === "tab-meta") {
+        pushTabMeta(msg.tab || msg);
+        return;
+      }
+      if (msg.type === "tabs-snapshot" && Array.isArray(msg.tabs)) {
+        pushTabsToPage({ agentId: msg.agentId || null, tabs: msg.tabs });
+      }
+    });
+  } catch {
+    /* not in extension context */
+  }
+
+  // Beim Laden einmal Tabs anfragen (Favicons für bestehende Tabs).
+  try {
+    chrome.runtime
+      .sendMessage({ type: "list-tabs" })
+      .then((r) => {
+        if (r && r.ok && Array.isArray(r.tabs)) {
+          pushTabsToPage({ tabs: r.tabs });
+        }
+      })
+      .catch(() => {});
+  } catch {
+    /* ignore */
+  }
 })();

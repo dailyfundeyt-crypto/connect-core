@@ -14,13 +14,14 @@
 export type Row = Record<string, unknown>;
 export type Q = (text: string, params?: unknown[]) => Promise<Row[]>;
 
-export const PC_PROVIDERS = ["codex-cli", "claude-cli", "grok-bot"] as const;
+export const PC_PROVIDERS = ["codex-cli", "claude-cli", "antigravity-cli", "grok-bot"] as const;
 export type PcProvider = (typeof PC_PROVIDERS)[number];
 export const isPcProvider = (value: unknown): value is PcProvider => typeof value === "string" && (PC_PROVIDERS as readonly string[]).includes(value);
 
 export const PROVIDER_LABELS: Record<PcProvider, string> = {
   "codex-cli": "Codex (ChatGPT-Login)",
   "claude-cli": "Claude (Claude-Login)",
+  "antigravity-cli": "Antigravity (Google-OAuth)",
   "grok-bot": "Grok Bot",
 };
 

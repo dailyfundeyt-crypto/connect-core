@@ -2,6 +2,7 @@ import { IconLayoutSidebar } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { useOptionalSidebar } from "@/components/ui/sidebar";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import {
   Tooltip,
   TooltipContent,
@@ -27,7 +28,9 @@ const SHORTCUT_LABEL = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
  */
 export function useSidebarToggleVisible(): boolean {
   const sidebar = useOptionalSidebar();
-  if (!sidebar) return false;
+  // helium-mobilefix: Handy-Ansicht hat keine PC-Seitenleiste, also auch keinen Schalter dafuer.
+  const mobileShell = useMobileShell();
+  if (!sidebar || mobileShell) return false;
   const { isMobile, open } = sidebar;
   // Mobile sheet starts closed — always keep a visible opener.
   if (isMobile) return true;
@@ -103,6 +106,9 @@ export function SidebarToggle({ className }: { className?: string }) {
  * each time the sidebar is collapsed and the toggle reappears.
  */
 export function SidebarToggleBar() {
+  // helium-mobilefix: im Handy-Rahmen kein leeres 48px-Band (dort gibt es keinen Schalter).
+  const mobileShell = useMobileShell();
+  if (mobileShell) return null;
   return (
     <div className="h-12 shrink-0 flex items-center px-3">
       <SidebarToggle />

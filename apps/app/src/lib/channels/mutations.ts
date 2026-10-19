@@ -3,6 +3,7 @@ import {
   mutationOptions,
   type QueryClient,
 } from "@tanstack/react-query";
+import { ensureAgentConversation } from "@/lib/agents/agent-conversation";
 import { client, tryClient } from "@/lib/client";
 import { type AgentChannel, type ChannelPage, channelKeys } from "./queries";
 
@@ -10,10 +11,16 @@ import { type AgentChannel, type ChannelPage, channelKeys } from "./queries";
  * Start a new channel with one or more coworkers.
  *
  * Deliberately not idempotent: every call creates a channel with its own thread.
+ *
+ * oneconv (Ein Agent = ein Gespräch): ONE coworker means "that coworker's conversation" — its
+ * active channel is returned and only made when it has none. Several coworkers still make a group.
  */
 export function createChannelMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: async (agentIds: string[]): Promise<AgentChannel> => {
+      if (agentIds.length === 1 && agentIds[0]) {
+        return ensureAgentConversation(agentIds[0]);
+      }
       const response = await client("/api/channels", {
         method: "POST",
         body: { agentIds },

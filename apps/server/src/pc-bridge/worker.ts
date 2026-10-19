@@ -30,6 +30,19 @@ import {
   type Q,
   writeProgress,
 } from "./store";
+import {
+  claimHeliumCommand,
+  cleanArgs,
+  finishHeliumCommand,
+  type HeliumResult,
+  pruneHeliumCommands,
+  pushBrowser,
+  secretFromDatabaseUrl,
+  verifyCommand,
+} from "./helium-store";
+import { executeInHelium, heliumSnapshot, heliumStatus, onHeliumChange } from "../helium-sync";
+import { type BrainResult, claimBrainRequest, cleanBrainArgs, finishBrainRequest, pruneBrainRequests, verifyBrainRequest } from "./brain-store";
+import { executeBrainRequest } from "./brain-local";
 
 const VERSION = "pc-bridge 1";
 const HEARTBEAT_MS = 20_000;
@@ -40,6 +53,9 @@ const FLUSH_MS = 600;
 const GROK_POLL_MS = 3_000;
 const GROK_QUIET_MS = 35_000;
 const GROK_MAX_MS = 270_000;
+/** „Mein Helium“: Befehle vom Handy werden jede Sekunde abgeholt (ein kleiner Index-Treffer). */
+const HELIUM_POLL_MS = 1_000;
+const HELIUM_MAX_RESULT = 2_500_000;
 
 export type PcBridgeWorkerState = {
   configured: boolean;
@@ -73,9 +89,11 @@ const state: PcBridgeWorkerState = {
   grokBotCount: 0,
 };
 
-export function pcBridgeWorkerState(): PcBridgeWorkerState {
-  return { ...state, providers: [...state.providers] };
+export function pcBridgeWorkerState(): PcBridgeWorkerState & { helium: ReturnType<typeof heliumStatus> & { lastPush: string | null; commandsDone: number; commandsFailed: number } } {
+  return { ...state, providers: [...state.providers], helium: { ...heliumStatus(), ...heliumBridge } };
 }
+
+const heliumBridge = { lastPush: null as string | null, commandsDone: 0, commandsFailed: 0 };
 
 function configFile(): string {
   const base = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "ConnectApp", "data") : join(homedir(), ".connect-app");
@@ -126,7 +144,8 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 
 async function providerSnapshot(): Promise<{ providers: PcProviderInfo[]; grokBots: PcGrokBot[] }> {
   const providers: PcProviderInfo[] = [];
-  for (const kind of ["codex", "claude"] as const) {
+  // Reihenfolge: codex, claude, antigravity. Wird in der UI als Liste gezeigt.
+  for (const kind of ["codex", "claude", "antigravity"] as const) {
     try {
       const status = await cliStatus(kind);
       providers.push({
@@ -160,7 +179,11 @@ async function providerSnapshot(): Promise<{ providers: PcProviderInfo[]; grokBo
 type Sink = { append: (text: string) => void; signal: AbortSignal };
 
 async function runCliJob(job: PcJob, sink: Sink) {
-  const kind = job.provider === "codex-cli" ? "codex" : "claude";
+  const kind: "codex" | "claude" | "antigravity" =
+    job.provider === "codex-cli" ? "codex" :
+    job.provider === "claude-cli" ? "claude" :
+    job.provider === "antigravity-cli" ? "antigravity" :
+    "codex";
   if (!isCliKind(kind)) throw new Error("Unbekannter Anbieter.");
   let first = true;
   for await (const event of runCli({ kind, model: job.model, agentId: `pc-${job.agent_id}`, prompt: job.prompt, signal: sink.signal })) {
@@ -335,6 +358,117 @@ export function startPcBridgeWorker() {
       state.lastError = `Aufträge abholen: ${errorText(error)}`;
     }
   };
+
+  // ---------------------------------------------------------------- „Mein Helium“
+  const heliumSecret = secretFromDatabaseUrl(config.url);
+  let heliumPushedRevision = -1;
+  let heliumPushedLive = false;
+  let heliumPushAt = 0;
+  let heliumPushing = false;
+  let heliumTimer: ReturnType<typeof setTimeout> | null = null;
+  const pushHelium = async () => {
+    if (heliumPushing) return scheduleHelium();
+    heliumPushing = true;
+    try {
+      const snap = heliumSnapshot();
+      await pushBrowser(q, {
+        ownerUserId: config.owner,
+        workerId,
+        extConnected: snap.live,
+        extSeen: snap.lastSeen,
+        browser: snap.browser,
+        windows: snap.windows,
+        tabs: snap.tabs,
+      });
+      heliumPushedRevision = snap.revision;
+      heliumPushedLive = snap.live;
+      heliumPushAt = Date.now();
+      heliumBridge.lastPush = new Date().toISOString();
+    } catch (error) {
+      state.lastError = `Mein Helium: ${errorText(error)}`;
+    } finally {
+      heliumPushing = false;
+    }
+  };
+  function scheduleHelium() {
+    if (heliumTimer) return;
+    heliumTimer = setTimeout(() => {
+      heliumTimer = null;
+      void pushHelium();
+    }, 400);
+  }
+  onHeliumChange(scheduleHelium);
+  setInterval(() => {
+    const snap = heliumSnapshot();
+    // Ever-connected or still showing as connected: keep "zuletzt gesehen" fresh; otherwise only on change.
+    if (snap.revision !== heliumPushedRevision || snap.live !== heliumPushedLive || (snap.live && Date.now() - heliumPushAt > HEARTBEAT_MS - 2_000)) void pushHelium();
+  }, 5_000);
+
+  let heliumBusy = 0;
+  const pollHelium = async (): Promise<void> => {
+    if (!state.connected || heliumBusy >= 3) return;
+    let command: Awaited<ReturnType<typeof claimHeliumCommand>> = null;
+    try {
+      command = await claimHeliumCommand(q, config.owner);
+    } catch {
+      return;
+    }
+    if (!command) return;
+    heliumBusy += 1;
+    try {
+      const problem = heliumSecret ? await verifyCommand(heliumSecret, command, config.owner) : "Signier-Schlüssel fehlt.";
+      let result: HeliumResult;
+      if (problem) result = { ok: false, error: problem };
+      else {
+        const cleaned = cleanArgs(command.action, command.args);
+        result = "error" in cleaned ? { ok: false, error: cleaned.error } : await executeInHelium(command.action, cleaned.args);
+      }
+      if (result.ok && result.result !== undefined && JSON.stringify(result.result).length > HELIUM_MAX_RESULT) {
+        result = { ok: false, error: "Ergebnis zu groß." };
+      }
+      await finishHeliumCommand(q, command.id, result).catch(() => {});
+      if (result.ok) heliumBridge.commandsDone += 1;
+      else heliumBridge.commandsFailed += 1;
+      scheduleHelium();
+    } finally {
+      heliumBusy -= 1;
+    }
+    return pollHelium();
+  };
+  setInterval(() => void pollHelium(), HELIUM_POLL_MS);
+  setInterval(() => void pruneHeliumCommands(q, config.owner).catch(() => {}), 6 * 60 * 60_000);
+
+  // ---------------------------------------------------------------- Brain lesen (Handy über Vercel)
+  let brainBusy = 0;
+  const pollBrain = async (): Promise<void> => {
+    if (!state.connected || brainBusy >= 3) return;
+    let request: Awaited<ReturnType<typeof claimBrainRequest>> = null;
+    try {
+      request = await claimBrainRequest(q, config.owner);
+    } catch {
+      return;
+    }
+    if (!request) return;
+    brainBusy += 1;
+    try {
+      const problem = heliumSecret ? await verifyBrainRequest(heliumSecret, request, config.owner) : "Signier-Schlüssel fehlt.";
+      let result: BrainResult;
+      if (problem) result = { ok: false, error: problem };
+      else {
+        const cleaned = cleanBrainArgs(request.action, request.args);
+        result = "error" in cleaned ? { ok: false, error: cleaned.error } : await executeBrainRequest(request.action, cleaned.args);
+      }
+      if (result.ok && result.result !== undefined && JSON.stringify(result.result).length > HELIUM_MAX_RESULT) {
+        result = { ok: false, error: "Ergebnis zu groß." };
+      }
+      await finishBrainRequest(q, request.id, result).catch(() => {});
+    } finally {
+      brainBusy -= 1;
+    }
+    return pollBrain();
+  };
+  setInterval(() => void pollBrain(), HELIUM_POLL_MS);
+  setInterval(() => void pruneBrainRequests(q, config.owner).catch(() => {}), 5 * 60_000);
 
   void beat();
   setInterval(() => void beat(), HEARTBEAT_MS);

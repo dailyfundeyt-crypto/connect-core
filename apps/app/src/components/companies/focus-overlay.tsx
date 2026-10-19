@@ -25,6 +25,9 @@ import { type CompanyLevel, setActiveLevel } from "@/lib/companies/level";
 import { notifyDesktopLevel } from "@/lib/desktop-bridge";
 import { addAgentToCompany, getCompany } from "@/lib/companies/store";
 import { cn } from "@/lib/utils";
+import { FocusChain, useFocusChainConfig } from "@/components/focus/focus-chain";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
+import { CompanySwitcher } from "@/components/companies/company-switcher";
 
 /**
  * Focus — schnelle Tasks als eigene Seite (ersetzt den Inhalt, kein Overlay
@@ -160,6 +163,10 @@ export function FocusOverlay({
     [company, start],
   );
 
+  const mobileShell = useMobileShell();
+  const chainCfg = useFocusChainConfig();
+  const chainMode = !chainCfg.agentCards;
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -167,7 +174,7 @@ export function FocusOverlay({
         close();
         return;
       }
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || chainMode) return; // Kette: ← → steuert FocusChain
       const target = event.target as HTMLElement | null;
       if (
         target &&
@@ -189,12 +196,108 @@ export function FocusOverlay({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close, goLeft, goRight]);
+  }, [chainMode, close, goLeft, goRight]);
+
+  /*
+   * helium-focuschain2: Auf dem Handy ersetzt die Fokus-Kette (Big Boss + Plan-Apps) die
+   * Agenten-Karten. Die Agenten-Karten bleiben hinter dem Schalter Einstellungen › Fokus ›
+   * "Alte Ansicht". helium-pcfocus (17.10.): am PC genauso (Kette + Auftrag-Box unten).
+   */
+  const auftrag = active ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-5">
+            <div className="pointer-events-auto w-full max-w-2xl">
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-white shadow-none ring-1 ring-black/20">
+                <div className="flex items-center gap-2 border-b border-neutral-200 bg-white px-3 py-1.5">
+                  <div className="size-5 shrink-0 overflow-hidden rounded-md">
+                    <AbstractAvatar
+                      agentId={active.id}
+                      name={active.name}
+                      seed={active.avatarSeed}
+                      size={20}
+                    />
+                  </div>
+                  <span className="truncate text-xs font-medium text-foreground">
+                    {active.name}
+                  </span>
+                  <span className="truncate text-[10px] text-muted-foreground">
+                    {familyLabel(getAgentModelFamily(active.id))} ·{" "}
+                    {getAgentCliDefault(active.id)}
+                  </span>
+                  <IconSparkles className="ml-auto size-3.5 text-muted-foreground" />
+                </div>
+                <div className="px-2 pb-2 pt-1 [&_[data-floating-composer]]:min-h-24 [&_[data-floating-composer]]:border-0 [&_[data-floating-composer]]:bg-transparent">
+                  <Composer
+                    agentId={active.id}
+                    agents={toAgentOptions(agents)}
+                    className="w-full"
+                    compact
+                    floating
+                    onSubmit={async (draft) => {
+                      await startTemplate(active.id, draft.text);
+                    }}
+                    pending={pending}
+                  />
+                </div>
+                {error ? (
+                  <p className="px-3 pb-2 text-xs text-destructive" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+              </div>
+              <p className="mt-2 text-center text-[10px] text-white/40">
+                {chainMode ? "← → Schritte · Enter öffnet · Esc schließt Fokus" : "← → Tasks · Esc schließt Focus · zurück zur vorigen Seite"}
+              </p>
+            </div>
+          </div>
+  ) : null;
+
+  if (mobileShell && !chainCfg.agentCards) {
+    return (
+      <div className="dark absolute inset-0 z-50 overflow-y-auto bg-[radial-gradient(120%_70%_at_50%_0%,#1a1630_0%,#07080c_55%)] text-white" data-focus-page="">
+        <FocusChain onClose={close} variant="fullscreen" />
+      </div>
+    );
+  }
+
+  // PC (helium-pcfocus): Kette direkt bei Schritt 1, Firmen-Umschalter oben, Auftrag-Box unten.
+  if (chainMode) {
+    return (
+      <div
+        aria-label="Fokus"
+        className="absolute inset-0 z-50 flex flex-col bg-[radial-gradient(120%_70%_at_50%_0%,#1a1630_0%,#07080c_55%)] text-white animate-in fade-in-0 duration-200"
+        data-focus-page=""
+        role="region"
+      >
+        <header className="relative z-30 flex items-center justify-between gap-3 px-5 py-4">
+          <div className="flex items-center gap-2 text-white/80 [&_button]:text-white/85" data-testid="focus-company-switcher">
+            <CompanySwitcher showLabel />
+          </div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.32em] text-white/35">Fokus</p>
+          <Button
+            aria-label="Schließen"
+            className="size-8 rounded-full border border-white/15 bg-white text-black hover:bg-neutral-100"
+            onClick={close}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <IconX className="size-4" />
+          </Button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto pb-56 [scrollbar-width:none]">
+          <div className="mx-auto w-full max-w-3xl" data-keep-light>
+            <FocusChain keyboard variant="inline" />
+          </div>
+        </div>
+        <div className="pointer-events-none absolute inset-0 z-20">{auftrag}</div>
+      </div>
+    );
+  }
 
   return (
     <div
       aria-label="Focus — schnelle Tasks"
-      className="pointer-events-none absolute inset-0 z-40 flex flex-col animate-in fade-in-0 duration-200"
+      className="pointer-events-none absolute inset-0 z-50 flex flex-col animate-in fade-in-0 duration-200"
       data-focus-page=""
       role="region"
     >
@@ -208,7 +311,7 @@ export function FocusOverlay({
         <header className="pointer-events-auto flex items-center justify-end gap-3 px-5 py-4">
           <Button
             aria-label="Schließen"
-            className="size-8 rounded-full border border-white/15 bg-white text-black hover:bg-neutral-100"
+            className="size-8 rounded-full border border-white/15 bg-white text-black hover:bg-neutral-100 relative z-50"
             onClick={close}
             size="icon"
             type="button"
@@ -276,53 +379,7 @@ export function FocusOverlay({
           </>
         )}
 
-        {active ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-5">
-            <div className="pointer-events-auto w-full max-w-2xl">
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-white shadow-none ring-1 ring-black/20">
-                <div className="flex items-center gap-2 border-b border-neutral-200 bg-white px-3 py-1.5">
-                  <div className="size-5 shrink-0 overflow-hidden rounded-md">
-                    <AbstractAvatar
-                      agentId={active.id}
-                      name={active.name}
-                      seed={active.avatarSeed}
-                      size={20}
-                    />
-                  </div>
-                  <span className="truncate text-xs font-medium text-foreground">
-                    {active.name}
-                  </span>
-                  <span className="truncate text-[10px] text-muted-foreground">
-                    {familyLabel(getAgentModelFamily(active.id))} ·{" "}
-                    {getAgentCliDefault(active.id)}
-                  </span>
-                  <IconSparkles className="ml-auto size-3.5 text-muted-foreground" />
-                </div>
-                <div className="px-2 pb-2 pt-1 [&_[data-floating-composer]]:min-h-24 [&_[data-floating-composer]]:border-0 [&_[data-floating-composer]]:bg-transparent">
-                  <Composer
-                    agentId={active.id}
-                    agents={toAgentOptions(agents)}
-                    className="w-full"
-                    compact
-                    floating
-                    onSubmit={async (draft) => {
-                      await startTemplate(active.id, draft.text);
-                    }}
-                    pending={pending}
-                  />
-                </div>
-                {error ? (
-                  <p className="px-3 pb-2 text-xs text-destructive" role="alert">
-                    {error}
-                  </p>
-                ) : null}
-              </div>
-              <p className="mt-2 text-center text-[10px] text-white/40">
-                ← → Tasks · Esc schließt Focus · zurück zur vorigen Seite
-              </p>
-            </div>
-          </div>
-        ) : null}
+        {active ? auftrag : null}
       </div>
     </div>
   );

@@ -4,7 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Connect Sidebar</title>
-  <link rel="stylesheet" href="sidebar.css" />
+  <link rel="stylesheet" href="sidebar.css" id="sidebar-theme" />
+  <!-- Dark variant overrides (loaded when preference is dark or auto-detected).
+       Override link comes after base so its rules win via cascade. -->
+  <script>
+    (function() {
+      var pref = localStorage.getItem('connectShell.theme');
+      var isDark = pref === 'dark' ||
+        (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) {
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'sidebar-dark.css';
+        document.head.appendChild(link);
+        document.getElementById('sidebar-theme').disabled = true;
+      }
+    })();
+  </script>
   <!-- Reihenfolge wichtig: erst Konfiguration, dann Logik. Funktioniert identisch als
        Helium-Side-Panel (Extension), in WebView2 (Connect Desktop) oder als normale Seite. -->
   <script src="tabs.config.js" defer></script>
@@ -43,9 +59,9 @@
     <div class="space-title" id="space-title"></div>
     <nav class="tabs" id="tabs" aria-label="Tabs"></nav>
 
-    <button class="tab tab--new" id="new-tab" type="button" title="Neuer Tab (Connect)">
-      <span class="tab__icon tab__icon--ghost"><span class="ico ico--sm" style="--ico:url(icons/plus.svg)"></span></span>
-      <span class="tab__label">Neuer Tab</span>
+    <button class="tab tab--new" id="helium-connect-btn" type="button" title="Helium + Connect im Browser">
+      <span class="tab__icon tab__icon--ghost"><span class="ico ico--sm" style="--ico:url(icons/zap.svg)"></span></span>
+      <span class="tab__label">Helium + Connect</span>
     </button>
 
     <!-- Space-Umschalter (Arc: Punkte unten) -->

@@ -6,6 +6,7 @@ import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import { keyOf } from "@/lib/hotkeys/hotkeys";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -182,6 +183,10 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none";
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  // helium-mobilefix: in der Handy-Ansicht (Touch + unter 768px) gibt es keine PC-Seitenleiste –
+  // auch nicht als Overlay-Sheet. Navigation laeuft dort ueber die mobile Shell / den Rahmen.
+  const mobileShell = useMobileShell();
+  if (mobileShell && collapsible !== "none") return null;
 
   if (collapsible === "none") {
     return (

@@ -1,0 +1,12 @@
+{
+  "sidebarHasChannels": 0,
+  "sidebarAgentsLabel": 1,
+  "agentsMenuRows": 0,
+  "redirectDeleted": "http://localhost:3197/company/connect?level=3&profile=false",
+  "redirectLive": "http://localhost:3197/agent/agent_a9f03485-9891-45ab-acba-2c4e4a171634",
+  "gptTitle": "chat gpt",
+  "gptMoreBtn": "Frühere Nachrichten anzeigen · Gespräch vom 05.10.2026, 19:54",
+  "gptSegmentsShown": 1,
+  "groupUrl": "http://localhost:3197/company/connect?level=3&profile=false",
+  "searchRows": 0
+}

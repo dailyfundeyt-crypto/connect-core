@@ -4,6 +4,7 @@ import {
   IconColumnInsertLeft,
   IconColumnInsertRight,
   IconColumnRemove,
+  IconPalette,
   IconRowInsertBottom,
   IconRowInsertTop,
   IconRowRemove,
@@ -17,6 +18,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -111,6 +115,26 @@ export function NoteTable({
     });
   };
 
+  /**
+   * Sets the per-cell background colour. Stored on `table.cellBg` as a flat
+   * row-major array padded to the table's column count; the writer fences
+   * this below the table so the data rows stay readable.
+   */
+  const setCellBg = (row: number, col: number, color: string | null) => {
+    const flat = (table.cellBg ?? []).slice(0, table.rows.length * columns);
+    while (flat.length < table.rows.length * columns) flat.push("");
+    const idx = row * columns + col;
+    flat[idx] = color ?? "";
+    onChange({ ...table, cellBg: flat });
+  };
+
+  const setRowBg = (row: number, color: string | null) => {
+    const list = (table.rowBg ?? []).slice(0, table.rows.length);
+    while (list.length < table.rows.length) list.push("");
+    list[row] = color ?? "";
+    onChange({ ...table, rowBg: list });
+  };
+
   return (
     <div className="group/table relative my-1 w-full">
       <div className="overflow-x-auto rounded-lg border border-black/10">
@@ -119,12 +143,15 @@ export function NoteTable({
             {table.rows.map((row, rowIndex) => {
               const isHeader = table.headerRow && rowIndex === 0;
               const Cell = isHeader ? "th" : "td";
+              const rowBg = table.rowBg?.[rowIndex];
+              const cellBgRow = isHeader ? undefined : table.cellBg?.slice(rowIndex * columns, rowIndex * columns + columns);
               return (
-                <tr key={rowIndex}>
+                <tr key={rowIndex} style={rowBg ? { backgroundColor: rowBg } : undefined}>
                   {Array.from({ length: columns }).map((_, colIndex) => {
                     const value = row[colIndex] ?? "";
                     const active =
                       menu?.row === rowIndex && menu?.col === colIndex;
+                    const cellBg = cellBgRow?.[colIndex];
                     return (
                       <Cell
                         className={
@@ -133,6 +160,7 @@ export function NoteTable({
                             : "border-b border-r border-black/8 px-3 py-2 text-left align-top last:border-r-0"
                         }
                         key={colIndex}
+                        style={cellBg ? { backgroundColor: cellBg } : undefined}
                       >
                         <div className="relative">
                           <input
@@ -159,6 +187,9 @@ export function NoteTable({
                               }
                               onAddRowAbove={() => addRow(rowIndex)}
                               onAddRowBelow={() => addRow(rowIndex + 1)}
+                              onCellColor={(color) =>
+                                setCellBg(rowIndex, colIndex, color)
+                              }
                               onClear={clear}
                               onClose={() => setMenu(null)}
                               onMoveRowDown={() =>
@@ -168,7 +199,12 @@ export function NoteTable({
                               onRemoveColumn={() =>
                                 removeColumn(colIndex)
                               }
-                              onRemoveRow={() => removeRow(rowIndex)}
+                              onRemoveRow={() =>
+                                removeRow(rowIndex)
+                              }
+                              onRowColor={(color) =>
+                                setRowBg(rowIndex, color)
+                              }
                               onToggleHeader={() =>
                                 onChange({
                                   ...table,
@@ -200,12 +236,14 @@ function CellMenu({
   onAddColumnRight,
   onAddRowAbove,
   onAddRowBelow,
+  onCellColor,
   onClear,
   onClose,
   onMoveRowDown,
   onMoveRowUp,
   onRemoveColumn,
   onRemoveRow,
+  onRowColor,
   onToggleHeader,
   open,
 }: {
@@ -215,12 +253,16 @@ function CellMenu({
   onAddColumnRight: () => void;
   onAddRowAbove: () => void;
   onAddRowBelow: () => void;
+  /** Apply (or clear) a per-cell background colour. */
+  onCellColor: (color: string | null) => void;
   onClear: () => void;
   onClose: () => void;
   onMoveRowDown: () => void;
   onMoveRowUp: () => void;
   onRemoveColumn: () => void;
   onRemoveRow: () => void;
+  /** Apply (or clear) a per-row background colour. */
+  onRowColor: (color: string | null) => void;
   onToggleHeader: () => void;
   open: boolean;
 }) {
@@ -308,6 +350,24 @@ function CellMenu({
           <IconTable className="size-4" stroke={1.5} />
           Kopfzeile umschalten
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="gap-2 rounded-lg px-2.5 py-2">
+            <IconPalette className="size-4" stroke={1.5} />
+            Zeilenfarbe
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-44 rounded-xl p-1.5">
+            <ColorChoices onPick={(color) => onRowColor(color)} />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="gap-2 rounded-lg px-2.5 py-2">
+            <IconPalette className="size-4" stroke={1.5} />
+            Zellenfarbe
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-44 rounded-xl p-1.5">
+            <ColorChoices onPick={(color) => onCellColor(color)} />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuItem
           className="gap-2 rounded-lg px-2.5 py-2 text-destructive"
           onClick={onClear}
@@ -321,5 +381,35 @@ function CellMenu({
         </DropdownMenuLabel>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+const TABLE_COLORS = [
+  "transparent",
+  "#fef3c7",
+  "#dcfce7",
+  "#dbeafe",
+  "#f3e8ff",
+  "#fee2e2",
+];
+
+function ColorChoices({ onPick }: { onPick: (color: string | null) => void }) {
+  return (
+    <div className="flex flex-col gap-1">
+      {TABLE_COLORS.map((color) => (
+        <button
+          className="flex items-center gap-2 rounded-md px-2 py-1 text-[12px] hover:bg-neutral-100 dark:hover:bg-white/10"
+          key={color}
+          onClick={() => onPick(color === "transparent" ? null : color)}
+          type="button"
+        >
+          <span
+            className="size-4 rounded border border-black/10"
+            style={{ backgroundColor: color === "transparent" ? "transparent" : color }}
+          />
+          {color === "transparent" ? "Keine Farbe" : color}
+        </button>
+      ))}
+    </div>
   );
 }

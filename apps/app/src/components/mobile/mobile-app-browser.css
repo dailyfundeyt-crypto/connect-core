@@ -1,0 +1,5 @@
+/* Handy-In-App-Browser: Ladebalken unter der Leiste. */
+@keyframes connect-appbar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

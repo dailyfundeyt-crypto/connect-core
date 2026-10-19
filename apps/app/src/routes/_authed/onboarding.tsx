@@ -15,6 +15,7 @@ import { appConfig } from "@/lib/generated/application-config";
 import { completeOnboardingMutationOptions } from "@/lib/onboarding/mutations";
 import { connectGoogleDrive, fetchDriveBackupStatus } from "@/lib/drive-backup/api";
 import { queryClient } from "@/query-client";
+import { ArrowUpRight, Check, Github, Mail, MessageCircle, Twitter } from "lucide-react";
 
 export const Route = createFileRoute("/_authed/onboarding")({
   beforeLoad: async ({ context }) => {
@@ -146,6 +147,82 @@ function RosterStep() {
   );
 }
 
+function CommunityStep() {
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const actions = [
+    {
+      title: "Follow us on X",
+      description: "Get updates about Connect and new releases.",
+      href: "https://x.com/stefan_kunc",
+      icon: Twitter,
+    },
+    {
+      title: "Star Connect on GitHub",
+      description: "Follow the open-source project and its development.",
+      href: "https://github.com/dailyfundeyt-crypto/connect",
+      icon: Github,
+    },
+    {
+      title: "Join us on Slack",
+      description: "Meet other Connect users and get help.",
+      href: import.meta.env.VITE_CONNECT_SLACK_URL || "",
+      icon: MessageCircle,
+    },
+  ];
+
+  return (
+    <div className="w-full flex flex-col items-center justify-center">
+      <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
+        Join the Connect community
+      </h1>
+      <p className="mt-2 max-w-md text-center text-sm text-muted-foreground">
+        Follow the project, support open source, or connect with other users. These steps are optional.
+      </p>
+      <div className="h-8" />
+      <div className="grid w-full max-w-lg grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-4 sm:col-span-2">
+          <div className="flex items-start gap-3">
+            <span className="rounded-lg bg-primary/10 p-2 text-primary"><Mail className="size-4" /></span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-medium">Email verified</h2>
+                {user?.emailVerified ? (
+                  <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" /> Verified</span>
+                ) : null}
+              </div>
+              <p className="mt-1 break-all text-xs text-muted-foreground">
+                {user?.email ?? "Your sign-in provider manages email verification."}
+              </p>
+              {!user?.emailVerified ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Check the verification status with the provider you use to sign in.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        {actions.map(({ title, description, href, icon: Icon }) => (
+          <a
+            aria-disabled={!href || undefined}
+            className={`rounded-xl border border-border bg-card p-4 transition ${href ? "hover:border-primary/40 hover:bg-accent/40" : "cursor-not-allowed opacity-60"}`}
+            href={href || undefined}
+            key={title}
+            rel={href ? "noopener noreferrer" : undefined}
+            target={href ? "_blank" : undefined}
+          >
+            <div className="flex items-start justify-between">
+              <Icon className="size-4 text-primary" />
+              {href ? <ArrowUpRight className="size-4 text-muted-foreground" /> : <span className="text-xs text-muted-foreground">Link follows</span>}
+            </div>
+            <h2 className="mt-4 text-sm font-medium">{title}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const DRIVE_STEP_KEY = "connect.onboarding.step";
 
 /** Optional: Google Drive verbinden, damit alle Daten automatisch gesichert werden. Überspringbar. */
@@ -198,6 +275,7 @@ const STEPS: Array<() => React.ReactNode> = [
   () => <WelcomeStep />,
   () => <ComputerUseStep />,
   () => <RosterStep />,
+  () => <CommunityStep />,
   () => <DriveStep />,
 ];
 

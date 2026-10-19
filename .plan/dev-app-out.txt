@@ -1,0 +1,9 @@
+@connect/app dev: 15:19:20 [vite] (client) Re-optimizing dependencies because vite config has changed
+@connect/app dev: error when starting dev server:
+@connect/app dev: Error: Port 3010 is already in use
+@connect/app dev:     at onError$1 (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\vite@7.3.6+70c9d08189b24300\node_modules\vite\dist\node\chunks\config.js:15006:32)
+@connect/app dev:     at applyHandlers (node:events:64:20)
+@connect/app dev:     at emitError (node:events:44:27)
+@connect/app dev:     at emitListenErrorNextTick (node:_http_server:134:12)
+@connect/app dev:     at processTicksAndRejections (native:7:39)
+@connect/app dev: Exited with code 1

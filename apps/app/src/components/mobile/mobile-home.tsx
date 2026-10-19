@@ -18,7 +18,10 @@ import {
   IconStarFilled,
   IconWorld,
   IconX,
+  IconUsersGroup,
 } from "@tabler/icons-react";
+import { SocialApp } from "@/components/social/social-app";
+import { getCompanyApp } from "@/company-apps/registry";
 import {
   useInfiniteQuery,
   useMutation,
@@ -27,6 +30,7 @@ import {
 } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  Fragment,
   type ReactNode,
   useCallback,
   useEffect,
@@ -61,6 +65,7 @@ import { labAppIconCandidates, siteKey } from "@/lib/companies/lab-favicons";
 import {
   getLevel3Browser,
   labAppsByGroup,
+  labFolderTree,
   subscribeLevel3Browser,
   toolIconUrl,
 } from "@/lib/companies/level3-tools";
@@ -84,7 +89,12 @@ import {
   subscribeFocusTimer,
   toggleFocusTimer,
 } from "@/lib/focus-timer";
+import { FocusChain, useFocusChainConfig } from "@/components/focus/focus-chain";
 import { ProfileSheet } from "./profile-sheet";
+import { type AppBrowserTarget, MobileAddLinkSheet, MobileAppBrowser, MobileCompanyApps, openAppLink, openLinkInBrowser } from "./mobile-app-browser";
+import { companyAppLinks, companyDefaultLink, localAppsInfo } from "@/lib/mobile/app-links";
+import { openInChromeOnAndroid } from "@/lib/mobile/open-in-chrome";
+import { flattenLabFolders, MobileBrainNotes, MobileBrowserCompanyChips, MobileMarkdownView } from "./mobile-brain-notes";
 import "./mobile.css";
 
 const ACTIVE_COMPANY_KEY = "connect.activeCompanyId";
@@ -97,6 +107,8 @@ const PAGES = [
   { id: "chats", label: "Chats", icon: IconMessages },
   { id: "browser", label: "Browser", icon: IconWorld },
   { id: "companies", label: "Unternehmen", icon: IconBuildingStore },
+  // helium-social: Feed wie bei X (Connect Social)
+  { id: "social", label: "Analysis", icon: IconUsersGroup },
 ] as const;
 
 type PageId = (typeof PAGES)[number]["id"];
@@ -234,6 +246,9 @@ function MobileFocusPage({
   sending: boolean;
 }) {
   const timer = useFocusTimerState();
+  const chainCfg = useFocusChainConfig();
+  /* helium-focuschain2: Fokus-Kette ist Standard; alte Ansicht (Timer oben) hinter Schalter agentCards. */
+  const chainMode = !chainCfg.agentCards;
   const [targetId, setTargetId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const target = agents.find((a) => a.id === targetId) ?? mainAgent ?? agents[0];
@@ -252,9 +267,10 @@ function MobileFocusPage({
   };
 
   return (
-    <div className="flex flex-col gap-3 px-4 pb-6 pt-2">
-      {/* Timer */}
-      <div className="connect-mobile-glass flex items-center gap-4 rounded-[28px] px-4 py-4">
+    <div className={cn("flex flex-col gap-3 px-4 pt-2", chainMode ? "min-h-full pb-0" : "pb-6")}>
+      {/* Timer: in der Fokus-Kette unter dem Kalender (Kalender-Popover), hier nur in der alten Ansicht */}
+      {chainMode ? null : (
+      <div className="connect-mobile-glass flex items-center gap-4 rounded-[28px] px-4 py-4" data-testid="focus-timer">
         <div className="relative size-[132px] shrink-0">
           <svg aria-hidden className="size-full -rotate-90" viewBox="0 0 128 128">
             <defs>
@@ -329,8 +345,27 @@ function MobileFocusPage({
         </div>
       </div>
 
+      )}
+
+      {/* Plan-Wischbereich: Big-Boss-Start + 5 Schritte (helium-focuschain2) */}
+      {chainMode ? (
+        <div className="-mx-4">
+          <FocusChain variant="inline" />
+        </div>
+      ) : null}
+
+      {/* Hauptagent, Auftrag ganz unten angeheftet */}
+      {/* Hauptagent-Karte in der Fokus-Kette entfernt (Stefan 17.10., Agentwahl steckt im Auftrag) */}
+
       {/* Auftrag */}
-      <div className="connect-mobile-glass rounded-[28px] p-3">
+      <div
+        className={cn(
+          "connect-mobile-glass rounded-[28px] p-3",
+          chainMode &&
+            "sticky bottom-0 z-10 -mx-1 mt-auto mb-[calc(0.5rem)] border-white/15 bg-[#0d0f15]/90 shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl",
+        )}
+        data-testid="focus-task-box"
+      >
         <div className="mb-2 flex items-center justify-between px-1">
           <span className="text-[12px] font-medium uppercase tracking-[0.16em] text-sky-300/70">
             Auftrag
@@ -395,7 +430,7 @@ function MobileFocusPage({
       </div>
 
       {/* Hauptagent */}
-      {mainAgent ? (
+      {chainMode ? null : mainAgent ? (
         <button
           className="connect-mobile-glass flex items-center gap-3 rounded-[24px] px-3 py-3 text-left active:bg-white/[0.07]"
           onClick={() => onOpenAgent(mainAgent)}
@@ -541,6 +576,8 @@ type BrowserRow = {
   url?: string;
   url2?: string;
   badge?: string;
+  /** helium-mobilefix: in eine Gruppe verlinkte Brain-Notiz – oeffnet die mobile Markdown-Ansicht. */
+  notePath?: string;
 };
 
 type BrowserSection = { id: string; title: string; rows: BrowserRow[] };
@@ -580,6 +617,14 @@ export function MobileHome() {
   const [plusOpen, setPlusOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [rowMenu, setRowMenu] = useState<AgentProfile | null>(null);
+  // In-App-Browser (helium-inappbrowser): Vollbild-App + Firma › App-Links.
+  const [appTarget, setAppTarget] = useState<AppBrowserTarget | null>(null);
+  const [companyAppsId, setCompanyAppsId] = useState<string | null>(null);
+  // Firma antippen startet ihre Standard-App (connect.company.siteUrl wie am PC); Link-Liste dahinter.
+  const [appFromDefault, setAppFromDefault] = useState(false);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
+  // helium-mobilefix: offene Brain-Notiz (mobile Markdown-Ansicht).
+  const [notePath, setNotePath] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mainAgentId, setMainAgentId] = useState<string | null>(() =>
@@ -737,13 +782,14 @@ export function MobileHome() {
         url: app.url,
         url2: split ? app.url2 : undefined,
         badge: split ? "Split" : undefined,
+        ...(app.notePath ? { notePath: app.notePath, subtitle: "Brain-Notiz" } : {}),
       };
     };
     if (companyId) {
-      const { groups, ungrouped } = labAppsByGroup(getLevel3Browser(companyId));
-      for (const group of groups) {
-        if (group.apps.length === 0) continue;
-        out.push({ id: `browser:${group.id}`, title: group.label, rows: group.apps.map(toRow) });
+      // helium-mobilefix: alle Gruppen wie am PC (Reihenfolge + Untergruppen), auch leere.
+      const { roots, ungrouped } = labFolderTree(getLevel3Browser(companyId));
+      for (const group of flattenLabFolders(roots)) {
+        out.push({ id: `browser:${group.id}`, title: group.title, rows: group.apps.map(toRow) });
       }
       if (ungrouped.length > 0) {
         out.push({
@@ -875,13 +921,25 @@ export function MobileHome() {
   };
 
   const openRow = useCallback((row: BrowserRow) => {
-    if (!row.url) return;
-    // Helium (lokal, mit Connect-Erweiterung): neuer Tab bzw. Split. Handy/Vercel: neuer Browser-Tab.
-    if (row.url2 && hasConnectShell()) {
-      openSplitInHelium(row.url, row.url2);
+    if (row.notePath) {
+      setNotePath(row.notePath);
       return;
     }
-    openInHeliumTab(row.url);
+    if (!row.url) return;
+    // Helium (lokal, mit Connect-Erweiterung): neuer Tab bzw. Split.
+    if (hasConnectShell()) {
+      if (row.url2) openSplitInHelium(row.url, row.url2);
+      else openInHeliumTab(row.url);
+      return;
+    }
+    // helium-mobilefix: Android = ein Antippen, direkt in Chrome (Intent), kein In-App-/Custom-Tab.
+    if (openInChromeOnAndroid(row.url)) return;
+    // Handy: Browser-Bereich öffnet im Standardbrowser (window.open _blank); lokale Apps über den Tunnel-Proxy.
+    openLinkInBrowser(row.url, () => setAppTarget({ url: row.url ?? "", title: row.title }));
+  }, []);
+
+  useEffect(() => {
+    void localAppsInfo();
   }, []);
 
   const pressTimer = useRef<number | null>(null);
@@ -928,7 +986,9 @@ export function MobileHome() {
             <ul>
               {section.agents.map((agent) => {
                 const last = lastChannelByAgent.get(agent.id);
-                const preview = last?.lastMessage?.trim() || "";
+                const rawPreview = last?.lastMessage?.trim() || "";
+                // Fehler-/Systemmeldungen nicht als Vorschau (helium-focuschain3) → Rolle des Agenten
+                const preview = /^(kein\s.*api-key|fehler|error|⚠|❌)|api-key|unter settings|not configured|nicht konfiguriert/i.test(rawPreview) ? "" : rawPreview;
                 const date = mobileChatDate(last?.lastMessageAt ?? null);
                 const unread =
                   last != null &&
@@ -1084,9 +1144,16 @@ export function MobileHome() {
                   </RoundButton>
                 </>
               ) : pageMeta.id === "browser" ? (
-                <RoundButton label="Suchen" onClick={() => setSearchOpen(true)}>
-                  <IconSearch className="size-[21px]" stroke={2} />
-                </RoundButton>
+                <>
+                  <RoundButton label="Suchen" onClick={() => setSearchOpen(true)}>
+                    <IconSearch className="size-[21px]" stroke={2} />
+                  </RoundButton>
+                  {activeCompany ? (
+                    <RoundButton label="Link speichern" onClick={() => setAddLinkOpen(true)}>
+                      <IconPlus className="size-[23px]" stroke={2} />
+                    </RoundButton>
+                  ) : null}
+                </>
               ) : null}
             </div>
           </>
@@ -1165,13 +1232,14 @@ export function MobileHome() {
               Deine Links aus Helium{activeCompany?.name ? ` · ${activeCompany.name}` : ""}
             </p>
           </div>
+          <MobileBrowserCompanyChips activeId={activeCompany?.id} companies={companies} onSelect={setActiveCompanyId} />
           {filteredBrowser.length === 0 ? (
             <div className="connect-mobile-glass mx-5 mt-5 rounded-3xl px-5 py-10 text-center">
               <IconLayoutGrid className="mx-auto size-8 text-white/35" />
               <p className="mt-3 text-[15px] text-white/55">
                 {needle
                   ? `Keine Treffer für „${search.trim()}“.`
-                  : `Noch keine Links für ${activeCompany?.name || "dieses Unternehmen"}. Leg sie in der App am PC im Browser-Menü an.`}
+                  : `Noch keine Links für ${activeCompany?.name || "dieses Unternehmen"}. Tippe oben rechts auf +, um einen Link zu speichern – er erscheint auch am PC.`}
               </p>
             </div>
           ) : (
@@ -1192,7 +1260,9 @@ export function MobileHome() {
                       stroke={1.75}
                     />
                   </button>
-                  {isCollapsed ? null : (
+                  {isCollapsed ? null : section.rows.length === 0 ? (
+                    <p className="px-5 pb-2 pt-1 text-[14px] text-white/30">Noch keine Links in dieser Gruppe.</p>
+                  ) : (
                     <ul>
                       {section.rows.map((row) => (
                         <li key={row.key}>
@@ -1226,6 +1296,8 @@ export function MobileHome() {
               );
             })
           )}
+          {/* helium-mobilefix: Brain-/Obsidian-Notizen wie in der PC-Seitenleiste, als Ordnerliste. */}
+          <MobileBrainNotes needle={needle} onOpenNote={setNotePath} />
         </section>
 
         {/* Unternehmen */}
@@ -1242,48 +1314,110 @@ export function MobileHome() {
             <ul className="pt-2">
               {companies.map((company) => {
                 const active = company.id === activeCompany?.id;
+                const integratedApp = getCompanyApp(company);
                 return (
-                  <li key={company.id}>
-                    <button
-                      className={cn(
-                        "flex w-full items-center gap-4 px-5 py-3.5 text-left active:bg-white/[0.06]",
-                        active && "bg-sky-400/5",
-                      )}
-                      onClick={() => setActiveCompanyId(company.id)}
-                      type="button"
-                    >
-                      {company.logo ? (
-                        <img
-                          alt=""
-                          className="size-[52px] rounded-[30%] object-cover ring-1 ring-white/10"
-                          src={company.logo}
-                        />
-                      ) : (
-                        <span
-                          className="size-[52px] rounded-[30%] ring-1 ring-white/10"
-                          style={{ background: company.accent || "#334155" }}
-                        />
-                      )}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[17px] font-semibold text-white">
-                          {company.name}
+                  <Fragment key={company.id}>
+                    <li>
+                      <button
+                        className={cn(
+                          "flex w-full items-center gap-4 px-5 py-3.5 text-left active:bg-white/[0.06]",
+                          active && "bg-sky-400/5",
+                        )}
+                        onClick={() => {
+                          setActiveCompanyId(company.id);
+                          // Open an integrated app in Connect; external company apps keep their link sheet.
+                          if (integratedApp) {
+                            setCompanyAppsId(null);
+                            setAppTarget(null);
+                            setAppFromDefault(false);
+                            void navigate({
+                              to: "/company/$companyId",
+                              params: { companyId: company.id },
+                              search: { level: 4, profile: false },
+                            });
+                            return;
+                          }
+                          setCompanyAppsId(company.id);
+                          const standard = companyDefaultLink(company.id);
+                          setAppFromDefault(Boolean(standard));
+                          if (standard) openAppLink({ url: standard.url, title: `${company.name} · ${standard.label}` }, setAppTarget);
+                        }}
+                        type="button"
+                      >
+                        {company.logo ? (
+                          <img
+                            alt=""
+                            className="size-[52px] rounded-[30%] object-cover ring-1 ring-white/10"
+                            src={company.logo}
+                          />
+                        ) : (
+                          <span
+                            className="size-[52px] rounded-[30%] ring-1 ring-white/10"
+                            style={{ background: company.accent || "#334155" }}
+                          />
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[17px] font-semibold text-white">
+                            {company.name}
+                          </span>
+                          <span className="mt-0.5 block text-[14px] text-white/45">
+                            {company.agentIds?.length ?? 0} Agents
+                            {(() => {
+                              const n = companyAppLinks(company.id).length;
+                              return n ? ` · ${n} ${n === 1 ? "App" : "Apps"}` : "";
+                            })()}
+                            {active ? " · aktiv" : ""}
+                          </span>
                         </span>
-                        <span className="mt-0.5 block text-[14px] text-white/45">
-                          {company.agentIds?.length ?? 0} Agents
-                          {active ? " · aktiv" : ""}
-                        </span>
-                      </span>
-                      {active ? (
-                        <span className="rounded-full bg-sky-400/20 px-2.5 py-1 text-[12px] font-medium text-sky-300">
-                          Aktiv
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
+                        {active ? (
+                          <span className="rounded-full bg-sky-400/20 px-2.5 py-1 text-[12px] font-medium text-sky-300">
+                            Aktiv
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                    {integratedApp ? (
+                      <li>
+                        <button
+                          className="flex w-full items-center gap-3 py-2.5 pl-[4.5rem] pr-5 text-left text-white/75 transition hover:bg-white/[0.04] active:bg-white/[0.07]"
+                          onClick={() => {
+                            setActiveCompanyId(company.id);
+                            setCompanyAppsId(null);
+                            setAppTarget(null);
+                            setAppFromDefault(false);
+                            void navigate({
+                              to: "/company/$companyId",
+                              params: { companyId: company.id },
+                              search: { level: 4, profile: false },
+                            });
+                          }}
+                          type="button"
+                        >
+                          <img
+                            alt=""
+                            className="size-9 rounded-xl object-cover ring-1 ring-white/10"
+                            src={integratedApp.manifest.id === "flux" ? "/flux-logo.png" : company.logo ?? "/brand/analysis-logo.png"}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[15px] font-medium text-white">
+                              {integratedApp.manifest.name ?? company.name}
+                            </span>
+                            <span className="block text-[12px] text-white/40">Connect-App · integriert</span>
+                          </span>
+                          <span className="text-[13px] text-sky-300">Öffnen</span>
+                        </button>
+                      </li>
+                    ) : null}
+                  </Fragment>
                 );
               })}
             </ul>
           )}
+        </section>
+
+        {/* Connect Social (helium-social): Feed, Suche, Firmen folgen */}
+        <section aria-label="Analysis" className="connect-mobile-page pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
+          <SocialApp variant="embedded" />
         </section>
       </div>
 
@@ -1327,6 +1461,35 @@ export function MobileHome() {
       </BottomSheet>
 
       <ProfileSheet onClose={() => setProfileOpen(false)} open={profileOpen} />
+
+      <MobileCompanyApps
+        companyId={companyAppsId}
+        onClose={() => setCompanyAppsId(null)}
+        onOpen={(t) => {
+          setAppFromDefault(false);
+          setAppTarget(t);
+        }}
+      />
+      <MobileAddLinkSheet companyId={addLinkOpen ? activeCompany?.id ?? null : null} onClose={() => setAddLinkOpen(false)} />
+      <MobileAppBrowser
+        onClose={() => {
+          setAppTarget(null);
+          if (appFromDefault) {
+            setAppFromDefault(false);
+            setCompanyAppsId(null);
+          }
+        }}
+        onShowCompany={
+          appFromDefault
+            ? () => {
+                setAppFromDefault(false);
+                setAppTarget(null);
+              }
+            : undefined
+        }
+        target={appTarget}
+      />
+      <MobileMarkdownView onClose={() => setNotePath(null)} path={notePath} />
 
       <BottomSheet onClose={() => setRowMenu(null)} open={rowMenu !== null}>
         {rowMenu ? (

@@ -1,0 +1,21 @@
+﻿Mentions in source:
+at 1165 : ote,
+  deleteBrainFolder,
+  deleteBrainNote,
+  VAULT_PREFIX,
+  type BrainFileInfo,
+} from "@/lib/brain/queries";
+import {
+  DND_VAULT_NOTE,
+  getLevel3Browser,
+  linkVaultNoteToGroup,
+  subs
+
+at 7774 : turn;
+    try {
+      await deleteBrainNote(deleteNoteTarget.path);
+      if (companyId) setOpenVaultPath(companyId, null);
+      setDeleteNoteTarget(null);
+      void queryClient.invalidateQueri
+
+

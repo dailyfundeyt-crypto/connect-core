@@ -108,7 +108,7 @@
   }
 
   // ---------- Connect-Routen ----------
-  const companyId = () => connectState.companyId || cfg.defaultCompanyId || (companies[0] && companies[0].id) || "nordwind";
+  const companyId = () => connectState.companyId || cfg.defaultCompanyId || (companies[0] && companies[0].id) || "connect";
   /** URL für einen Connect-Modus – gleiche Ziele wie CompanyLevelChips in apps/app. */
   function levelUrl(level, cid) {
     if (!level || level === 2) return CONNECT + "/";

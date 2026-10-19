@@ -7,6 +7,7 @@ import {
   IconPlus,
   IconRobot,
   IconSearch,
+  IconDeviceMobile,
   IconSettings,
   IconChartBar,
   IconSun,
@@ -67,12 +68,13 @@ import { relativeTime } from "@/lib/relative-time";
 import { NewAgentGroupDialog } from "@/components/agents/new-agent-group-dialog";
 import { CompanyAgentsNav } from "@/components/companies/company-agents-nav";
 import { CompanyAppFoldersNav } from "@/components/companies/company-app-folders-nav";
-import { ExtensionsSidebarSlot } from "@/extensions/components/extensions-sidebar-slot";
+import { MessagesAppsMenu } from "./messages-apps-menu";
 import {
   CompanyLevelChips,
   SidebarCollapseGlyph,
 } from "@/components/companies/company-level-chips";
 import { CompanySwitcher } from "@/components/companies/company-switcher";
+import { useCompanySwitcher } from "@/components/companies/company-switcher";
 import { useTheme } from "@/components/theme-provider";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
@@ -230,6 +232,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { toggleSidebar, state: sidebarState } = useSidebar();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { active: activeCompany } = useCompanySwitcher();
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const channels = useInfiniteQuery(channelListQueryOptions());
   // One socket for the app, opened where the roster is kept live.
@@ -270,13 +273,50 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   /**
    * Channels only for this company's agents. Chats with bots from other
    * companies stay in Marketplace → Meine Bots, not in HQ Channels.
+   *
+   * oneconv: for each agent, keep ONLY the active segment (the newest live
+   * one). Older segments of the same agent are reachable via "Frühere
+   * Nachrichten" on the agent's page and must not clutter the sidebar —
+   * every agent already represents its one conversation, and two rows for
+   * the same conversation would read as duplicates.
    */
   const companyChannels = useMemo(() => {
     const all = channels.data ?? [];
-    if (companyAgentIds.size === 0) return all;
-    return all.filter((ch) =>
-      ch.agentIds.some((id) => companyAgentIds.has(id)),
-    );
+    const companyFiltered =
+      companyAgentIds.size === 0
+        ? all
+        : all.filter((ch) =>
+            ch.agentIds.some((id) => companyAgentIds.has(id)),
+          );
+    // Group by single agent (group channels are kept as-is). Pick the
+    // newest live segment per single-agent conversation.
+    const bestByAgent = new Map<string, (typeof companyFiltered)[number]>();
+    const groups: typeof companyFiltered = [];
+    for (const ch of companyFiltered) {
+      if (ch.agentIds.length === 0) continue;
+      if (ch.agentIds.length > 1) {
+        groups.push(ch);
+        continue;
+      }
+      const agentId = ch.agentIds[0]!;
+      const current = bestByAgent.get(agentId);
+      if (!current) {
+        bestByAgent.set(agentId, ch);
+        continue;
+      }
+      // Pinned first, then most recent activity, then stable by id.
+      const currentScore =
+        Number(current.pinned) * 1e15 +
+        Date.parse(current.lastMessageAt ?? current.createdAt) +
+        (current.id < ch.id ? 1 : -1) * 0;
+      const nextScore =
+        Number(ch.pinned) * 1e15 +
+        Date.parse(ch.lastMessageAt ?? ch.createdAt);
+      if (nextScore > currentScore) {
+        bestByAgent.set(agentId, ch);
+      }
+    }
+    return [...bestByAgent.values(), ...groups];
   }, [channels.data, companyAgentIds]);
 
   const visibleChannels = pinnedFirst(matchingChannels(companyChannels, search));
@@ -326,11 +366,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const timerLabel = formatFocusTimer(timer.seconds);
 
   return (
-    <Sidebar collapsible="icon" {...props}>
+    <Sidebar data-chat-sidebar="true" collapsible="icon" {...props}>
       <SidebarHeader className="gap-2 border-b border-sidebar-border/50 p-2.5 pb-3 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-1.5">
         {/* Top rail: Logo (Company-Switcher) · Focus · Messages · Browser · Unternehmen · collapse */}
         <div className="flex w-full shrink-0 items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-          <CompanySwitcher />
+          <CompanySwitcher showLabel />
           <CompanyLevelChips />
           <Button
             aria-label={
@@ -354,10 +394,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <IconSearch className="size-4" />
             </InputGroupAddon>
             <InputGroupInput
-              aria-label="Search channels"
+              aria-label="Agenten suchen"
               className="placeholder:text-sidebar-foreground/40"
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search…"
+              placeholder="Agenten suchen…"
               value={search}
             />
           </InputGroup>
@@ -378,26 +418,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   className="gap-2 rounded-lg px-2.5 py-2"
-                  onClick={() => void navigate({ to: "/company/new" })}
-                >
-                  <IconBuilding className="size-4" />
-                  New company
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2 rounded-lg px-2.5 py-2"
-                  onClick={() => setGroupOpen(true)}
-                >
-                  <IconUsersGroup className="size-4" />
-                  New group
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2 rounded-lg px-2.5 py-2"
-                  onClick={() =>
-                    void navigate({
-                      to: "/agents",
-                      search: { new: true },
-                    })
-                  }
+                  onClick={() => void navigate({ to: "/settings", hash: "model-one" })}
                 >
                   <IconRobot className="size-4" />
                   New bot
@@ -424,21 +445,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
              * the box has to say so and quote it back — told "you don't have channels yet" while
              * holding a typo, a person reads their conversations as gone.
              */}
+            {/* Empty state: sucht der User nach einem Gespräch und es gibt keinen Treffer. */}
             {searching && visibleChannels.length === 0 ? (
               <div className="order-last py-3 group-data-[collapsible=icon]:hidden">
                 <Empty className="border border-dashed">
                   <EmptyHeader>
-                    <EmptyTitle>No channels match your search</EmptyTitle>
+                    <EmptyTitle>Kein Gespräch passt zu deiner Suche</EmptyTitle>
                     <EmptyDescription className="text-pretty">
-                      Nothing here is named “{search.trim()}”, and nobody has
-                      said it recently either.
+                      Nichts hier heißt „{search.trim()}" und es wurde auch
+                      kürzlich nicht gesagt.
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               </div>
             ) : null}
             {/* Pinned ganz oben — before Arc/Linear/Slack folders and Agents. */}
-            {(!searching || visibleChannels.length > 0) &&
+            {/* oneconv: pinned channels are gone with the channel list. */}
+            {false &&
             pinnedChannels.length > 0 ? (
               <div className="sticky top-0 z-20 order-1 mb-2 bg-sidebar pb-1 group-data-[collapsible=icon]:static group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:px-0">
                 <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
@@ -455,43 +478,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </AnimatePresence>
               </div>
             ) : null}
+            <div className="order-3 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
+              <CompanyAgentsNav
+                query={search}
+                searching={searching}
+                channels={companyChannels}
+              />
+            </div>
             <div className="order-2 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
               <CompanyAppFoldersNav searching={searching} />
             </div>
-            {/* Notes, between app folders and agents. The slot renders nothing when
-                every extension is off, so the sidebar looks unchanged without them. */}
-            <ExtensionsSidebarSlot searching={searching} />
-            <div className="order-3 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-              <CompanyAgentsNav searching={searching} />
-            </div>
-            {(!searching || visibleChannels.length > 0) ? (
-              <div className="order-4 mb-2 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-                <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
-                  Channels
-                </SidebarGroupLabel>
-                {otherChannels.length === 0 && !searching ? (
-                  <p className="px-2 py-1 text-xs text-sidebar-foreground/35 group-data-[collapsible=icon]:hidden">
-                    Chats mit Company-Agents. Andere Bots: Marketplace → Meine
-                    Bots.
-                  </p>
-                ) : (
-                  <AnimatePresence initial={false}>
-                    {otherChannels.map((channel) => (
-                      <ChannelRow
-                        key={channel.id}
-                        animateOrder={animateOrder}
-                        channel={channel}
-                      />
-                    ))}
-                  </AnimatePresence>
-                )}
-              </div>
-            ) : null}
+            {/* oneconv: ein Agent = ein Gespräch. Channels sind in den
+             * Agent-Zeilen in CompanyAgentsNav aufgegangen, eine eigene
+             * Sektion "Gespräche" oder "Channels" braucht es nicht mehr —
+             * sonst steht der gleiche Chat zweimal in der Sidebar. */}
           </SidebarGroup>
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu className="gap-px">
+          <MessagesAppsMenu />
           {timer.running ? (
             <SidebarMenuItem>
               <div
@@ -563,6 +569,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   >
                     <IconChartBar />
                     Usage
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={userMenuItemClassName}
+                    onClick={() => void navigate({ to: "/settings", hash: "handy-verbinden" })}
+                  >
+                    <IconDeviceMobile />
+                    Handy verbinden
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className={userMenuItemClassName}

@@ -11,6 +11,8 @@ export function transcriptMessages(
   messages: readonly Message[],
   seed: Message | null,
 ): readonly Message[] {
+  // oneconv: the hand-over of a rotated conversation is for the model, never for the screen.
+  messages = hideRotationPrimers(messages);
   if (seed === null) {
     return messages;
   }
@@ -18,6 +20,13 @@ export function transcriptMessages(
     return messages;
   }
   return [seed, ...messages];
+}
+
+/** oneconv: rows of a context hand-over (ids "oneconv-primer…"), hidden from every transcript. */
+export function hideRotationPrimers<T extends { id?: unknown }>(messages: readonly T[]): readonly T[] {
+  return messages.some((m) => String(m.id ?? "").startsWith("oneconv-primer"))
+    ? messages.filter((m) => !String(m.id ?? "").startsWith("oneconv-primer"))
+    : messages;
 }
 
 /** The person's message, in the shape the transcript and the agent both take. */
@@ -40,6 +49,10 @@ const firstMessages = new Map<string, string>();
 
 export function stashFirstMessage(channelId: string, text: string): void {
   firstMessages.set(channelId, text);
+  // oneconv: a conversation already on screen takes it too (see ChannelChat).
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("connect:first-message-stashed", { detail: { channelId } }));
+  }
 }
 
 /** Read the pending first message and forget it. Null for a channel opened any other way. */

@@ -1,7 +1,9 @@
 export const THEME_STORAGE_KEY = "connect-theme";
+export const THEME_DEFAULT_MIGRATION_KEY = "connect-theme.default-dark.v2";
 
 export function parseStoredDarkTheme(value: string | null) {
-  return value === "dark";
+  // Dark is the default for new profiles; an explicit light choice is preserved.
+  return value === null || value === "dark";
 }
 
 type ThemeEffects = {

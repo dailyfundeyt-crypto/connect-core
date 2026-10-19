@@ -3,12 +3,24 @@ import {
   IconCode,
   IconItalic,
   IconLink,
+  IconPalette,
   IconStrikethrough,
   IconUnderline,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { NoteMark } from "@/lib/companies/notes";
+
+/** Six text colours. The palette comes from the design tokens; a picker for custom values
+ *  could be added later without disturbing the layout. */
+const COLORS = [
+  "#111827", /* ink */
+  "#2563eb", /* blue */
+  "#0f7b6c", /* green */
+  "#b45309", /* amber */
+  "#b91c1c", /* red */
+  "#7c3aed", /* purple */
+];
 
 /**
  * The formatting bar that floats over a selection.
@@ -24,14 +36,28 @@ import type { NoteMark } from "@/lib/companies/notes";
  */
 export function FormatBubble({
   containerRef,
+  onColor,
+  onBg,
   onLink,
 }: {
   /** The scroll container, so the position is measured in viewport coordinates. */
   containerRef: React.RefObject<HTMLElement | null>;
+  /** Apply a text colour to the selection. Optional so the bubble stays renderable. */
+  onColor?: (color: string | null) => void;
+  /** Apply a background colour to the selection. */
+  onBg?: (color: string | null) => void;
   onLink?: () => void;
 }) {
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
-  const [active, setActive] = useState<Record<string, boolean>>({});
+  const [active, setActive] = useState<Record<string, boolean | string>>({});
+  const bold = Boolean(active.bold);
+  const italic = Boolean(active.italic);
+  const underline = Boolean(active.underline);
+  const strike = Boolean(active.strike);
+  const code = Boolean(active.code);
+  const link = Boolean(active.link);
+  const color = typeof active.color === "string" ? active.color : undefined;
+  const bg = typeof active.bg === "string" ? active.bg : undefined;
 
   const measure = useCallback(() => {
     const selection = window.getSelection();
@@ -103,44 +129,59 @@ export function FormatBubble({
       aria-label="Text formatieren"
     >
       <BubbleButton
-        active={active.bold}
+        active={bold}
         label="Fett"
         onClick={() => run("bold")}
       >
         <IconBold className="size-4" stroke={2} />
       </BubbleButton>
       <BubbleButton
-        active={active.italic}
+        active={italic}
         label="Kursiv"
         onClick={() => run("italic")}
       >
         <IconItalic className="size-4" stroke={1.75} />
       </BubbleButton>
       <BubbleButton
-        active={active.underline}
+        active={underline}
         label="Unterstrichen"
         onClick={() => run("underline")}
       >
         <IconUnderline className="size-4" stroke={1.75} />
       </BubbleButton>
       <BubbleButton
-        active={active.strike}
+        active={strike}
         label="Durchgestrichen"
         onClick={() => run("strike")}
       >
         <IconStrikethrough className="size-4" stroke={1.75} />
       </BubbleButton>
       <BubbleButton
-        active={active.code}
+        active={code}
         label="Code"
         onClick={() => run("code")}
       >
         <IconCode className="size-4" stroke={1.75} />
       </BubbleButton>
+      {onColor || onBg ? (
+        <>
+          <span className="mx-0.5 h-4 w-px bg-white/15" />
+          <ColorSwatches
+            activeColor={color}
+            mode="color"
+            onPick={(color) => onColor?.(color)}
+          />
+          <ColorSwatches
+            activeColor={bg}
+            mode="bg"
+            onPick={(color) => onBg?.(color)}
+          />
+        </>
+      ) : null}
       {onLink ? (
         <>
           <span className="mx-0.5 h-4 w-px bg-white/15" />
-          <BubbleButton label="Link" onClick={onLink}>
+          <BubbleButton active={link} label="Link" onClick={onLink}>
             <IconLink className="size-4" stroke={1.75} />
           </BubbleButton>
         </>
@@ -187,8 +228,8 @@ function BubbleButton({
 }
 
 /** Which marks the current selection already carries, so the buttons show as pressed. */
-function readActiveMarks(): Record<string, boolean> {
-  const out: Record<string, boolean> = {};
+function readActiveMarks(): Record<string, boolean | string> {
+  const out: Record<string, boolean | string> = {};
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return out;
   const range = selection.getRangeAt(0);
@@ -198,5 +239,64 @@ function readActiveMarks(): Record<string, boolean> {
   out.underline = fragment.querySelector("u") !== null;
   out.strike = fragment.querySelector("s, strike, del") !== null;
   out.code = fragment.querySelector("code") !== null;
+  const coloured = fragment.querySelector("span[style*='color']");
+  if (coloured instanceof HTMLElement) out.color = coloured.style.color;
+  const backgrounded = fragment.querySelector("span[style*='background-color']");
+  if (backgrounded instanceof HTMLElement) out.bg = backgrounded.style.backgroundColor;
   return out;
+}
+
+/** A row of colour swatches: text or background, click to apply, second click to clear. */
+function ColorSwatches({
+  activeColor,
+  mode,
+  onPick,
+}: {
+  activeColor: boolean | string | undefined;
+  mode: "color" | "bg";
+  onPick: (color: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <BubbleButton
+        active={open || Boolean(activeColor)}
+        label={mode === "color" ? "Textfarbe" : "Hintergrundfarbe"}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <IconPalette className="size-4" stroke={1.75} />
+      </BubbleButton>
+      {open ? (
+        <div
+          className="absolute left-1/2 top-full mt-1 flex -translate-x-1/2 gap-1 rounded-lg border border-black/10 bg-neutral-900 p-1 shadow-lg"
+        >
+          {COLORS.map((color) => (
+            <button
+              aria-label={color}
+              className="size-5 rounded-full border border-white/20"
+              key={color}
+              onClick={() => {
+                onPick(activeColor === color ? null : color);
+                setOpen(false);
+              }}
+              style={mode === "color" ? { color, backgroundColor: color } : { backgroundColor: color }}
+              title={color}
+              type="button"
+            />
+          ))}
+          <button
+            aria-label="Farbe entfernen"
+            className="ml-1 inline-flex items-center justify-center rounded px-1 text-[10px] text-white/70 hover:bg-white/15"
+            onClick={() => {
+              onPick(null);
+              setOpen(false);
+            }}
+            type="button"
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }

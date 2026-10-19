@@ -1,18 +1,22 @@
 /**
- * Profile hub — opens from the avatar. Company switch lives here (hidden from the main chrome).
+ * Profile hub — opens from the avatar. Profile + company switch in one sheet. The company part
+ * uses the same source as the desktop rail menu (useCompanySwitcher in company-switcher.tsx).
  */
 
 import {
+  IconBuilding,
   IconChevronRight,
   IconCloudUpload,
+  IconPlus,
   IconLogout,
   IconSettings,
   IconWorld,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { UserAvatar } from "@/components/app-sidebar/user-avatar";
+import { CompanyMark, useCompanySwitcher } from "@/components/companies/company-switcher";
 import {
   getLocalProfile,
   type LocalProfile,
@@ -20,37 +24,12 @@ import {
 } from "@/lib/auth/local-profile";
 import { goToSignInAfterSignOut, signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { listCompanies, subscribeCompanies } from "@/lib/companies/store";
 import { cn } from "@/lib/utils";
-
-function readActiveCompanyId(): string | null {
-  try {
-    const raw = window.localStorage.getItem("connect.activeCompanyId");
-    if (!raw) return null;
-    return raw.startsWith('"') ? (JSON.parse(raw) as string) : raw;
-  } catch {
-    return null;
-  }
-}
 
 function useLocalProfileState(): LocalProfile {
   const [profile, setProfile] = useState<LocalProfile>(() => getLocalProfile());
   useEffect(() => subscribeLocalProfile(() => setProfile(getLocalProfile())), []);
   return profile;
-}
-
-function useWorkspaceTick(): number {
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const bump = () => setTick((n) => n + 1);
-    const offs = [subscribeCompanies(bump)];
-    window.addEventListener("connect-active-company", bump);
-    return () => {
-      for (const off of offs) off();
-      window.removeEventListener("connect-active-company", bump);
-    };
-  }, []);
-  return tick;
 }
 
 function BottomSheet({
@@ -123,7 +102,7 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
   const queryClient = useQueryClient();
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const profile = useLocalProfileState();
-  const tick = useWorkspaceTick();
+  const sw = useCompanySwitcher();
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
@@ -132,16 +111,8 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
       ? profile.name.trim()
       : currentUser?.name || currentUser?.email || "Du";
 
-  const activeCompanyId = readActiveCompanyId();
-  const companies = useMemo(() => {
-    void tick;
-    return listCompanies();
-  }, [tick]);
-
-  const setActiveCompany = (id: string) => {
-    window.localStorage.setItem("connect.activeCompanyId", id);
-    window.dispatchEvent(new Event("connect-active-company"));
-  };
+  const { companies, labels } = sw;
+  const activeCompanyId = sw.activeId;
 
   const handleSignOut = useCallback(async () => {
     setSignOutError(null);
@@ -175,42 +146,63 @@ export function ProfileSheet({ open, onClose }: ProfileSheetProps) {
       <div className="border-t border-white/10 pt-2">
         <SectionLabel>Unternehmen wechseln</SectionLabel>
         {companies.length === 0 ? (
-          <p className="px-3 py-2 text-[14px] text-white/40">Noch keine Unternehmen.</p>
+          <p className="px-3 py-2 text-[14px] text-white/40">{labels.empty}</p>
         ) : (
           companies.map((company) => {
             const active = company.id === activeCompanyId;
             return (
               <button
+                aria-current={active ? "true" : undefined}
                 key={company.id}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[16px] active:bg-white/10",
-                  active ? "text-sky-300" : "text-white",
+                  "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left active:bg-white/10",
+                  active && "bg-white/[0.06]",
                 )}
-                onClick={() => setActiveCompany(company.id)}
+                onClick={() => sw.select(company, { navigateTo: false })}
                 type="button"
               >
-                {company.logo ? (
-                  <img
-                    alt=""
-                    className="size-8 rounded-full object-cover ring-1 ring-white/10"
-                    src={company.logo}
-                  />
-                ) : (
-                  <span
-                    className="size-8 rounded-full ring-1 ring-white/10"
-                    style={{ background: company.accent || "#334155" }}
-                  />
-                )}
-                <span className="flex-1 truncate">{company.name}</span>
+                <CompanyMark company={company} size={36} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[16px] text-white">{company.name}</span>
+                  {company.description ? (
+                    <span className="block truncate text-[13px] text-white/45">{company.description}</span>
+                  ) : null}
+                </span>
                 {active ? (
                   <span className="rounded-full bg-sky-400/20 px-2 py-0.5 text-[11px] font-medium text-sky-300">
-                    Aktiv
+                    {labels.active}
                   </span>
                 ) : null}
               </button>
             );
           })
         )}
+        {sw.active ? (
+          <SheetItem
+            icon={<IconBuilding className="size-5" />}
+            label={labels.profile}
+            onClick={() => {
+              onClose();
+              sw.openProfile();
+            }}
+          />
+        ) : null}
+        <SheetItem
+          icon={<IconPlus className="size-5" />}
+          label={labels.create}
+          onClick={() => {
+            onClose();
+            sw.newCompany();
+          }}
+        />
+        <SheetItem
+          icon={<IconSettings className="size-5" />}
+          label={labels.manage}
+          onClick={() => {
+            onClose();
+            sw.manageCompanies();
+          }}
+        />
       </div>
 
       <div className="border-t border-white/10 pt-1">

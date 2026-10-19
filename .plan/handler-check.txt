@@ -1,0 +1,25 @@
+﻿Context around handler:
+handleDeleteNote = async () => {
+    if (!deleteNoteTarget) return;
+    try {
+      await deleteBrainNote(deleteNoteTarget.path);
+      if (companyId) setOpenVaultPath(companyId, null);
+      setDeleteNoteTarget(null);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    } catch (err) {
+      console.error("[Notiz löschen] Fehler:", err);
+    }
+  };
+
+  const createNoteInFolder = async (folder: string = "00 Inbox") => {
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+    try {
+      const { path } = await createBrainNote({
+        folder,
+        title: stamp,
+        content: "",
+      });
+      onOpen(path);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    } catch (err) {
+      console.error(

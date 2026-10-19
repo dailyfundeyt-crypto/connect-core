@@ -1,0 +1,22 @@
+﻿bun : [0.13ms] ".env"
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-05fe077a-f7ce-4a6f-8570-588a32cd4c6a.ps1:100 Zeichen:1
++ bun add next-themes jspdf jszip qrcode react-markdown @radix-ui/react ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([0.13ms] ".env":String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+bun add v1.4.2 (744846f84)
+Resolving dependencies
+error: moving "pako" to cache dir failed
+EPERM: Operation not permitted (NtSetInformationFile())
+  From: .e7445af9d7a64800-90.pako
+    To: pako@1.0.11@@@1
+error: moving "troika-three-text" to cache dir failed
+EPERM: Operation not permitted (NtSetInformationFile())
+  From: .e4d8ff40a3316d5e-A9.troika-three-text
+    To: troika-three-text@0.52.5@@@1
+Resolved, downloaded and extracted [363]
+error: InstallFailed extracting tarball from pako
+
+error: InstallFailed extracting tarball from troika-three-text
+

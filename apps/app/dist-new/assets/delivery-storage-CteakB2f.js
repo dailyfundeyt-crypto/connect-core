@@ -1,0 +1,1 @@
+async function n(t,a,e){const p=e.name.split(".").pop()?.toLowerCase()||"jpg",r=`${a}/delivery-${Date.now()}.${p}`,{error:o}=await t.storage.from("purchases").upload(r,e,{upsert:!0,contentType:e.type||"image/jpeg"});if(o)throw o;const{data:s}=t.storage.from("purchases").getPublicUrl(r);return s.publicUrl}export{n as uploadDeliveryFile};

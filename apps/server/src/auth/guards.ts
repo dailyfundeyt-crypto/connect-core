@@ -7,6 +7,7 @@ import type { ConnectRole } from "./roles";
 export type AuthenticatedActor = {
   id: string;
   email: string;
+  emailVerified?: boolean;
   name?: string | null;
   image?: string | null;
   role: ConnectRole;
@@ -22,6 +23,7 @@ export type AuthService = {
       user: {
         id: string;
         email: string;
+        emailVerified?: boolean;
         name?: string | null;
         image?: string | null;
         /** Set only by a server-verified organization authority. */
@@ -82,6 +84,7 @@ export function createRequireUser(
     context.set("actor", {
       id: session.user.id,
       email: session.user.email,
+      emailVerified: session.user.emailVerified ?? false,
       name: session.user.name,
       image: session.user.image,
       role,

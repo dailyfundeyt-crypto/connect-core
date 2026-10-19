@@ -12,6 +12,7 @@ import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
 import { createBrainRoutes } from "./brain/routes";
+import { createModelOneRoutes } from "./model-one/routes";
 import { createDriveBackupRoutes } from "./drive-backup/routes";
 import { DriveBackupService } from "./drive-backup/service";
 import { createVoiceBridgeRoutes } from "./voice/bridge-routes";
@@ -1222,6 +1223,9 @@ export function createApp(
   // Phase B/C: Bot-CLI → Codex API key / plan proxy + usage dashboard.
   // Settings › Brain: read-only view of the local Brain folder (loopback only, off when serverless).
   app.route("/api/brain", createBrainRoutes(requireUser));
+
+  // Model One: zentraler Orchestrator-Endpoint (Antigravity-CLI + Subagent-Browser).
+  app.route("/api/model-one", createModelOneRoutes(requireUser));
 
   // Connect Notch voice calls + system-wide dispatch menu. Loopback only. Notch auth:
   // X-Connect-Notch: 1 + CONNECT_SINGLE_USER_ID (see bridge-routes).

@@ -7,7 +7,7 @@ import {
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { attachmentModality } from "@/components/channels/chat-messages";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
@@ -16,6 +16,12 @@ import {
   takeFirstMessage,
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
+import {
+  contextSizeChars,
+  FIRST_MESSAGE_EVENT,
+  rotationThresholdChars,
+  takePrimer,
+} from "@/lib/agents/agent-conversation";
 import { agentUsesExternalShell } from "@/lib/agents/agent-shell";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
@@ -221,10 +227,21 @@ function describeAttachments(attachments: readonly Attachment[]): string {
 export function ChannelChat({
   channel,
   runtimeAgentId,
+  header,
+  initialVisible,
+  onRotate,
 }: {
   channel: AgentChannel;
   runtimeAgentId: string;
+  /** oneconv: drawn above the transcript (earlier parts of the agent's conversation). */
+  header?: (info: { hiddenCount: number; showMore: () => void }) => ReactNode;
+  /** oneconv: rows of this part drawn at first; older ones come back via the header. */
+  initialVisible?: number;
+  /** oneconv: context too long — continue in a fresh segment. True when it took the turn. */
+  onRotate?: (input: { text: string; skillInstructions: string[]; messages: readonly unknown[] }) => Promise<boolean>;
 }) {
+  const onRotateRef = useRef(onRotate);
+  onRotateRef.current = onRotate;
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
@@ -602,6 +619,30 @@ export function ChannelChat({
     // used throughout, so the message, the repair and the run cannot land on two different agents.
     const target = agentRef.current;
 
+    /*
+     * oneconv · KONTEXT-ROTATION. A thread too long for the model continues in a fresh segment of the
+     * same conversation (the screen stays, see routes/_authed/_app/agent/$agentId.tsx). Only for runs
+     * that hand the model this thread; CLI bots keep their own sessions. Files stay in this thread.
+     */
+    if (
+      onRotateRef.current &&
+      attachments.length === 0 &&
+      !shouldUseModelRouter(runtimeAgentId) &&
+      !agentUsesExternalShell(runtimeAgentId) &&
+      contextSizeChars(target.messages as never) > rotationThresholdChars()
+    ) {
+      const handled = await onRotateRef.current({ text: trimmed, skillInstructions, messages: target.messages });
+      if (handled) return;
+    }
+    // oneconv: the hand-over of a rotated segment goes first (never drawn, see transcriptMessages).
+    const primer = takePrimer(channel.id);
+    if (primer) {
+      // A user/assistant pair, not a system row: built-in runtimes drop system rows on the way to the
+      // model. Both carry the oneconv-primer id prefix, so no transcript ever draws them.
+      target.addMessage({ content: primer, id: `oneconv-primer-${newId()}`, role: "user" });
+      target.addMessage({ content: "Verstanden – ich mache nahtlos weiter.", id: `oneconv-primer-ack-${newId()}`, role: "assistant" });
+    }
+
     setRunError(null);
     turnFailure.current = null;
     assistantMessagesBeforeRun.current = new Set(
@@ -811,6 +852,18 @@ export function ChannelChat({
   const sayRef = useRef(say);
   sayRef.current = say;
 
+  /* oneconv: a task sent to this Bot while its conversation is open lands here right away. */
+  useEffect(() => {
+    const onStash = (event: Event) => {
+      const id = (event as CustomEvent<{ channelId?: string }>).detail?.channelId;
+      if (id !== channel.id) return;
+      const text = takeFirstMessage(channel.id);
+      if (text) void sayRef.current(text).catch(() => undefined);
+    };
+    window.addEventListener(FIRST_MESSAGE_EVENT, onStash);
+    return () => window.removeEventListener(FIRST_MESSAGE_EVENT, onStash);
+  }, [channel.id]);
+
   /**
    * Component buttons speak as user turns without forcing every transcript card to re-render.
    *
@@ -866,6 +919,8 @@ export function ChannelChat({
           // Readiness is handled by `say`; deletion is the only disabled-chat state.
           disabled={!channel.active}
           messages={transcriptMessages(agent.messages, seed)}
+          {...(header ? { header } : {})}
+          {...(initialVisible ? { initialVisible } : {})}
           notice={
             channel.active ? null : (
               <p className="pb-2 text-sm text-muted-foreground" role="status">

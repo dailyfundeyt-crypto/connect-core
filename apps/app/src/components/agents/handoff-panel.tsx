@@ -49,7 +49,24 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
   const hiddenAgents = useQuery(agentListQueryOptions(true));
   const setGrant = useMutation(setHandoffGrantMutationOptions(queryClient));
 
-  if (handoff.isPending || !handoff.data) return null;
+  /*
+   * Vorher `return null` – bei Ladefehler (z. B. Handy/Vercel) oder ohne Kandidaten blieb der Tab
+   * komplett leer. Jetzt: Laden, ruhiger Hinweis bzw. leerer Zustand (helium-mobiletabs 17.10.).
+   */
+  if (handoff.isPending) return <p className="text-muted-foreground text-sm">Lade Handoff …</p>;
+  if (!handoff.data) {
+    return (
+      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
+        <p className="font-medium text-foreground">Handoff gerade nicht abrufbar</p>
+        <p className="mt-1 text-muted-foreground text-xs">
+          {handoff.error instanceof Error ? handoff.error.message : "Bitte später erneut öffnen."}
+        </p>
+        <button className="mt-2 text-xs font-medium underline" onClick={() => void handoff.refetch()} type="button">
+          Erneut versuchen
+        </button>
+      </div>
+    );
+  }
   const { enabled, canGrant, reachable, grantable } = handoff.data;
 
   // A Bot may not be granted itself, and the server refuses it, so it is not offered here either.
@@ -62,7 +79,18 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
   });
 
   // Nothing to say to somebody who cannot change it and has nothing to read.
-  if (!canGrant && reachable.length === 0) return null;
+  if (!canGrant && reachable.length === 0) {
+    return (
+      <Empty className="border border-dashed">
+        <EmptyHeader>
+          <EmptyTitle>Keine Weitergabe eingerichtet</EmptyTitle>
+          <EmptyDescription>
+            Dieser Agent darf noch keine anderen Agents um Hilfe bitten. Freigeben kann das ein Administrator.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
   return (
     <section className="grid gap-2">

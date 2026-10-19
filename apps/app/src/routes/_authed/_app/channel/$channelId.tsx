@@ -5,7 +5,8 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { resolveChannelAgents, soloAgentOf } from "@/lib/agents/agent-conversation";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -45,7 +46,7 @@ const SCREEN_PANEL_WIDTH = 400;
 
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
-  component: RouteComponent,
+  component: ChannelRedirect,
 });
 
 function RouteComponent() {
@@ -157,9 +158,9 @@ function RouteComponent() {
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action.
-          <ComputerViewPanel agentId={agentId} name={channel?.data?.name} />
+          <ComputerViewPanel agentId={agentId} key="watch" name={channel?.data?.name} />
         ) : (
-          <AgentProfile agentId={agentId} />
+          <AgentProfile agentId={agentId} key="profile" />
         )
       }
     >
@@ -281,4 +282,56 @@ function ChannelBody({
       runtimeAgentId={runtimeAgentId}
     />
   );
+}
+
+
+/**
+ * oneconv: there are no channels to open any more, only agents. An old /channel/<id> link (the
+ * Big-Boss link, notifications, bookmarks) goes to the conversation of the agent it was with — even
+ * when that channel was deleted since. Group channels (several agents) stay as they were.
+ */
+function ChannelRedirect() {
+  const { channelId } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  const channel = useQuery({ ...channelQueryOptions(channelId), retry: false });
+  const [state, setState] = useState<"resolving" | "group" | "missing">("resolving");
+  const goTo = (agentId: string) =>
+    void navigate({
+      to: "/agent/$agentId",
+      params: { agentId },
+      search: { settings: search.settings, watch: search.watch },
+      replace: true,
+    });
+  useEffect(() => {
+    if (channel.isPending) return;
+    const solo = channel.data ? soloAgentOf(channel.data) : null;
+    if (solo) {
+      goTo(solo);
+      return;
+    }
+    if (channel.data) {
+      setState("group");
+      return;
+    }
+    let cancelled = false;
+    void resolveChannelAgents(channelId).then((found) => {
+      if (cancelled) return;
+      if (found && found.agentIds.length === 1 && found.agentIds[0]) goTo(found.agentIds[0]);
+      else setState(found && !found.deleted ? "group" : "missing");
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel.isPending, channel.data, channelId]);
+  if (state === "group") return <RouteComponent />;
+  if (state === "missing") {
+    return (
+      <p className="p-8 text-sm text-muted-foreground" role="status">
+        Dieses Gespräch gibt es nicht mehr. Wähle links einen Agenten.
+      </p>
+    );
+  }
+  return null;
 }

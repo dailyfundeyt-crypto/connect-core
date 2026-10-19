@@ -1,0 +1,6 @@
+﻿Bundle size: 238986
+Has 'Notiz l\u00f6schen': True
+Has 'Notiz konnte nicht gel\u00f6scht werden': False
+Has 'method:"DELETE"': False
+Has 'deleteBrain': False
+Has 'URLSearchParams': False

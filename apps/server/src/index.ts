@@ -46,6 +46,7 @@ import {
 } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
+import { createTunnelGate } from "./tunnel";
 import { createStallGuard } from "./channels/stall-guard";
 import {
   forgetSettledSummaries,
@@ -86,6 +87,7 @@ import {
 import { createDatabase } from "./db/client";
 import { intelligenceChannelMappings } from "./db/schema";
 import { brainTools, callBrainTool } from "./brain/tools";
+import { heliumBrowserTools } from "./helium-sync";
 import { agentHub, agentHubTools, initAgentHub } from "./agent-hub/service";
 import { startPcBridgeWorker } from "./pc-bridge";
 import { setAgentModelResolver } from "./copilot";
@@ -615,6 +617,8 @@ const loadToolsForActor =
     }),
     // Brain tools only for agents pinned in Brain/agents.json; every call is checked there again.
     ...(await brainTools({ botId }).catch(() => [])),
+    // Browser-Tab-Agenten (ProfilmenÃ¼ â€º Connect-Chrome): Helium-Tabs Ã¼ber die Erweiterung Connect Sync.
+    ...(serverless ? [] : heliumBrowserTools()),
     // MCP servers attached to this Bot in Agent → Einstellungen → MCP (Agent Hub).
     ...(await agentHubTools(botId)),
   ];
@@ -1410,10 +1414,17 @@ const isProxiedStream = (data: SocketData): data is StreamData =>
 const asChannelSocket = (ws: { data: SocketData }) =>
   ws as unknown as ChannelSocket;
 
+// Handy-Tunnel (helium-tunnel): Anfragen ueber cloudflared nur mit gekoppeltem Geraet. Siehe tunnel/index.ts.
+const tunnelGate = serverless
+  ? null
+  : createTunnelGate({ port, auth, resolveActor: resolveRequestActor });
+
 if (!serverless) serve<SocketData>({
   hostname: "127.0.0.1",
   port,
   async fetch(request, server) {
+    const gated = tunnelGate ? await tunnelGate.handle(request) : null;
+    if (gated) return gated;
     const url = new URL(request.url);
     const streamBotId = streamPathBotId(url.pathname);
     if (
@@ -1546,6 +1557,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 if (!serverless) console.info(`Connect server listening on http://127.0.0.1:${port}`);
+if (tunnelGate) {
+  void tunnelGate.start();
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => tunnelGate.stop());
+}
 
 /** The Hono app, for vercel-entry.ts. The Bun server above is not started in serverless mode. */
 export { app };

@@ -1,0 +1,94 @@
+﻿bun : $ bun run generate:app-config && bun run --filter '*' build
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-df0789bb-824e-471b-be2c-4884711a5c1e.ps1:99 Zeichen:1
++ bun run build 2>&1 | Out-File -FilePath .plan/build-err.txt -Encoding ...
++ ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ bun run gener...ilter '*' build:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+$ bun --env-file=.env development/scripts/generate-app-config.ts
+connect-landing build: Ôû▓ Next.js 16.3.6 (Turbopack)
+connect-landing build: - Environments: .env.local
+connect-landing build: Ô£ô Running next.config.mjs took 35ms
+connect-landing build: 
+connect-landing build:   Creating an optimized production build ...
+@connect/app build: vite v7.3.6 building client environment for production...
+@connect/app build: transforming...
+connect-landing build: Ô£ô Compiled successfully in 311ms
+connect-landing build:   Skipping validation of types
+connect-landing build:   Finished TypeScript config validation in 14ms ...
+connect-landing build:   Collecting page data using 5 workers ...
+@connect/worker build: Exited with code 0
+connect-landing build:   Generating static pages using 5 workers (0/4) ...
+connect-landing build:   Generating static pages using 5 workers (1/4) 
+connect-landing build:   Generating static pages using 5 workers (2/4) 
+connect-landing build:   Generating static pages using 5 workers (3/4) 
+connect-landing build: Ô£ô Generating static pages using 5 workers (4/4) in 792ms
+connect-landing build:   Finalizing page optimization ...
+@connect/app build: ../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/regexes.js (74:0): A comment
+@connect/app build: 
+@connect/app build: "/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+@connect/app build:  * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+@connect/app build:  * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+@connect/app build: 
+@connect/app build: in "../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+@connect/app build: ../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/util.js (400:0): A comment
+@connect/app build: 
+@connect/app build: "// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+@connect/app build: 
+@connect/app build: in "../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+connect-landing build: 
+connect-landing build: Route (app)
+connect-landing build: Ôöî Ôùï /
+connect-landing build: Ôö£ Ôùï /_not-found
+connect-landing build: Ôöö Ôùï /app
+connect-landing build: 
+connect-landing build: 
+connect-landing build: Ôùï  (Static)  prerendered as static content
+connect-landing build: 
+connect-landing build: Exited with code 0
+@connect/server build: Exited with code 0
+@connect/app build: Ô£ô 17080 modules transformed.
+@connect/app build: Ô£ù Build failed in 16.72s
+@connect/app build: error during build:
+@connect/app build: [vite:esbuild] Transform failed with 3 errors:
+@connect/app build: C:/Users/Kunc GmbH/Downloads/OpenBot-v2-Helium/apps/app/src/dailyfun/pages/AI.tsx:4342:12: ERROR: The character "}" is not valid inside a JSX element
+@connect/app build: C:/Users/Kunc GmbH/Downloads/OpenBot-v2-Helium/apps/app/src/dailyfun/pages/AI.tsx:4342:14: ERROR: The character "}" is not valid inside a JSX element
+@connect/app build: C:/Users/Kunc GmbH/Downloads/OpenBot-v2-Helium/apps/app/src/dailyfun/pages/AI.tsx:4348:6: ERROR: Expected ")" but found "{"
+@connect/app build: file: C:/Users/Kunc GmbH/Downloads/OpenBot-v2-Helium/apps/app/src/dailyfun/pages/AI.tsx:4342:12
+@connect/app build: 
+@connect/app build: The character "}" is not valid inside a JSX element
+@connect/app build: 4340 |                  )}
+@connect/app build: 4341 |                </div>
+@connect/app build: 4342 |              })}
+@connect/app build:      |              ^
+@connect/app build: 4343 |            </div>
+@connect/app build: 4344 |          </div>
+@connect/app build: 
+@connect/app build: The character "}" is not valid inside a JSX element
+@connect/app build: 4340 |                  )}
+@connect/app build: 4341 |                </div>
+@connect/app build: 4342 |              })}
+@connect/app build:      |                ^
+@connect/app build: 4343 |            </div>
+@connect/app build: 4344 |          </div>
+@connect/app build: 
+@connect/app build: Expected ")" but found "{"
+@connect/app build: 4346 |  
+@connect/app build: 4347 |  
+@connect/app build: 4348 |        {/* Floating bottom container with action cards, mode switcher and input */}
+@connect/app build:      |        ^
+@connect/app build: 4349 |        <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 shadow-2xl ...
+@connect/app build: 4350 |          <div className="max-w-4xl mx-auto p-4 space-y-4">
+@connect/app build: 
+@connect/app build:     at failureErrorWithLog (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\esbuild@0.28.2\node_modules\esbuild\lib\main.js:1752:19)
+@connect/app build:     at <anonymous> (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\esbuild@0.28.2\node_modules\esbuild\lib\main.js:1019:50)
+@connect/app build:     at <anonymous> (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\esbuild@0.28.2\node_modules\esbuild\lib\main.js:886:9)
+@connect/app build:     at handleIncomingPacket (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\esbuild@0.28.2\node_modules\esbuild\lib\main.js:941:12)
+@connect/app build:     at readFromStdout (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\esbuild@0.28.2\node_modules\esbuild\lib\main.js:864:7)
+@connect/app build:     at emit (node:events:100:22)
+@connect/app build:     at addChunk (internal:streams/readable:267:47)
+@connect/app build:     at readableAddChunkPushByteMode (internal:streams/readable:245:18)
+@connect/app build:     at pushAndCheck (internal:streams/native-readable:76:19)
+@connect/app build:     at handleArrayBufferViewResult (internal:streams/native-readable:96:17)
+@connect/app build: Exited with code 1
+error: script "build" exited with code 1

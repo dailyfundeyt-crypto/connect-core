@@ -1,0 +1,13 @@
+﻿First call at index: 7774
+Context:
+deleteBrainNote(deleteNoteTarget.path);
+      if (companyId) setOpenVaultPath(companyId, null);
+      setDeleteNoteTarget(null);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    } catch (err) {
+      console.error("[Notiz löschen] Fehler:", err);
+    }
+  };
+
+  const createNoteInFolder = async (folder: string = "00 Inbox") => {
+    const stamp = new Date().toISOS

@@ -1,0 +1,5 @@
+[pc-bridge] Handy-Brücke aktiv (PC DESKTOP-KA3V060).
+{"type":"computer-isolation","provider":"none","isolation":"off"}
+{"type":"chat-store","mode":"local"}
+[CopilotKit Runtime] telemetry enabled — see https://docs.copilotkit.ai/telemetry to opt out (set COPILOTKIT_TELEMETRY_DISABLED=true).
+Connect server listening on http://127.0.0.1:3001

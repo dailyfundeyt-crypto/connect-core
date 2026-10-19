@@ -1,0 +1,8 @@
+﻿docker-compose :  Container openbot-v2-helium-postgres-1 Starting 
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-24dae67c-8519-409c-8470-c91005875b56.ps1:99 Zeichen:1
++ docker-compose up -d postgres 2>&1 | Out-File -FilePath .plan/docker- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( Container open...res-1 Starting :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ Container openbot-v2-helium-postgres-1 Started 

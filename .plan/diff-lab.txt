@@ -1,0 +1,7 @@
+﻿git : fatal: option '--stat' must come before non-option arguments
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-71d5cead-95a4-43c2-bc92-15eb64cc2397.ps1:99 Zeichen:1
++ git diff HEAD apps/app/src/components/companies/lab-tools-nav.tsx --s ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (fatal: option '...ption arguments:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

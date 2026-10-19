@@ -1,0 +1,10 @@
+﻿(
+        <DeleteConfirmDialog
+          confirmWord={deleteNoteTarget.name}
+          description={`Möchtest du die Notiz „${deleteNoteTarget.name}.md“ wirklich löschen? Der Server legt vorher eine Sicherung in „.connect-history/“ an, sodass du den Schritt rückgängig machen kannst.`}
+          onConfirm={handleDeleteNote}
+          onOpenChange={(open) => !open && setDeleteNoteTarget(null)}
+          open={Boolean(deleteNoteTarget)}
+          title="Notiz löschen"
+        />
+      ) : 

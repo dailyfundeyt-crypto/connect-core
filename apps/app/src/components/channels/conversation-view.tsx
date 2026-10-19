@@ -47,6 +47,8 @@ export function ConversationView({
   onStop,
   voiceAgentName,
   voiceAgentId,
+  header,
+  initialVisible,
 }: {
   messages: readonly Message[];
   busy?: boolean;
@@ -110,6 +112,10 @@ export function ConversationView({
   /** Meet-style voice call target (company CTO or the channel coworker). */
   voiceAgentName?: string;
   voiceAgentId?: string;
+  /** oneconv: drawn above the transcript rows (earlier parts of the conversation). */
+  header?: (info: { hiddenCount: number; showMore: () => void }) => ReactNode;
+  /** oneconv: rows drawn at first; the rest come back through `header`. */
+  initialVisible?: number;
 }) {
   const [voiceOpen, setVoiceOpen] = useState(false);
 
@@ -515,6 +521,8 @@ export function ConversationView({
           }}
           queued={queued}
           restoring={restoring}
+          {...(header ? { header } : {})}
+          {...(initialVisible ? { initialVisible } : {})}
           {...(stopped ? { stopped } : {})}
         />
       </div>

@@ -110,7 +110,20 @@ export function ConnectorGallery({
       </div>
 
       {catalogQuery.isError ? (
-        <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-destructive text-sm">{(catalogQuery.error as Error).message}</p>
+        /*
+         * Verbinder (MCP) laufen auf dem PC (localhost:3101, nur lokal). Auf der Handy-Version bzw.
+         * über eine fremde Adresse gibt es sie nicht – ruhiger Hinweis statt rotem Fehler (17.10.).
+         */
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm" role="status">
+          <p className="font-medium text-foreground">Verbinder liegen auf deinem PC</p>
+          <p className="mt-1 text-muted-foreground text-[13px] leading-snug">
+            Öffne Connect auf dem PC (localhost:3101) oder auf dem Handy über den QR-Code der Connect App, um Verbinder zu sehen und ein- oder auszuschalten.
+          </p>
+          <p className="mt-1 text-muted-foreground/70 text-[11px]">{(catalogQuery.error as Error).message}</p>
+          <button className="mt-2 text-xs font-medium underline" onClick={() => void catalogQuery.refetch()} type="button">
+            Erneut versuchen
+          </button>
+        </div>
       ) : null}
       {catalogQuery.isLoading ? <p className="text-muted-foreground text-sm">Lade Verbinder …</p> : null}
 

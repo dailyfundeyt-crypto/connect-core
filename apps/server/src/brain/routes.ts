@@ -8,6 +8,9 @@ import {
   brainLocation,
   brainRootFor,
   brainRootFromEnv,
+  createBrainFolder,
+  deleteBrainFile,
+  deleteBrainFolder,
   gitHead,
   isValidSlug,
   listAllMarkdown,
@@ -23,7 +26,9 @@ import {
   searchMarkdown,
   vaultRootFor,
   writeMarkdown,
+  coreOf,
 } from "./store";
+import { accessFor, dashboard, readRoutines, resumeRoutine, runRoutine, startPulse, toggleNeed, worldOf } from "./maps";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const LOOPBACK_IP = /^(127\.|::1$|::ffff:127\.)/;
@@ -64,7 +69,7 @@ const localOnly: MiddlewareHandler = async (context, next) => {
 
 type BrainActivity = { reads: number; writes: number; denied: number; last: string | null; lastRead: string | null; lastWrite: string | null };
 
-const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp" };
+const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", svg: "image/svg+xml", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
 
 export function createBrainRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
@@ -95,7 +100,8 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
       vaultPath: vaultRootFor(brain.root),
       files: files.length,
       vaultFiles: all.length - files.length,
-      head: await gitHead(brain.root),
+      head: await gitHead(coreOf(brain.root)),
+      core: worldOf(brain.root).prefix,
     });
   });
 
@@ -189,6 +195,77 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
     }
   });
 
+  /*
+   * The Brain's `/note` endpoint already builds parent folders on the way to a
+   * file, but a folder created that way comes with a placeholder file the sidebar
+   * would render as a real note. This endpoint creates the folder on its own --
+   * an empty directory with a `.gitkeep` -- so the rail's "Neuer Notiz-Ordner"
+   * lands the user's structure without inventing a file to drag it into existence.
+   *
+   * Re-creating an existing folder is a no-op (see `createBrainFolder`), so a
+   * retried dialog does not error.
+   */
+  app.put("/folder", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    if (!(context.req.header("content-type") ?? "").includes("application/json")) {
+      return context.json({ error: "JSON erwartet." }, 415);
+    }
+    const body = (await context.req.json().catch(() => null)) as
+      | { path?: unknown }
+      | null;
+    if (!body || typeof body.path !== "string") {
+      return context.json({ error: "Pfad fehlt." }, 400);
+    }
+    try {
+      const created = await createBrainFolder(brain.root, body.path);
+      return context.json({ available: true, ...created });
+    } catch (error) {
+      if (error instanceof BrainPathError) return context.json({ error: error.message }, 400);
+      throw error;
+    }
+  });
+
+  app.delete("/folder", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const pathParam = context.req.query("path");
+    if (!pathParam || typeof pathParam !== "string") {
+      return context.json({ error: "Pfad fehlt." }, 400);
+    }
+    try {
+      const result = await deleteBrainFolder(brain.root, pathParam);
+      return context.json({ available: true, ...result });
+    } catch (error) {
+      if (error instanceof BrainPathError) return context.json({ error: error.message }, 400);
+      throw error;
+    }
+  });
+
+  /*
+   * Delete a single markdown file. Same path contract as `PUT /note`:
+   * the URL query must point to an existing `.md` file under the Brain
+   * root (no `Vault/`, no `..`, no dotfiles), the safety backup in
+   * `.connect-history/` is taken before the unlink so the user can undo
+   * from the editor's history, and `BrainPathError` reaches the client
+   * as a 400 with the same wording the other endpoints already use.
+   */
+  app.delete("/note", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const pathParam = context.req.query("path");
+    if (!pathParam || typeof pathParam !== "string") {
+      return context.json({ error: "Pfad fehlt." }, 400);
+    }
+    try {
+      const result = await deleteBrainFile(brain.root, pathParam);
+      return context.json({ available: true, ...result });
+    } catch (error) {
+      if (error instanceof BrainPathError) return context.json({ error: error.message }, 400);
+      throw error;
+    }
+  });
+
   app.get("/graph", async (context) => {
     const brain = await root();
     if (!brain.available) return context.json({ ...unavailable(brain.reason), nodes: [], edges: [] });
@@ -234,12 +311,73 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
     return context.json({ available: true, hits: await searchMarkdown(brain.root, q) });
   });
 
+  /**
+   * Lists the markdown files whose YAML frontmatter declares `template: true`.
+   * The picker on the WebApp side uses this to show "Aus Vorlage erstellen"
+   * without re-reading every file. A file shows up here if its first
+   * frontmatter line after `---` is the literal `template: true`; anything
+   * else is treated as a regular note.
+   */
+  app.get("/templates", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json({ ...unavailable(brain.reason), templates: [] });
+    const files = await listAllMarkdown(brain.root);
+    const templates: { path: string; mtime: string }[] = [];
+    for (const file of files) {
+      try {
+        const content = await readMarkdown(brain.root, file.path);
+        if (content.readOnly) continue;
+        const head = content.content.slice(0, 4096);
+        if (/^---\s*[\s\S]*?^template:\s*true\s*$/m.test(head)) {
+          templates.push({ path: file.path, mtime: file.mtime });
+        }
+      } catch {
+        // A file the Brain can list but not read should not block the rest.
+      }
+    }
+    templates.sort((a, b) => a.path.localeCompare(b.path));
+    return context.json({ available: true, templates });
+  });
+
+  /**
+   * Fetches a remote page on behalf of the editor and returns a Markdown
+   * preview. The browser cannot do this directly because of CORS, so the
+   * server acts as a one-shot proxy: it pulls the URL, parses the title and
+   * the first paragraphs, and hands the user a Markdown snippet ready to
+   * drop into a note. The user can still edit the result before saving, so
+   * the clip is a starting point rather than a verbatim copy.
+   */
+  app.get("/webclip", async (context) => {
+    const url = (context.req.query("url") ?? "").trim();
+    if (!/^https?:\/\//i.test(url)) {
+      return context.json({ available: true, ok: false, error: "Ungültige URL" }, 400);
+    }
+    try {
+      const response = await fetch(url, {
+        headers: { "user-agent": "Connect-Brain-Webclip/1.0" },
+        redirect: "follow",
+      });
+      if (!response.ok) {
+        return context.json({ available: true, ok: false, error: `HTTP ${response.status}` });
+      }
+      const html = await response.text();
+      const preview = htmlToMarkdownPreview(html, url);
+      return context.json({ available: true, ok: true, ...preview });
+    } catch (err) {
+      return context.json({
+        available: true,
+        ok: false,
+        error: err instanceof Error ? err.message : "Webclip fehlgeschlagen",
+      });
+    }
+  });
+
   app.get("/log", async (context) => {
     const brain = await root();
     if (!brain.available) return context.json({ ...unavailable(brain.reason), entries: [] });
     const agent = context.req.query("agent");
     const limit = Math.min(Math.max(Number(context.req.query("limit") ?? 50) || 50, 1), 500);
-    let entries = await readLog(brain.root);
+    let entries = await readLog(coreOf(brain.root));
     if (agent) entries = entries.filter((entry) => entry.agent === agent);
     return context.json({ available: true, entries: entries.reverse().slice(0, limit) });
   });
@@ -247,7 +385,7 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
   app.get("/agents", async (context) => {
     const brain = await root();
     if (!brain.available) return context.json({ ...unavailable(brain.reason), agents: [], areas: [...BRAIN_AREAS] });
-    const [config, log, folders] = await Promise.all([readAgents(brain.root), readLog(brain.root), memoryFolders(brain.root)]);
+    const [config, log, folders] = await Promise.all([readAgents(coreOf(brain.root)), readLog(coreOf(brain.root)), memoryFolders(coreOf(brain.root))]);
     const activity: Record<string, BrainActivity> = {};
     for (const entry of log) {
       const slot = (activity[entry.agent] ??= { reads: 0, writes: 0, denied: 0, last: null, lastRead: null, lastWrite: null });
@@ -278,13 +416,14 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
     const body = (await context.req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return context.json({ error: "JSON erwartet." }, 400);
     try {
-      const saved = await saveAgentScopes(brain.root, {
+      const saved = await saveAgentScopes(coreOf(brain.root), {
         slug,
         name: body.name as string | undefined,
         kind: body.kind as string | undefined,
         connectAgentId: body.connectAgentId as string | undefined,
         read: body.read,
         write: body.write,
+        files: body.files,
       });
       return context.json({ available: true, ...saved });
     } catch (error) {
@@ -293,5 +432,126 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
     }
   });
 
+  /* ---------------------------------------------------------------- MAPS (Screen + Pulse) */
+  const jsonBody = async (context: { req: { header: (n: string) => string | undefined; json: () => Promise<unknown> } }) => {
+    if (!(context.req.header("content-type") ?? "").includes("application/json")) return null;
+    return (await context.req.json().catch(() => null)) as Record<string, unknown> | null;
+  };
+
+  app.get("/maps", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason));
+    return context.json(await dashboard(brain.root));
+  });
+
+  app.get("/access", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const p = context.req.query("path") ?? "";
+    if (!p || p.includes("..") || p.length > 400) return context.json({ error: "Ungueltiger Pfad." }, 400);
+    return context.json({ available: true, ...(await accessFor(brain.root, p)) });
+  });
+
+  app.post("/pulse/run", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const body = await jsonBody(context);
+    if (!body || typeof body.name !== "string") return context.json({ error: "Name fehlt." }, 400);
+    const { routines } = await readRoutines(worldOf(brain.root).core);
+    const routine = routines.find((r) => r.name === body.name);
+    if (!routine) return context.json({ error: "Routine nicht gefunden." }, 404);
+    return context.json({ available: true, ...(await runRoutine(brain.root, routine, "hand")) });
+  });
+
+  app.post("/pulse/resume", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const body = await jsonBody(context);
+    if (!body || typeof body.name !== "string") return context.json({ error: "Name fehlt." }, 400);
+    await resumeRoutine(brain.root, body.name.slice(0, 60));
+    return context.json({ available: true });
+  });
+
+  /** Nur Stefan (eingeloggt, lokal): einen Punkt in Braucht-dich ab- oder aufhaken. Agenten haben dafuer kein Tool. */
+  app.put("/needs", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const body = await jsonBody(context);
+    if (!body || typeof body.index !== "number" || typeof body.done !== "boolean") return context.json({ error: "index und done fehlen." }, 400);
+    try {
+      await toggleNeed(worldOf(brain.root).core, body.index, body.done);
+      return context.json({ available: true });
+    } catch (error) {
+      return context.json({ error: (error as Error).message }, 400);
+    }
+  });
+
+  startPulse(async () => {
+    const brain = await root();
+    return brain.available ? brain.root : null;
+  });
+
   return app;
+}
+
+/**
+ * Pulls a title and a few paragraphs from a remote HTML page and turns them
+ * into a Markdown snippet. Intentionally simple: the user can edit the
+ * result before saving, and the snippet is short enough to fit in a note
+ * without scrolling. The server runs this on the user's behalf so the
+ * browser does not have to fight CORS for every preview.
+ */
+function htmlToMarkdownPreview(
+  html: string,
+  url: string,
+): { title: string; markdown: string; siteName: string } {
+  const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : url;
+  const siteNameMatch = /<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i.exec(html);
+  const siteName = siteNameMatch ? decodeEntities(siteNameMatch[1]) : new URL(url).hostname;
+
+  /*
+   * Strip scripts, styles, and other non-content tags before extracting text.
+   * We do not bring a full HTML parser in for this; the regex is good enough
+   * to drop the obvious noise and keep things short.
+   */
+  const cleaned = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, "");
+
+  /*
+   * Capture `<p>…</p>` and `<h2>…</h2>` runs from the body. Each match becomes
+   * a line in the snippet. We cap at ten because the goal is a quick summary,
+   * not a full copy.
+   */
+  const matches: { tag: "h" | "p"; text: string }[] = [];
+  const blockRegex = /<(h[1-3]|p)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRegex.exec(cleaned)) !== null) {
+    const tag = m[1].toLowerCase();
+    const text = decodeEntities(stripTags(m[2])).replace(/\s+/g, " ").trim();
+    if (!text || text.length < 4) continue;
+    matches.push({ tag: tag.startsWith("h") ? "h" : "p", text: text.slice(0, 400) });
+    if (matches.length >= 10) break;
+  }
+
+  const markdown = matches
+    .map((entry) => (entry.tag === "h" ? `## ${entry.text}` : entry.text))
+    .join("\n\n");
+  return { title, markdown: markdown || title, siteName };
+}
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]+>/g, "");
+}
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
 }

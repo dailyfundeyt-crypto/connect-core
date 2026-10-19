@@ -1,0 +1,35 @@
+﻿bun : $ bun --bun node_modules/vite/bin/vite.js build
+In C:\Users\Kunc GmbH\AppData\Local\Temp\ps-script-e873cc33-1e63-4c06-84c3-8fac9826a825.ps1:100 Zeichen:1
++ bun run build 2>&1 | Out-String -Width 200 | Out-File -FilePath "C:\U ...
++ ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ bun --bun nod...n/vite.js build:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+vite v7.3.6 building client environment for production...
+transforming...
+../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid 
+issues.
+../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "../../node_modules/.bun/zod@4.6.5/node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid 
+issues.
+Ô£ô 3419 modules transformed.
+Ô£ù Build failed in 4.97s
+error during build:
+Could not resolve "../../dailyfun/ConnectApp" from "src/routes/_authed/_app/firmenprofil.tsx?tsr-split=component"
+file: C:/Users/Kunc GmbH/Downloads/OpenBot-v2-Helium/apps/app/src/routes/_authed/_app/firmenprofil.tsx?tsr-split=component
+    at getRollupError (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\rollup@4.63.5\node_modules\rollup\dist\es\shared\parseAst.js:319:45)
+    at error (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\rollup@4.63.5\node_modules\rollup\dist\es\shared\parseAst.js:315:42)
+    at resolveDynamicImport (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\rollup@4.63.5\node_modules\rollup\dist\es\shared\node-entry.js:22519:58)
+    at async <anonymous> (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\node_modules\.bun\rollup@4.63.5\node_modules\rollup\dist\es\shared\node-entry.js:22403:43)
+    at processTicksAndRejections (native:7:39)
+error: script "build" exited with code 1
+

@@ -127,6 +127,19 @@ export const HOTKEYS = [
     combo: { key: "ArrowRight", alt: true },
     webOnly: true,
   },
+  {
+    /*
+     * Cmd/Ctrl+K — quick search across the Planung vault. The same combo is what
+     * every editor since Slack uses for a command palette, so users reach for it
+     * without being told. The settings page picks the entry up by id and renders
+     * the localised combo; the WebApp-only flag is omitted because the shortcut
+     * also exists in the desktop shell (it opens the same dialog there).
+     */
+    id: "vault-search",
+    label: "Schnell-Suche (Planung)",
+    description: "Notiz über Pfad oder Inhalt im Brain-Vault finden.",
+    combo: { key: "k", mod: true },
+  },
 ] as const satisfies readonly Hotkey[];
 
 export type HotkeyId = (typeof HOTKEYS)[number]["id"];

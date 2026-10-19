@@ -2,12 +2,13 @@ import {
   createContext,
   type ReactNode,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useState,
 } from "react";
 import {
   applyDarkTheme,
   parseStoredDarkTheme,
+  THEME_DEFAULT_MIGRATION_KEY,
   THEME_STORAGE_KEY,
 } from "@/lib/theme";
 
@@ -19,11 +20,22 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [dark, setDark] = useState(() =>
-    parseStoredDarkTheme(window.localStorage.getItem(THEME_STORAGE_KEY)),
-  );
+  const [dark, setDark] = useState(() => {
+    try {
+      // Existing installs may carry the old light default. Migrate once, then respect choices.
+      if (window.localStorage.getItem(THEME_DEFAULT_MIGRATION_KEY) !== "1") {
+        window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+        window.localStorage.setItem(THEME_DEFAULT_MIGRATION_KEY, "1");
+        return true;
+      }
+      return parseStoredDarkTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+    } catch {
+      return true;
+    }
+  });
 
-  useEffect(() => {
+  // Apply before paint so switching themes recolors the existing page without a light-frame flash.
+  useLayoutEffect(() => {
     applyDarkTheme(dark, {
       setStoredValue: (key, value) => window.localStorage.setItem(key, value),
       toggleRootClass: (name, force) =>

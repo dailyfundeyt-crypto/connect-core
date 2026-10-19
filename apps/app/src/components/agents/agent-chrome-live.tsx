@@ -13,11 +13,13 @@ export function useAgentChromeFrame(
     active = true,
     intervalMs = 1500,
     profileKind = "default",
+    targetId,
     onUnavailable,
   }: {
     active?: boolean;
     intervalMs?: number;
     profileKind?: "default" | "manus";
+    targetId?: string | null;
     /** Called once when the agent browser stays unreachable (e.g. window closed) — relaunch. */
     onUnavailable?: () => void;
   } = {},
@@ -39,6 +41,7 @@ export function useAgentChromeFrame(
     const tick = async () => {
       try {
         const qs = new URLSearchParams({ agentId, profileKind, t: String(Date.now()) });
+        if (targetId) qs.set("targetId", targetId);
         const res = await fetch(`/api/connect/agent-chrome/screenshot?${qs}`, {
           credentials: "include",
           cache: "no-store",
@@ -77,7 +80,7 @@ export function useAgentChromeFrame(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [active, agentId, intervalMs, profileKind]);
+  }, [active, agentId, intervalMs, profileKind, targetId]);
 
   useEffect(
     () => () => {
@@ -101,16 +104,71 @@ function safeDecode(value: string) {
 export async function focusAgentChrome(
   agentId: string,
   profileKind: "default" | "manus" = "default",
+  targetId?: string | null,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch("/api/connect/agent-chrome/focus", {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentId, profileKind }),
+      body: JSON.stringify({ agentId, profileKind, targetId }),
     });
     const body = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
     return { ok: Boolean(res.ok && body?.ok), error: body?.error };
+  } catch {
+    return { ok: false, error: "Agent-Browser nicht erreichbar." };
+  }
+}
+
+export type AgentChromeTab = { id: string; title: string; url: string };
+export type AgentChromeControlAction =
+  | { action: "click"; x: number; y: number; button?: "left" | "middle" | "right"; clickCount?: number }
+  | { action: "scroll"; x: number; y: number; deltaX: number; deltaY: number }
+  | { action: "text"; text: string }
+  | { action: "key"; key: string; code: string; modifiers: number }
+  | { action: "navigate"; url: string }
+  | { action: "reload" };
+
+export async function listAgentChromeTabs(
+  agentId: string,
+  profileKind: "default" | "manus" = "default",
+): Promise<{ ok: boolean; tabs: AgentChromeTab[]; error?: string }> {
+  try {
+    const qs = new URLSearchParams({ agentId, profileKind });
+    const response = await fetch(`/api/connect/agent-chrome/tabs?${qs}`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    const body = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      tabs?: AgentChromeTab[];
+      error?: string;
+    } | null;
+    return {
+      ok: Boolean(response.ok && body?.ok),
+      tabs: Array.isArray(body?.tabs) ? body.tabs : [],
+      error: body?.error,
+    };
+  } catch {
+    return { ok: false, tabs: [], error: "Agent-Browser nicht erreichbar." };
+  }
+}
+
+export async function controlAgentChrome(
+  agentId: string,
+  targetId: string,
+  input: AgentChromeControlAction,
+  profileKind: "default" | "manus" = "default",
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await fetch("/api/connect/agent-chrome/control", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId, profileKind, targetId, ...input }),
+    });
+    const body = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+    return { ok: Boolean(response.ok && body?.ok), error: body?.error };
   } catch {
     return { ok: false, error: "Agent-Browser nicht erreichbar." };
   }
@@ -123,6 +181,7 @@ export function AgentChromeLive({
   imgClassName,
   fallback,
   active = true,
+  targetId,
   onUnavailable,
 }: {
   agentId: string;
@@ -132,9 +191,10 @@ export function AgentChromeLive({
   /** Rendered until the first frame arrives or when capturing fails. */
   fallback: (error: string | null) => ReactNode;
   active?: boolean;
+  targetId?: string | null;
   onUnavailable?: () => void;
 }) {
-  const { src, error } = useAgentChromeFrame(agentId, { active, intervalMs, onUnavailable });
+  const { src, error } = useAgentChromeFrame(agentId, { active, intervalMs, targetId, onUnavailable });
   if (!src || error) {
     return <>{fallback(error)}</>;
   }

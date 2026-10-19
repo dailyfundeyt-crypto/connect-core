@@ -1,0 +1,1 @@
+CreateObject("WScript.Shell").Run "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\apps\helium-shell\setup\Sync-Connect.ps1"", 0, True

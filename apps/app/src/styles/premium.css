@@ -622,3 +622,110 @@ html.connect-premium.dark:not(.connect-mobile-ui) .cxl-root .cxl-cta {
     transition-duration: 1ms !important;
   }
 }
+
+/* ---------- Chat-Navigation: dezenter Indigo-/Cyan-Akzent ---------- */
+[data-chat-sidebar="true"] {
+  --chat-sidebar-accent: #6574e8;
+  --chat-sidebar-accent-2: #9b78ec;
+  --chat-sidebar-wash: rgba(101, 116, 232, 0.09);
+  --chat-sidebar-line: rgba(101, 116, 232, 0.18);
+  --chat-sidebar-focus: rgba(101, 116, 232, 0.2);
+}
+
+.dark [data-chat-sidebar="true"] {
+  --chat-sidebar-accent: #71c8f5;
+  --chat-sidebar-accent-2: #b297ff;
+  --chat-sidebar-wash: rgba(113, 200, 245, 0.09);
+  --chat-sidebar-line: rgba(113, 200, 245, 0.2);
+  --chat-sidebar-focus: rgba(113, 200, 245, 0.22);
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-inner"] {
+  background:
+    radial-gradient(ellipse 95% 34% at 0% 0%, var(--chat-sidebar-wash), transparent 78%),
+    var(--sidebar);
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-header"] {
+  background: linear-gradient(112deg, var(--chat-sidebar-wash), transparent 78%);
+  border-bottom-color: var(--chat-sidebar-line) !important;
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-group-label"] {
+  color: color-mix(in srgb, var(--chat-sidebar-accent) 52%, var(--sidebar-foreground)) !important;
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-menu-button"] {
+  transition:
+    background-color 160ms ease,
+    box-shadow 180ms ease,
+    color 160ms ease,
+    transform 140ms ease;
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-menu-button"]:hover:not([data-active="true"]) {
+  background: var(--chat-sidebar-wash) !important;
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-menu-button"][data-active="true"] {
+  background: linear-gradient(
+    100deg,
+    var(--chat-sidebar-wash),
+    color-mix(in srgb, var(--chat-sidebar-accent-2) 8%, transparent)
+  ) !important;
+  box-shadow:
+    inset 2px 0 0 var(--chat-sidebar-accent),
+    inset 0 0 0 1px var(--chat-sidebar-line);
+  color: var(--sidebar-foreground) !important;
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-menu-button"][data-active="true"] svg {
+  color: var(--chat-sidebar-accent);
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="input-group"] {
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="input-group"]:focus-within {
+  border-color: var(--chat-sidebar-accent) !important;
+  box-shadow: 0 0 0 3px var(--chat-sidebar-focus);
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-header"] button[aria-label="Create"] {
+  color: var(--chat-sidebar-accent);
+  box-shadow: inset 0 0 0 1px var(--chat-sidebar-line);
+}
+
+html:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-footer"] {
+  border-top: 1px solid var(--chat-sidebar-line);
+  background: linear-gradient(0deg, var(--chat-sidebar-wash), transparent 88%);
+}
+
+/* The app's premium theme has intentionally stronger global sidebar selectors; keep the
+   chat-specific accent visible there as well. */
+html.connect-premium.dark:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-inner"] {
+  background:
+    radial-gradient(ellipse 95% 34% at 0% 0%, var(--chat-sidebar-wash), transparent 78%),
+    linear-gradient(180deg, #0f0f12 0%, #0b0b0d 100%);
+}
+
+html.connect-premium.dark:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-group-label"] {
+  color: color-mix(in srgb, var(--chat-sidebar-accent) 60%, #fff 40%) !important;
+}
+
+html.connect-premium.dark:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="sidebar-menu-button"][data-active="true"] {
+  background: linear-gradient(
+    100deg,
+    var(--chat-sidebar-wash),
+    color-mix(in srgb, var(--chat-sidebar-accent-2) 8%, transparent)
+  ) !important;
+  box-shadow:
+    inset 2px 0 0 var(--chat-sidebar-accent),
+    inset 0 0 0 1px var(--chat-sidebar-line);
+}
+
+html.connect-premium.dark:not(.connect-mobile-ui) [data-chat-sidebar="true"] [data-slot="input-group"]:focus-within {
+  border-color: var(--chat-sidebar-accent) !important;
+  box-shadow: 0 0 0 3px var(--chat-sidebar-focus) !important;
+}

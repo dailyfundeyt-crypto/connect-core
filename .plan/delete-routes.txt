@@ -1,0 +1,22 @@
+﻿DELETE routes:
+
+--- at 9426 ---
+delete("/folder", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const pathParam = context.req.query("path");
+    if (!pathParam || typeof pathParam !== "string") {
+      return context.json({ error: "Pfad fehlt." }, 400);
+    }
+    try {
+      const result = await deleteBrainFolder(brain.root, pathPar
+--- at 10497 ---
+delete("/note", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const pathParam = context.req.query("path");
+    if (!pathParam || typeof pathParam !== "string") {
+      return context.json({ error: "Pfad fehlt." }, 400);
+    }
+    try {
+      const result = await deleteBrainFile(brain.root, pathParam);

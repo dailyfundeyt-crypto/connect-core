@@ -1,0 +1,1 @@
+﻿"{\"nordwind\":\"https://daily-fun.app\",\"connect\":\"https://app.notion.com\",\"spark\":\"https://app.notion.com\",\"flux\":\"https://dashboard.floaro.com/floaro/products/create\"}"

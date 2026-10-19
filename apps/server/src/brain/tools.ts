@@ -24,7 +24,9 @@ import {
   BrainPathError,
   resolveBrainRoot,
   safeMarkdownPath,
+  coreOf,
 } from "./store";
+import { askHuman } from "./maps";
 
 const MAX_READ_CHARS = 60_000;
 const MAX_WRITE_CHARS = 20_000;
@@ -96,6 +98,8 @@ const writeArgs = z.object({
   content: z.string().min(1).max(MAX_WRITE_CHARS),
 });
 
+const askArgs = z.object({ text: z.string().min(3).max(400).describe("Was Stefan entscheiden, freigeben oder beantworten soll - ein Satz") });
+
 export type BrainToolContext = { botId: string; configuredRoot?: string | null };
 
 /**
@@ -106,7 +110,7 @@ export async function brainTools(context: BrainToolContext): Promise<GrantedTool
   const configured = context.configuredRoot === undefined ? brainRootFromEnv() : context.configuredRoot;
   const initial = await resolveBrainRoot(configured);
   if (!initial.available) return [];
-  const pinned = (await accessForBot(initial.root, context.botId).catch(() => undefined))?.entry;
+  const pinned = (await accessForBot(coreOf(initial.root), context.botId).catch(() => undefined))?.entry;
   if (!pinned) return [];
 
   /** Fresh root and entry for every call: a permission changed a moment ago applies to the next call. */
@@ -117,11 +121,11 @@ export async function brainTools(context: BrainToolContext): Promise<GrantedTool
   ): Promise<string> => {
     const brain = await resolveBrainRoot(configured);
     if (!brain.available) return `${REFUSAL_MARKER} Brain nicht verfügbar.`;
-    const access = await accessForBot(brain.root, context.botId).catch(() => undefined);
+    const access = await accessForBot(coreOf(brain.root), context.botId).catch(() => undefined);
     if (!access) return `${REFUSAL_MARKER} Dieser Agent hat keinen Brain-Zugriff mehr (kein Eintrag in agents.json).`;
     const { entry, projects } = access;
     try {
-      const result = await run(brain.root, entry, projects);
+      const result = await run(coreOf(brain.root), entry, projects);
       return typeof result === "string" ? result : JSON.stringify(result);
     } catch (error) {
       const reason =
@@ -130,7 +134,7 @@ export async function brainTools(context: BrainToolContext): Promise<GrantedTool
           : error instanceof z.ZodError
             ? "Ungültige Eingabe."
             : "Brain-Zugriff fehlgeschlagen.";
-      await logDenied(brain.root, entry.slug, tool, target, reason).catch(() => {});
+      await logDenied(coreOf(brain.root), entry.slug, tool, target, reason).catch(() => {});
       return `${REFUSAL_MARKER} ${reason}`;
     }
   };
@@ -140,7 +144,7 @@ export async function brainTools(context: BrainToolContext): Promise<GrantedTool
     {
       name: "brain_list",
       ref: "brain/list",
-      description: `Listet die Notizen im Brain (Stefans gemeinsames Gedächtnis) und im restlichen Obsidian-Vault (Pfade Vault/<Ordner>/…, nur lesen), die du lesen darfst – Rechte pro Projekt. Dein Kürzel: ${slug}. Starte mit hot.md und index.md.`,
+      description: `Listet die Notizen im Brain (Stefans gemeinsames Gedächtnis) und im restlichen Obsidian-Vault (Pfade Vault/<Ordner>/…, nur lesen), die du lesen darfst – Rechte pro Projekt. Dein Kürzel: ${slug}. Starte mit deiner Karte Maps/${slug}.md (nur deine Bereiche, max. 2 Spruenge), dann hot.md.`,
       parameters: listArgs,
       execute: (args) =>
         guard("brain_list", (args as { folder?: string })?.folder ?? "(alle)", async (root, entry, projects) => {
@@ -243,6 +247,20 @@ export async function brainTools(context: BrainToolContext): Promise<GrantedTool
           await appendLogLine(root, entry.slug, area === "Inbox" ? "inbox" : "write", [relative], `brain_write neu, ${input.content.length} Zeichen`);
           const commit = await gitCommit(root, [relative, "log.md"], `[${entry.slug}] brain_write ${relative}`);
           return { ok: true, path: relative, commit };
+        }),
+    },
+    {
+      name: "brain_ask_human",
+      ref: "brain/ask-human",
+      description: "Bittet Stefan um eine Entscheidung, Freigabe oder Antwort: haengt eine Zeile an Braucht-dich.md an (mit deinem Kuerzel). Nur anhaengen - abhaken darf nur Stefan.",
+      parameters: askArgs,
+      execute: (args) =>
+        guard("brain_ask_human", "Braucht-dich.md", async (root, entry) => {
+          const { text } = askArgs.parse(args ?? {});
+          assertNoSecrets(text);
+          const added = await askHuman(root, entry.slug, text);
+          await appendLogLine(root, entry.slug, "write", ["Braucht-dich.md"], `brain_ask_human: ${text.slice(0, 80)}`);
+          return { ok: true, added };
         }),
     },
   ];

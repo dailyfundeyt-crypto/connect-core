@@ -1,0 +1,15 @@
+{
+  "sidebarHasChannels": 0,
+  "sidebarAgentsLabel": 1,
+  "agentsMenuRows": 0,
+  "redirectDeleted": "http://localhost:3197/agent/agent_b3a45862-1825-469f-ac71-4f114c34432a",
+  "redirectLive": "http://localhost:3197/agent/agent_a9f03485-9891-45ab-acba-2c4e4a171634",
+  "gptTitle": "chat gpt",
+  "gptMoreBtn": "Frühere Nachrichten anzeigen · Gespräch vom 05.10.2026, 19:54",
+  "gptSegmentsShown": 1,
+  "groupUrl": "http://localhost:3197/channel/channel_94c00bb0-4143-4ab2-b499-fa2dd8050845",
+  "searchRows": 1,
+  "afterSendUrl": "http://localhost:3197/agent/agent_a2657859-d47a-428e-95eb-b48f81faf71b",
+  "afterRotateUrl": "http://localhost:3197/agent/agent_a2657859-d47a-428e-95eb-b48f81faf71b",
+  "rotatedSegments": null
+}

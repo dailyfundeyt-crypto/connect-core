@@ -32,7 +32,7 @@ self.CONNECT_SHELL_CONFIG = {
 
   // Company, die benutzt wird, solange Connect noch keine aktive Company gespeichert hat
   // (Connect liest/schreibt localStorage "connect.activeCompanyId").
-  defaultCompanyId: "nordwind",
+  defaultCompanyId: "connect",
 
   // Tab-Sitzung (normale Helium-Fenster) automatisch sichern und beim Start wiederherstellen, falls
   // Helium sie nicht selbst wiederhergestellt hat (session-save.js). false = nur sichern, nie öffnen.
@@ -41,7 +41,7 @@ self.CONNECT_SHELL_CONFIG = {
   // Seed-Companies aus apps/app/src/lib/companies/catalog.ts (eigene Companies: in Connect anlegen)
   // Jeder Eintrag kann mit accentColor/letter ein Rail-Logo erhalten.
   companies: [
-    { id: "nordwind", name: "Nordwind" },
+    { id: "connect", name: "Connect" },
     { id: "lumen", name: "Lumen" },
     { id: "helm", name: "Helm" },
     { id: "pulse", name: "Pulse" },
@@ -50,7 +50,7 @@ self.CONNECT_SHELL_CONFIG = {
   // Rail-Logo pro Company: zeigt einen farbigen, gerundeten Buchstaben-Button
   // (CSS-only, kein PNG nötig). key = company.id.
   companyLogos: {
-    nordwind: { accentColor: "#0D9488", letter: "N" },
+    connect:  { accentColor: "#0D9488", letter: "C" },
     lumen:    { accentColor: "#7C3AED", letter: "L" },
     helm:     { accentColor: "#D97706", letter: "H" },
     pulse:    { accentColor: "#2563EB", letter: "P" },

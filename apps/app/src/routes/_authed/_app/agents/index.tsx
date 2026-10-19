@@ -64,6 +64,7 @@ const agentsSearchSchema = z.object({
   new: z.boolean().optional(),
   agent: z.string().optional(),
   tab: z.enum(["mine", "search", "companies"]).optional(),
+  section: z.enum(["general", "browser", "voice", "keys", "access", "brain", "model", "mcp", "handoff", "routines", "manage"]).optional(),
   browserTab: z.string().optional(),
 });
 
@@ -89,7 +90,7 @@ type CometResult = {
  * prices are read-only; redeem unlocks after an off-app purchase.
  */
 function MarketplaceScreen() {
-  const { new: isCreating, agent: selectedAgentId, tab: tabParam, browserTab } =
+  const { new: isCreating, agent: selectedAgentId, tab: tabParam, section: sectionParam, browserTab } =
     Route.useSearch();
   const navigate = Route.useNavigate();
   const [tab, setTab] = useState<Tab>(tabParam ?? "mine");
@@ -539,6 +540,7 @@ function MarketplaceScreen() {
       />
       <AgentDialog
         agentId={selectedAgentId ?? null}
+        initialSection={sectionParam}
         onClose={close}
         open={showProfile}
       />

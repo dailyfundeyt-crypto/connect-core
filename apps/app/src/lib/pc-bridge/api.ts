@@ -3,7 +3,7 @@ import { client, tryClient } from "@/lib/client";
 
 /** Handy-Brücke: Handy (Vercel) ↔ PC (Connect App) über die Online-Warteschlange. */
 
-export type PcProvider = "codex-cli" | "claude-cli" | "grok-bot";
+export type PcProvider = "codex-cli" | "claude-cli" | "antigravity-cli" | "grok-bot";
 
 export type PcProviderInfo = { kind: PcProvider; label: string; ready: boolean; detail: string; models: string[] };
 
@@ -21,6 +21,8 @@ export type PcBridgeLocalWorker = {
   lastJobAt: string | null;
   providers: PcProviderInfo[];
   grokBotCount: number;
+  /** Erweiterung Connect Sync in Helium (fehlt bei älteren Servern). */
+  helium?: { connected: boolean; lastSeen: string | null; browser: string | null; tabs: number; windows: number; lastPush: string | null; commandsDone: number; commandsFailed: number };
 };
 
 export type PcBridgeStatus =

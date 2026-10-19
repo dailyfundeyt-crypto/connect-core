@@ -76,10 +76,11 @@
       `<text x="12" y="16.5" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#fff">${letter}</text></svg>`;
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
-  function iconEl(t) {
+  function iconEl(t, hasStar) {
     const wrap = document.createElement("span");
     wrap.className = "tab__icon" + (t.icon ? "" : " tab__icon--mono");
     wrap.style.setProperty("--tile", t.color || "#475569");
+    if (hasStar) wrap.classList.add("has-star");
     const img = document.createElement("img");
     img.alt = "";
     img.src = t.icon || monogram(t.title, t.color);
@@ -107,7 +108,7 @@
   }
 
   // ---------- Connect-Routen ----------
-  const companyId = () => connectState.companyId || cfg.defaultCompanyId || (companies[0] && companies[0].id) || "nordwind";
+  const companyId = () => connectState.companyId || cfg.defaultCompanyId || (companies[0] && companies[0].id) || "connect";
   /** URL für einen Connect-Modus – gleiche Ziele wie CompanyLevelChips in apps/app. */
   function levelUrl(level, cid) {
     if (!level || level === 2) return CONNECT + "/";
@@ -117,6 +118,33 @@
   const modeByLevel = (lvl) => modes.find((m) => m.level === lvl);
 
   // ---------- Rendering ----------
+  // ---------- Rail-Logo (dynamisch nach aktiver Company) ----------
+  function renderRailLogo() {
+    const railModes = $("rail-modes");
+    const logoBtn = railModes?.querySelector("[data-mode='home']");
+    if (!logoBtn) return;
+    // Altes Logo-Bild / Fallback entfernen
+    logoBtn.querySelectorAll("img, .rail__logo--fallback, .rail__logo--dyn").forEach((n) => n.remove());
+
+    const cid = companyId();
+    const logoDef = (cfg.companyLogos || {})[cid];
+    if (logoDef) {
+      // CSS-only Company-Logo: farbiger Kreis mit Initialbuchstabe
+      const el = document.createElement("span");
+      el.className = "rail__logo--dyn";
+      el.style.setProperty("--logo-bg", logoDef.accentColor || "#475569");
+      el.textContent = logoDef.letter || cid.charAt(0).toUpperCase();
+      logoBtn.appendChild(el);
+    } else {
+      // Original: PNG mit "C"-Fallback
+      const img = document.createElement("img");
+      img.className = "rail__logo"; img.alt = "Connect"; img.src = "icons/connect-logo.png";
+      img.onerror = () => img.replaceWith(Object.assign(document.createElement("span"),
+        { className: "rail__logo--fallback", textContent: "C" }));
+      logoBtn.appendChild(img);
+    }
+  }
+
   function renderRail() {
     const root = $("rail-modes"); root.replaceChildren();
     for (const m of modes) {
@@ -125,15 +153,18 @@
       b.dataset.mode = m.id; b.title = m.title; b.setAttribute("aria-label", m.title);
       if (m.id === activeMode) b.setAttribute("aria-current", "page");
       if (m.icon === "logo") {
+        // Platzhalterbild – wird nach dem Mount durch renderRailLogo() ersetzt
         const img = document.createElement("img");
         img.className = "rail__logo"; img.alt = "Connect"; img.src = "icons/connect-logo.png";
-        img.onerror = () => img.replaceWith(Object.assign(document.createElement("span"), { className: "rail__logo--fallback", textContent: "C" }));
+        img.onerror = () => img.replaceWith(Object.assign(document.createElement("span"),
+          { className: "rail__logo--fallback", textContent: "C" }));
         b.appendChild(img);
       } else {
         b.appendChild(maskIcon(m.icon));
       }
       root.appendChild(b);
     }
+    renderRailLogo();
     const collapsed = $("shell").classList.contains("is-collapsed");
     $("rail-collapse").title = collapsed ? "Sidebar ausklappen" : "Sidebar verkleinern";
   }
@@ -164,7 +195,7 @@
     for (const t of pinned) {
       const b = document.createElement("button");
       b.type = "button"; b.className = "pin"; b.dataset.id = t.id; b.title = t.url;
-      b.append(iconEl(t), Object.assign(document.createElement("span"), { textContent: t.title }));
+      b.append(iconEl(t, !!t.star), Object.assign(document.createElement("span"), { textContent: t.title }));
       pinRoot.appendChild(b);
     }
     pinRoot.hidden = pinned.length === 0;
@@ -199,7 +230,7 @@
       for (const t of tabs.filter((t) => !t.pinned && (!spaces.length || t.space === activeSpace) && matches(t.title, t.url))) {
         const b = document.createElement("button");
         b.type = "button"; b.className = "tab"; b.dataset.id = t.id; b.title = t.url;
-        b.append(iconEl(t), Object.assign(document.createElement("span"), { className: "tab__label", textContent: t.title }));
+        b.append(iconEl(t, !!t.star), Object.assign(document.createElement("span"), { className: "tab__label", textContent: t.title }));
         if (t.placeholder) b.appendChild(Object.assign(document.createElement("span"), { className: "tab__hint", textContent: "Platzhalter" }));
         list.appendChild(b);
       }
@@ -293,7 +324,7 @@
               const mm = modeByLevel(lvl);
               if (mm && mm.id !== activeMode) { setMode(mm.id); return; }
             }
-            if (companyChanged && activeMode === "company") render();
+            if (companyChanged && activeMode === "company") { render(); renderRailLogo(); }
           }
         }
       };
@@ -361,13 +392,16 @@
   const fail = (err) => toast(String((err && err.message) || err));
 
   // ---------- Erstellen-Menü ("+", wie Connect: New company / group / bot / Market) ----------
-  const CREATE_ITEMS = [
-    { title: "Neue Company", path: "/company/new", icon: "icons/building-2.svg" },
-    { title: "Neue Gruppe", path: "/", icon: "icons/messages-square.svg", hint: "In Connect: + → New group" },
-    { title: "Neuer Bot", path: "/agents?new=true", icon: "icons/zap.svg" },
-    { title: "Market", path: "/market", icon: "icons/app-window.svg" },
-    { title: "Neuer Tab", newTab: true, icon: "icons/plus.svg" },
-  ];
+const CREATE_ITEMS = [
+  { title: "Neue Company", path: "/company/new", icon: "icons/building-2.svg" },
+  { title: "Neue Gruppe", path: "/", icon: "icons/messages-square.svg", hint: "In Connect: + → New group" },
+  { title: "Neuer Bot", path: "/agents?new=true", icon: "icons/zap.svg" },
+  { title: "Market", path: "/market", icon: "icons/app-window.svg" },
+  { title: "Design: Hell", action: "theme-light", icon: "icons/sun.svg", hint: "Helles Design einschalten" },
+  { title: "Design: Dunkel", action: "theme-dark", icon: "icons/moon.svg", hint: "Dunkles Design einschalten" },
+  { title: "Neuer Tab", newTab: true, icon: "icons/plus.svg" },
+  { title: "Split-Browser", split: true, icon: "icons/columns-2.svg", hint: "Zwei URLs in nebeneinander liegenden Helium-Fenstern öffnen" },
+];
   function toggleCreateMenu(force) {
     const menu = $("create-menu");
     const open = force !== undefined ? force : menu.hidden;
@@ -382,6 +416,70 @@
     menu.hidden = !open;
   }
 
+  // ---------- Split-Browser-Dialog (zwei URLs nebeneinander in Helium-Fenstern) -----------
+  let splitDialogEl = null;
+  function openSplitDialog() {
+    if (splitDialogEl) { closeSplitDialog(); return; }
+    const wrap = document.createElement("div");
+    wrap.id = "split-dialog";
+    wrap.className = "split-dialog";
+    wrap.setAttribute("role", "dialog");
+    wrap.setAttribute("aria-label", "Split-Browser öffnen");
+    wrap.innerHTML = `
+      <div class="split-dialog__backdrop" data-split-close="1"></div>
+      <form class="split-dialog__panel" autocomplete="off">
+        <div class="split-dialog__title">Split-Browser</div>
+        <div class="split-dialog__sub">Zwei URLs in nebeneinander liegenden Helium-Fenstern öffnen.</div>
+        <label class="split-dialog__field">
+          <span>Linke URL</span>
+          <input type="url" name="left" required spellcheck="false" placeholder="https://…" />
+        </label>
+        <label class="split-dialog__field">
+          <span>Rechte URL</span>
+          <input type="url" name="right" required spellcheck="false" placeholder="https://…" />
+        </label>
+        <div class="split-dialog__err" data-split-err hidden></div>
+        <div class="split-dialog__actions">
+          <button type="button" class="rail__btn" data-split-close="1">Abbrechen</button>
+          <button type="submit" class="rail__btn rail__btn--solid">Öffnen</button>
+        </div>
+      </form>
+    `;
+    document.body.appendChild(wrap);
+    splitDialogEl = wrap;
+    const form = wrap.querySelector("form");
+    const err = wrap.querySelector("[data-split-err]");
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const left = form.left.value.trim();
+      const right = form.right.value.trim();
+      const ok = (s) => /^https?:\/\//i.test(s);
+      if (!ok(left) || !ok(right)) {
+        err.textContent = "Beide Felder brauchen eine gültige http(s)-URL.";
+        err.hidden = false;
+        return;
+      }
+      err.hidden = true;
+      try {
+        await W.openSplit(left, right);
+        closeSplitDialog();
+      } catch (caught) {
+        err.textContent = (caught && caught.message) || "Konnte Split nicht öffnen.";
+        err.hidden = false;
+      }
+    });
+    wrap.addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-split-close]")) closeSplitDialog();
+    });
+    wrap.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeSplitDialog(); });
+    setTimeout(() => form.left.focus(), 30);
+  }
+  function closeSplitDialog() {
+    if (!splitDialogEl) return;
+    splitDialogEl.remove();
+    splitDialogEl = null;
+  }
+
   // ---------- Events ----------
   document.addEventListener("click", (e) => onActivate(e, false));
   document.addEventListener("auxclick", (e) => { if (e.button === 1) onActivate(e, true); });
@@ -392,6 +490,17 @@
       toggleCreateMenu(false);
       const it = CREATE_ITEMS[Number(createItem.dataset.create)];
       if (it.newTab) { router.newTab().catch(fail); return; }
+      if (it.split) { openSplitDialog(); return; }
+      if (it.action === "theme-light") {
+        localStorage.setItem("connectShell.theme", "light");
+        location.reload();
+        return;
+      }
+      if (it.action === "theme-dark") {
+        localStorage.setItem("connectShell.theme", "dark");
+        location.reload();
+        return;
+      }
       if (it.hint) toast(it.hint);
       router.openConnect(CONNECT + it.path, { newTab }).catch(fail);
       return;
@@ -411,6 +520,12 @@
       const m = modeById(modeBtn.dataset.mode);
       if (!m) return;
       setMode(m.id);
+      // Home-Logo öffnet Connect im normalen Helium-Fenster (User sitzt eh schon im Browser),
+      // die anderen Modi bleiben im Connect-App-Popup (schlanke UI ohne Adressleiste).
+      if (m.id === "home") {
+        W.openWindow(CONNECT + "/", { forceNew: newTab }).catch(fail);
+        return;
+      }
       const url = m.level ? levelUrl(m.level) : CONNECT + "/";
       router.openConnect(url, { level: m.level, newTab }).catch(fail);
       return;
@@ -420,6 +535,7 @@
       const cid = companyBtn.dataset.company;
       connectState = { ...connectState, companyId: cid };
       render();
+      renderRailLogo();
       router.openConnect(levelUrl(4, cid), { level: 4, company: cid, newTab }).catch(fail);
       return;
     }
@@ -432,6 +548,11 @@
     }
     const spaceBtn = e.target.closest(".space[data-space]");
     if (spaceBtn) { activeSpace = spaceBtn.dataset.space; localStorage.setItem(SPACE_KEY, activeSpace); render(); return; }
+    const heliumBtn = e.target.closest("#helium-connect-btn");
+    if (heliumBtn) {
+      W.openConnect(cfg.startUrl, { newTab: true }).catch(fail);
+      return;
+    }
     if (e.target.closest("#new-tab")) { router.newTab().catch(fail); return; }
     const btn = e.target.closest("[data-id]");
     if (!btn) return;

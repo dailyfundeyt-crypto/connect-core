@@ -1,0 +1,1 @@
+import{E as e}from"./index-l4ot6MQQ.js";const o=[["path",{d:"M3 19l18 0",key:"svg-0"}],["path",{d:"M5 7a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v8a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1l0 -8",key:"svg-1"}]],t=e("outline","device-laptop","DeviceLaptop",o);export{t as I};

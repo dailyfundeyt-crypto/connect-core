@@ -47,6 +47,7 @@ import {
 import { cn } from "@/lib/utils";
 import { BlueCheckBadge } from "@/components/companies/blue-check-badge";
 import { CompanyMarketplaceStrip } from "@/components/marketplace/company-marketplace-strip";
+import { SocialPublishCard } from "@/components/social/social-publish-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -546,6 +547,9 @@ export function CompanyProfileX({
         {projectsSlot ? <div className="mt-1">{projectsSlot}</div> : null}
 
         <CompanyMarketplaceStrip companyId={company.id} />
+
+        {/* helium-social: Schalter „Profil öffentlich“ (Connect Social) */}
+        <SocialPublishCard companyId={company.id} />
       </div>
 
       {/* Tabs */}

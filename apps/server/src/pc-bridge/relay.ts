@@ -21,6 +21,8 @@ import {
   saveLink,
   workerFor,
 } from "./store";
+import { installHeliumRoutes } from "./helium-routes";
+import { installBrainRoutes } from "./brain-routes";
 
 const POLL_MS = 700;
 /** Vercel gives the function 300 s; stop a little earlier so the chat gets a clean ending. */
@@ -184,6 +186,7 @@ type AppLike = {
   get: (path: string, ...handlers: Handler[]) => unknown;
   put: (path: string, ...handlers: Handler[]) => unknown;
   delete: (path: string, ...handlers: Handler[]) => unknown;
+  post: (path: string, ...handlers: Handler[]) => unknown;
 };
 
 function actorId(context: Ctx): string | null {
@@ -199,6 +202,10 @@ function actorId(context: Ctx): string | null {
  * DELETE /api/pc-bridge/agents/:agentId
  */
 export function installPcBridgeRoutes(app: AppLike, requireUser: Handler, q: Q) {
+  // „Mein Helium“: Tabs vom PC-Browser + Befehle (siehe helium-routes.ts).
+  installHeliumRoutes(app, requireUser, q);
+  // Brain lesen über den PC (Baum, Datei, Suche – siehe brain-routes.ts).
+  installBrainRoutes(app, requireUser, q);
   const fail = (context: Ctx, error: unknown) => {
     console.error("[pc-bridge]", error);
     return context.json({ error: "Handy-Brücke gerade nicht erreichbar." }, 500);

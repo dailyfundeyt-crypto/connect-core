@@ -181,22 +181,8 @@ export function CompanyAppFoldersNav({
       setSiteMarkAgent(company.id, agentId);
       return;
     }
-    const existing = channels.data?.find((ch) =>
-      ch.agentIds.includes(agentId),
-    );
-    if (existing) {
-      await navigate({
-        to: "/channel/$channelId",
-        params: { channelId: existing.id },
-      });
-      return;
-    }
-    const channel = await createChannel.mutateAsync([agentId]);
-    queryClient.setQueryData(channelKeys.detail(channel.id), channel);
-    await navigate({
-      to: "/channel/$channelId",
-      params: { channelId: channel.id },
-    });
+    // oneconv: the agent's one conversation.
+    await navigate({ to: "/agent/$agentId", params: { agentId } });
   };
 
   const openAgentSettings = (agentId: string) => {

@@ -1,0 +1,29 @@
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: insert into "users" ("id", "email", "name", "image", "email_verified", "groups", "onboarding_step", "onboarding_completed_at", "last_signed_in_at", "created_at", "updated_at") values ($1, $2, $3, default, $4, default, default, default, default, default, default) on conflict ("id") do update set "email" = $5, "name" = $6, "updated_at" = $7
+params: dev-local-user,stefankunc994@gmail.com,Stefan Kunc,false,stefankunc994@gmail.com,Stefan Kunc,2026-10-19T09:21:29.566Z
+  query: "insert into \"users\" (\"id\", \"email\", \"name\", \"image\", \"email_verified\", \"groups\", \"onboarding_step\", \"onboarding_completed_at\", \"last_signed_in_at\", \"created_at\", \"updated_at\") values ($1, $2, $3, default, $4, default, default, default, default, default, default) on conflict (\"id\") do update set \"email\" = $5, \"name\" = $6, \"updated_at\" = $7",
+ params: [
+  "dev-local-user", "stefankunc994@gmail.com", "Stefan Kunc", false, "stefankunc994@gmail.com",
+  "Stefan Kunc", "2026-10-19T09:21:29.566Z"
+],
+
+      at queryWithCache (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\apps\connect-app\runtime\connect\node_modules\drizzle-orm\pg-core\session.js:41:15)
+      at async <anonymous> (C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\apps\connect-app\runtime\connect\node_modules\drizzle-orm\bun-sql\session.js:32:29)
+
+PostgresError: password authentication failed for user "postgres"
+    errno: "28P01",
+ severity: "FATAL",
+     file: "auth.c",
+  routine: "auth_failed",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at handleClose (internal:sql/shared:372:27)
+
+Bun v1.4.2 (Windows x64)

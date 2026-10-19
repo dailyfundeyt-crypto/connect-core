@@ -20,7 +20,9 @@ import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settin
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
 import { Route as AuthedAppBrainRouteImport } from './routes/_authed/_app/brain'
+import { Route as AuthedAppFirmenprofilRouteImport } from './routes/_authed/_app/firmenprofil'
 import { Route as AuthedAppMarketRouteImport } from './routes/_authed/_app/market'
+import { Route as AuthedAppModelOneRouteImport } from './routes/_authed/_app/model-one'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAppSocialRouteImport } from './routes/_authed/_app/social'
@@ -107,9 +109,19 @@ const AuthedAppBrainRoute = AuthedAppBrainRouteImport.update({
   path: '/brain',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppFirmenprofilRoute = AuthedAppFirmenprofilRouteImport.update({
+  id: '/firmenprofil',
+  path: '/firmenprofil',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppMarketRoute = AuthedAppMarketRouteImport.update({
   id: '/market',
   path: '/market',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppModelOneRoute = AuthedAppModelOneRouteImport.update({
+  id: '/model-one',
+  path: '/model-one',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
@@ -294,7 +306,9 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthedOnboardingRoute
   '/bot': typeof AuthedAppBotRoute
   '/brain': typeof AuthedAppBrainRoute
+  '/firmenprofil': typeof AuthedAppFirmenprofilRoute
   '/market': typeof AuthedAppMarketRoute
+  '/model-one': typeof AuthedAppModelOneRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/social': typeof AuthedAppSocialRoute
@@ -336,7 +350,9 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthedOnboardingRoute
   '/bot': typeof AuthedAppBotRoute
   '/brain': typeof AuthedAppBrainRoute
+  '/firmenprofil': typeof AuthedAppFirmenprofilRoute
   '/market': typeof AuthedAppMarketRoute
+  '/model-one': typeof AuthedAppModelOneRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/social': typeof AuthedAppSocialRoute
@@ -382,7 +398,9 @@ export interface FileRoutesById {
   '/_authed/onboarding': typeof AuthedOnboardingRoute
   '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/brain': typeof AuthedAppBrainRoute
+  '/_authed/_app/firmenprofil': typeof AuthedAppFirmenprofilRoute
   '/_authed/_app/market': typeof AuthedAppMarketRoute
+  '/_authed/_app/model-one': typeof AuthedAppModelOneRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/_app/social': typeof AuthedAppSocialRoute
@@ -429,7 +447,9 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/bot'
     | '/brain'
+    | '/firmenprofil'
     | '/market'
+    | '/model-one'
     | '/routines'
     | '/skills'
     | '/social'
@@ -471,7 +491,9 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/bot'
     | '/brain'
+    | '/firmenprofil'
     | '/market'
+    | '/model-one'
     | '/routines'
     | '/skills'
     | '/social'
@@ -516,7 +538,9 @@ export interface FileRouteTypes {
     | '/_authed/onboarding'
     | '/_authed/_app/bot'
     | '/_authed/_app/brain'
+    | '/_authed/_app/firmenprofil'
     | '/_authed/_app/market'
+    | '/_authed/_app/model-one'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/_app/social'
@@ -637,11 +661,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppBrainRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/firmenprofil': {
+      id: '/_authed/_app/firmenprofil'
+      path: '/firmenprofil'
+      fullPath: '/firmenprofil'
+      preLoaderRoute: typeof AuthedAppFirmenprofilRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/market': {
       id: '/_authed/_app/market'
       path: '/market'
       fullPath: '/market'
       preLoaderRoute: typeof AuthedAppMarketRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/model-one': {
+      id: '/_authed/_app/model-one'
+      path: '/model-one'
+      fullPath: '/model-one'
+      preLoaderRoute: typeof AuthedAppModelOneRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -940,7 +978,9 @@ const AuthedSettingsRouteRouteWithChildren =
 interface AuthedAppRouteChildren {
   AuthedAppBotRoute: typeof AuthedAppBotRoute
   AuthedAppBrainRoute: typeof AuthedAppBrainRoute
+  AuthedAppFirmenprofilRoute: typeof AuthedAppFirmenprofilRoute
   AuthedAppMarketRoute: typeof AuthedAppMarketRoute
+  AuthedAppModelOneRoute: typeof AuthedAppModelOneRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppSocialRoute: typeof AuthedAppSocialRoute
@@ -956,7 +996,9 @@ interface AuthedAppRouteChildren {
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppBotRoute: AuthedAppBotRoute,
   AuthedAppBrainRoute: AuthedAppBrainRoute,
+  AuthedAppFirmenprofilRoute: AuthedAppFirmenprofilRoute,
   AuthedAppMarketRoute: AuthedAppMarketRoute,
+  AuthedAppModelOneRoute: AuthedAppModelOneRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppSocialRoute: AuthedAppSocialRoute,

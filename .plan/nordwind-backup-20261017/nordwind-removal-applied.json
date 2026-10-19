@@ -1,0 +1,165 @@
+{
+ "at": "2026-10-17T09:36:07.933Z",
+ "log": [
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company.siteUrl",
+   "action": "KEPT (Stefans URL daily-fun.app)"
+  },
+  {
+   "side": "local",
+   "key": "u:dev-local-user:connect.projects",
+   "action": "array 3 -> 0"
+  },
+  {
+   "side": "local",
+   "key": "u:dev-local-user:connect.activeCompanyId",
+   "action": "DELETE row (pointer to nordwind)"
+  },
+  {
+   "side": "local",
+   "key": "u:dev-local-user:connect.company-posts",
+   "action": "array 4 -> 0"
+  },
+  {
+   "side": "local",
+   "key": "u:dev-local-user:connect.level3.browser",
+   "action": "object keys 1 -> 0"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts.from-helium-20261004",
+   "action": "array 4 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts.from-app-20261004",
+   "action": "array 4 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser.from-helium-20261004",
+   "action": "object keys 1 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser.from-app-20261004",
+   "action": "object keys 1 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects.from-helium-20261004",
+   "action": "array 6 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects.from-app-20261004",
+   "action": "array 3 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "local",
+   "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.activeCompanyId",
+   "action": "DELETE row (pointer to nordwind)"
+  },
+  {
+   "side": "local",
+   "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.projects",
+   "action": "array 3 -> 0"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects",
+   "action": "array 48 -> 42"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts",
+   "action": "array 24 -> 20"
+  },
+  {
+   "side": "local",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser",
+   "action": "object keys 6 -> 5"
+  },
+  {
+   "side": "supabase",
+   "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.projects",
+   "action": "array 3 -> 0"
+  },
+  {
+   "side": "supabase",
+   "key": "u:k0kzLAp09p7GrNGpj6TVQw6Q7xZn92YD:connect.activeCompanyId",
+   "action": "DELETE row (pointer to nordwind)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.activeCompanyId",
+   "action": "DELETE row (pointer to nordwind)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.companies.custom",
+   "action": "array 1 -> 0"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects",
+   "action": "array 6 -> 0"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser",
+   "action": "object keys 1 -> 0"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts",
+   "action": "array 4 -> 0"
+  },
+  {
+   "side": "supabase",
+   "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.projects",
+   "action": "array 3 -> 0"
+  },
+  {
+   "side": "supabase",
+   "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.level3.browser",
+   "action": "object keys 1 -> 0"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts.from-helium-20261004",
+   "action": "array 4 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.company-posts.from-app-20261004",
+   "action": "array 4 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser.from-helium-20261004",
+   "action": "object keys 1 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.level3.browser.from-app-20261004",
+   "action": "object keys 1 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects.from-helium-20261004",
+   "action": "array 6 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:Xx3DRBa5O38j5I50bcmQxbhvDyHziizu:connect.projects.from-app-20261004",
+   "action": "array 3 -> 0 => DELETE row (archive key, nordwind-only)"
+  },
+  {
+   "side": "supabase",
+   "key": "u:zYiSbjz7Qv3z9AqvJhVYCFe3kLq1Gtjm:connect.activeCompanyId",
+   "action": "DELETE row (pointer to nordwind)"
+  }
+ ]
+}

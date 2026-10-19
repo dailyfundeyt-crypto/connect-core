@@ -41,6 +41,19 @@ export function emptyBlock(type: NoteBlockType = "paragraph"): NoteBlock {
           ],
         },
       };
+    case "columns":
+      return {
+        ...base,
+        spans: [],
+        columns: [
+          { width: 1, blocks: [{ ...base, spans: [{ text: "" }] }] },
+          { width: 1, blocks: [{ ...base, spans: [{ text: "" }] }] },
+        ],
+      };
+    case "audio":
+      return { ...base, url: "" };
+    case "iframe":
+      return { ...base, url: "", iframeProvider: "generic", iframeTitle: "" };
     default:
       return base;
   }
@@ -272,6 +285,8 @@ export function hasMark(spans: NoteSpan[], mark: NoteMark): boolean {
 export function sameMark(a: NoteMark, b: NoteMark): boolean {
   if (a.type !== b.type) return false;
   if (a.type === "link" && b.type === "link") return a.href === b.href;
+  if (a.type === "color" && b.type === "color") return a.value === b.value;
+  if (a.type === "bg" && b.type === "bg") return a.value === b.value;
   return true;
 }
 

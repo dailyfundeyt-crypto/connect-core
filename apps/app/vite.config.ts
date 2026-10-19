@@ -193,6 +193,20 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@flux": path.resolve(__dirname, "./src/company-apps/modules/flux/source"),
+      // dailyfun (Firmenprofil) – 1:1 aus https://github.com/dailyfundeyt-crypto/dailyfun,
+      // alle "@/..." Imports in dailyfun-Dateien zeigen auf die kopierte Codebasis,
+      // nicht auf Connect-shared (Connect hat eigene shadcn-Sets, eigene Auth, eigenen Router).
+      "@dailyfun/components": path.resolve(__dirname, "./src/dailyfun/components"),
+      "@dailyfun/contexts": path.resolve(__dirname, "./src/dailyfun/contexts"),
+      "@dailyfun/hooks": path.resolve(__dirname, "./src/dailyfun/hooks"),
+      "@dailyfun/lib": path.resolve(__dirname, "./src/dailyfun/lib"),
+      "@dailyfun/utils": path.resolve(__dirname, "./src/dailyfun/utils"),
+      "@dailyfun/data": path.resolve(__dirname, "./src/dailyfun/data"),
+      "@dailyfun/integrations": path.resolve(__dirname, "./src/dailyfun/integrations"),
+      "@dailyfun/pages": path.resolve(__dirname, "./src/dailyfun/pages"),
+      "@dailyfun/assets": path.resolve(__dirname, "./src/dailyfun/assets"),
+      "@dailyfun/ConnectApp": path.resolve(__dirname, "./src/dailyfun/ConnectApp.tsx"),
     },
   },
   server: serving,

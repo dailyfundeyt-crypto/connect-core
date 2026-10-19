@@ -91,7 +91,6 @@ import {
 } from "@/lib/agents/form";
 import { AgentModelPicker } from "@/components/agents/agent-model-picker";
 import {
-  BETA_MODEL_FAMILIES,
   PRIMARY_MODEL_FAMILIES,
   getAgentModelFamily,
   setAgentModelFamily,
@@ -604,14 +603,6 @@ function AgentFamilySelect({ agentId }: { agentId: string }) {
         <SelectGroup>
           <SelectLabel>Standard</SelectLabel>
           {PRIMARY_MODEL_FAMILIES.map((f) => (
-            <SelectItem key={f.id} value={f.id}>
-              {f.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-        <SelectGroup>
-          <SelectLabel>Beta</SelectLabel>
-          {BETA_MODEL_FAMILIES.map((f) => (
             <SelectItem key={f.id} value={f.id}>
               {f.label}
             </SelectItem>

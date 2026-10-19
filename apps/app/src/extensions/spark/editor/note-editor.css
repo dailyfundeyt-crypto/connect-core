@@ -1,0 +1,395 @@
+/**
+ * Editor-Typografie für die Spark-Notiz.
+ *
+ * ## Warum diese Datei existiert
+ *
+ * `note-editor.tsx` setzt dem Editor die Klasse `spark-prose` und der Kommentar
+ * dort verweist auf `styles.css`. In `styles.css` stand dafür aber nichts — der
+ * Verweis zeigte ins Leere, und `.ProseMirror` hatte ebenfalls keine
+ * Regeln. Ergebnis war genau das, was auffiel: Absätze kleben aneinander,
+ * Listen hängen am Text, Bilder sprengen die Spalte, Überschriften haben
+ * denselben Gewicht wie der Rest.
+ *
+ * Deshalb liegen die Regeln hier und nicht dort. Sobald jemand die Datei sucht,
+ * findet er sie in dem Verzeichnis, dessen Name schon lautet.
+ *
+ * ## Regeln
+ *
+ * Beide Selektoren, `.spark-prose` und `.ProseMirror`, weil Tiptap die Klasse
+ * am Wrapper-Knoten und `ProseMirror` an `contentEditable` setzt — der
+ * `is-editor-empty`-Zustand hängt an `ProseMirror`, die Breite an `spark-prose`.
+ *
+ * Alle Farben aus den shadcn-Tokens (`--foreground`, `--muted-foreground`,
+ * `--border`), damit Hell und Dunkel automatisch mitgehen. Keine Rohfarben.
+ */
+
+/* ---------------------------------------------------------------- Basis ---- */
+
+.spark-prose,
+.ProseMirror {
+  /* 15px statt 16px: auf Zeilenlängen von 60–75 Zeichen merkt man den
+     Unterschied, ohne dass es klein wirkt. */
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--foreground);
+  /* Der Wrapper setzt die Breite, hier nur der Innenabstand zum Rand. */
+  padding: 0.25rem 0 30vh;
+  outline: none;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  /* Tabulator statt Leerzeichen: Code im Fließtext bleibt ausgerichtet. */
+  tab-size: 2;
+  -webkit-font-variant-ligatures: contextual;
+}
+
+/*
+ * Platzhalter. Tiptap hängt das Attribut an `.is-editor-empty` und fügt einen
+ * leeren Absatz ein; ohne `::before` bleibt der Hinweis unsichtbar.
+ */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+/* ------------------------------------------------------------- Absätze ----- */
+
+/*
+ * Notion schafft die Trennlinie nicht mit Rahmen, sondern mit Luft: der
+ * Absatzabstand trägt die Gliederung. `margin-top` am ersten Kind würde den
+ * Platzhalter aus dem Tippbereich schieben, deshalb `:first-child`.
+ */
+.ProseMirror > * + * {
+  margin-top: 0.5rem;
+}
+
+.ProseMirror > *:first-child {
+  margin-top: 0;
+}
+
+/* Überschriften bekommen echten Abstand zu dem, was ihnen folgt. */
+.ProseMirror > * + :is(h1, h2, h3, h4) {
+  margin-top: 1.75rem;
+}
+
+/* ------------------------------------------------------ Überschriften ----- */
+
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4 {
+  color: var(--foreground);
+  font-weight: 700;
+  /* Engeres Tracking bei großen Schriften, wie in Obsidian. */
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.ProseMirror h1 {
+  font-size: 1.875rem;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.ProseMirror h3 {
+  font-size: 1.1875rem;
+  line-height: 1.4;
+}
+
+.ProseMirror h4 {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------- Listen ------ */
+
+/*
+ * Innenabstand statt `padding-left` am Listenelement: so sitzt der Text nach
+ * dem Marker nicht in einer zweiten, tieferen Einrückung.
+ */
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-inline-start: 1.5rem;
+  margin-block: 0.5rem;
+}
+
+.ProseMirror ul {
+  list-style: disc;
+}
+
+.ProseMirror ol {
+  list-style: decimal;
+}
+
+/* Verschachtelte Listen hängen direkt unter ihrem Elternpunkt. */
+.ProseMirror li > ul,
+.ProseMirror li > ol {
+  margin-block: 0.25rem;
+}
+
+.ProseMirror li p {
+  margin: 0;
+}
+
+/* Leerer Listenpunkt: `min-height` verhindert das Zusammenfallen beim Tippen. */
+.ProseMirror li {
+  min-height: 1.7em;
+}
+
+.ProseMirror li::marker {
+  color: var(--muted-foreground);
+}
+
+/* --------------------------------------------------------- Aufgabenliste --- */
+
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-inline-start: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  display: flex;
+  align-items: center;
+  /* Auf Zeilenhöhe des Textes, nicht auf 44px — das wäre Desktop-Optik. */
+  height: 1.7em;
+  margin-top: 0;
+  user-select: none;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Erledigte Aufgaben: sichtbar durchgestrichen, Text leicht gesenkt. */
+.ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* ------------------------------------------------------------ Zitat -------- */
+
+.ProseMirror blockquote {
+  border-inline-start: 3px solid var(--border);
+  padding-inline-start: 0.875rem;
+  margin-block: 0.5rem;
+  color: var(--muted-foreground);
+}
+
+/* ------------------------------------------------------------ Code -------- */
+
+.ProseMirror code {
+  background: var(--accent);
+  color: var(--foreground);
+  padding: 0.125rem 0.3rem;
+  border-radius: 0.3rem;
+  font-size: 0.875em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Der Inline-Code darf keinen eigenen Padding-Strom bekommen. */
+.ProseMirror :not(pre) > code {
+  padding: 0.125rem 0.3rem;
+}
+
+.ProseMirror pre {
+  background: var(--accent);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.875rem 1rem;
+  margin-block: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.ProseMirror pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------ Bilder ------- */
+
+/*
+ * Ohne diese Regel füllt ein Screenshot die volle Spalte und wirkt wie ein
+ * Fehler. `100%` als Obergrenze statt fester Breite: schmale Bilder bleiben
+ * schmal, breite werden begrenzt. Der Rahmen hebt sie sauber vom Text ab.
+ */
+.ProseMirror img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-block: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--muted);
+}
+
+/* Bildergalerie: mehrere Bilder ohne Rahmen dazwischen. */
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------- Tabellen ------- */
+
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin-block: 0.75rem;
+  overflow: hidden;
+}
+
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  vertical-align: top;
+  position: relative;
+  min-width: 3rem;
+}
+
+.ProseMirror th {
+  background: var(--accent);
+  font-weight: 600;
+  text-align: start;
+}
+
+.ProseMirror .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: oklch(from var(--primary) l c h / 0.12);
+  pointer-events: none;
+}
+
+/* Die Ecke, die Tiptap zum Nachziehen anbietet. */
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  inset-inline-end: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--primary);
+  pointer-events: none;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* ---------------------------------------------------------- Trennlinie ----- */
+
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin-block: 1.5rem;
+}
+
+/* --------------------------------------------------------- Link --------- */
+
+.ProseMirror a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+.ProseMirror a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* ------------------------------------------------------- Auswahl & Fokus --- */
+
+/*
+ * Auswahl in der Systemfarbe, aber mit transparentem Hintergrund wäre der Text
+ * unlesbar — deshalb bewusst `primary` statt des Browsers-Standard.
+ */
+.ProseMirror ::selection {
+  background: oklch(from var(--primary) l c h / 0.25);
+}
+
+/* Die Tiptap-Collab-Cursor, falls sie später dazukommt. */
+.ProseMirror .ProseMirror-gapcursor {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ProseMirror .ProseMirror-gapcursor:after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: -2px;
+  width: 20px;
+  border-top: 1px solid var(--foreground);
+}
+
+.ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+
+/* ------------------------------------------------------------ Kompakt ----- */
+
+/*
+ * Auf kleinen Bildschirmen: 15px Schrift mit 16px-Zoom-Erwartung der iOS-Safari.
+ * Unter 16px springt iOS beim Fokussieren rein.
+ */
+@media (max-width: 768px) {
+  .ProseMirror {
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+
+  .ProseMirror h1 {
+    font-size: 1.5rem;
+  }
+
+  .ProseMirror h2 {
+    font-size: 1.25rem;
+  }
+
+  .ProseMirror h3 {
+    font-size: 1.0625rem;
+  }
+
+  /* Tabellen auf Handys: horizontal scrollbar, statt die Spalten zu quetschen. */
+  .ProseMirror table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* Bewegungsreduktion: Übergänge entfernen, Inhalt bleibt lesbar. */
+@media (prefers-reduced-motion: reduce) {
+  .ProseMirror * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

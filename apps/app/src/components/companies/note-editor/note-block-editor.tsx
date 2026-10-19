@@ -197,6 +197,66 @@ export function NoteBlockEditor({
         return;
       }
 
+      if (item.id === "webclip") {
+        /*
+         * Pulls a remote page on the user's behalf and inserts a callout with
+         * the title and a Markdown preview. The server endpoint is what
+         * shields the browser from CORS, and the user can edit the result
+         * before saving — a webclip is a starting point, not a verbatim
+         * copy. If the URL is empty or the request fails, the slash menu
+         * stays open so the user can pick something else.
+         */
+        const url = window.prompt("URL für Webclip", "https://");
+        if (!url) return;
+        if (!/^https?:\/\//i.test(url)) {
+          window.alert("Bitte eine URL mit http:// oder https:// angeben.");
+          return;
+        }
+        setSlash(null);
+        void (async () => {
+          try {
+            const response = await fetch(`/api/brain/webclip?url=${encodeURIComponent(url)}`);
+            const data = (await response.json()) as {
+              ok: boolean;
+              title?: string;
+              markdown?: string;
+              siteName?: string;
+              error?: string;
+            };
+            const replacement: NoteBlock = data.ok
+              ? {
+                  ...emptyBlock("callout"),
+                  emoji: "🔗",
+                  spans: [
+                    { text: data.title || url, marks: [{ type: "bold" }] },
+                    { text: ` — ${data.siteName || url}` },
+                    { text: "\n" },
+                    { text: url, marks: [{ type: "link", href: url }] },
+                  ],
+                  children: data.markdown
+                    ? [
+                        {
+                          ...emptyBlock("quote"),
+                          spans: [{ text: data.markdown.slice(0, 800) }],
+                        },
+                      ]
+                    : [],
+                }
+              : {
+                  ...emptyBlock("paragraph"),
+                  spans: [
+                    { text: `Webclip fehlgeschlagen: ${data.error ?? "Unbekannter Fehler"} (${url})` },
+                  ],
+                };
+            update((current) => replaceBlock(current, block.id, replacement), null);
+            focusAfter(replacement.id, 0);
+          } catch (err) {
+            window.alert(`Webclip fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        })();
+        return;
+      }
+
       const replacement = emptyBlock(item.type ?? "paragraph");
       update((current) => replaceBlock(current, block.id, replacement), null);
       setSlash(null);
@@ -414,8 +474,25 @@ export function NoteBlockEditor({
         patch.children = [];
         patch.collapsed = false;
       }
+      if (type === "callout" && block.emoji === undefined) {
+        patch.emoji = "💡";
+        patch.children = [];
+      }
       if (type === "table" && !block.table) {
         patch.table = { headerRow: true, rows: [["", "", ""], ["", "", ""]] };
+      }
+      if (type === "audio") patch.url = "";
+      if (type === "iframe") {
+        patch.url = "";
+        patch.iframeProvider = "generic";
+        patch.iframeTitle = "";
+      }
+      if (type === "columns") {
+        patch.columns = [
+          { width: 1, blocks: [emptyBlock("paragraph")] },
+          { width: 1, blocks: [emptyBlock("paragraph")] },
+        ];
+        patch.spans = [];
       }
       update((current) => updateBlock(current, blockId, patch), null);
     },
@@ -684,14 +761,34 @@ function BlockRow({
       <div className="min-w-0 flex-1">
         <BlockContent
           block={block}
+          dragId={dragId}
+          dropTarget={dropTarget}
+          focus={focus}
+          history={history}
           index={index}
+          onAdd={onAdd}
           onChangeTable={onChangeTable}
+          onConvert={onConvert}
+          onDragStart={onDragStart}
+          onDrop={onDrop}
+          onDropTarget={onDropTarget}
+          onDuplicate={onDuplicate}
           onFocus={onFocus}
+          onImagePaste={onImagePaste}
           onKeyDown={onKeyDown}
+          onMove={onMove}
           onTextInput={onTextInput}
           onPatchBlock={onPatchBlock}
+          onPickSlash={onPickSlash}
+          onRemove={onRemove}
           onSetSpans={onSetSpans}
           onToggle={onToggle}
+          onUpdate={onUpdate}
+          slashBlockId={slashBlockId}
+          slashItems={slashItems}
+          slashNavIndex={slashNavIndex}
+          slashPos={slashPos}
+          slashQuery={slashQuery}
           spans={spans}
           total={history.blocks.length}
         />
@@ -765,25 +862,65 @@ function BlockRow({
 
 function BlockContent({
   block,
+  dragId,
+  dropTarget,
+  focus,
+  history,
+  index,
+  onAdd,
   onChangeTable,
-  onFocus,
+  onUpdate,
+  onConvert,
+  onDragStart,
+  onDrop,
+  onDropTarget,
+  onDuplicate,
+  onFocus,  onImagePaste,
   onKeyDown,
+  onMove,
   onTextInput,
   onPatchBlock,
+  onPickSlash,
+  onRemove,
   onSetSpans,
   onToggle,
+  slashBlockId,
+  slashItems,
+  slashNavIndex,
+  slashPos,
+  slashQuery,
   spans,
+  total,
 }: {
   block: NoteBlock;
+  dragId: string | null;
+  dropTarget: string | null;
+  focus: string | null;
+  history: ReturnType<typeof useHistory>;
   index: number;
+  onAdd: (blockId: string) => void;
   onChangeTable: (blockId: string, table: NonNullable<NoteBlock["table"]>) => void;
+  onUpdate: (recipe: (current: NoteBlock[]) => NoteBlock[], key?: string | null) => void;
+  onConvert: (blockId: string, type: NoteBlockType) => void;
+  onDragStart: (id: string | null) => void;
+  onDrop: (id: string) => void;
+  onDropTarget: (id: string | null) => void;
+  onDuplicate: (id: string) => void;
   onFocus: (id: string | null) => void;
+  onImagePaste?: (file: File) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>, block: NoteBlock) => void;
-  /** Fires on every keystroke, so the slash and `[[` menus can both follow the text. */
+  onMove: (id: string, direction: -1 | 1) => void;
   onTextInput: (blockId: string, element: HTMLElement) => void;
   onPatchBlock: (blockId: string, patch: Partial<NoteBlock>) => void;
+  onPickSlash: (item: SlashItem) => void;
+  onRemove: (id: string) => void;
   onSetSpans: (blockId: string, spans: NoteSpan[], caret: number) => void;
   onToggle: (slash: { blockId: string; query: string } | null) => void;
+  slashBlockId?: string;
+  slashItems: SlashItem[];
+  slashNavIndex: number;
+  slashPos: { top: number; left: number } | null;
+  slashQuery: string;
   spans: NoteSpan[];
   total: number;
 }) {
@@ -805,26 +942,26 @@ function BlockContent({
   switch (block.type) {
     case "heading1":
       return (
-        <h1 className="mt-4 text-[1.75rem] font-bold leading-tight tracking-[-0.02em]">
+        <h1 className="mt-7 mb-2.5 text-[1.85rem] sm:text-[2.1rem] font-bold leading-tight tracking-tight text-neutral-900 dark:text-neutral-100">
           {editable()}
         </h1>
       );
     case "heading2":
       return (
-        <h2 className="mt-3 text-[1.4rem] font-semibold leading-tight tracking-[-0.01em]">
+        <h2 className="mt-5 mb-2 text-[1.4rem] sm:text-[1.55rem] font-semibold leading-snug tracking-tight text-neutral-900 dark:text-neutral-100">
           {editable()}
         </h2>
       );
     case "heading3":
       return (
-        <h3 className="mt-2 text-[1.15rem] font-semibold leading-snug">
+        <h3 className="mt-4 mb-1.5 text-[1.15rem] sm:text-[1.25rem] font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
           {editable()}
         </h3>
       );
     case "bullet":
       return (
-        <div className="flex items-start gap-2 py-0.5">
-          <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-neutral-700" />
+        <div className="flex items-start gap-2.5 py-1 text-[15.5px] leading-[1.78] text-neutral-800 dark:text-neutral-200">
+          <span className="mt-[9px] size-1.5 shrink-0 rounded-full bg-neutral-600 dark:bg-neutral-400" />
           {editable()}
         </div>
       );
@@ -832,49 +969,118 @@ function BlockContent({
       return <ListNumbered block={block} spans={spans} onKeyDown={onKeyDown} onSetSpans={onSetSpans} onTextInput={onTextInput} />;
     case "todo":
       return (
-        <div className="flex items-start gap-2 py-0.5">
+        <div className="flex items-start gap-2.5 py-1 text-[15.5px] leading-[1.78] text-neutral-800 dark:text-neutral-200">
           <input
             aria-label="Aufgabe erledigt"
             checked={block.checked ?? false}
-            className="mt-1 size-4 shrink-0 accent-neutral-900"
+            className="mt-1 size-4 shrink-0 rounded accent-neutral-900 dark:accent-neutral-100"
             onChange={(event) =>
               onPatchBlock(block.id, { checked: event.target.checked })
             }
             type="checkbox"
           />
-          {editable()}
+          <div className={cn("min-w-0 flex-1", block.checked && "line-through text-neutral-400 dark:text-neutral-500")}>
+            {editable()}
+          </div>
         </div>
       );
     case "quote":
       return (
-        <blockquote className="border-l-[3px] border-neutral-900 py-1 pl-4 text-[15px] italic">
+        <blockquote className="my-2.5 border-l-[3px] border-neutral-300 dark:border-neutral-700 py-1 pl-4 text-[15.5px] italic text-neutral-600 dark:text-neutral-400 leading-[1.78]">
           {editable()}
         </blockquote>
       );
-    case "callout":
+    case "callout": {
+      const tone = block.color ?? undefined;
       return (
-        <div className="my-1 flex gap-2 rounded-lg bg-neutral-100 px-3 py-2">
-          <button
-            aria-label="Emoji ändern"
-            className="shrink-0 text-[16px]"
-            onClick={() => {
-              const next = window.prompt("Emoji", block.emoji ?? "💡");
-              if (next) onPatchBlock(block.id, { emoji: next });
-            }}
-            type="button"
-          >
-            {block.emoji ?? "💡"}
-          </button>
-          <div className="min-w-0 flex-1">{editable()}</div>
+        <div
+          className="my-3 overflow-hidden rounded-xl border border-neutral-200/70 bg-neutral-50/90 dark:border-neutral-800 dark:bg-neutral-900/80 text-[15px] leading-[1.7] shadow-xs"
+          style={tone ? { backgroundColor: tone } : undefined}
+        >
+          <div className="flex items-start gap-3 p-3.5">
+            <button
+              aria-label="Emoji ändern"
+              className="shrink-0 text-[18px] leading-none pt-0.5 transition-transform hover:scale-110"
+              onClick={() => {
+                const next = window.prompt("Emoji", block.emoji ?? "💡");
+                if (next) onPatchBlock(block.id, { emoji: next });
+              }}
+              type="button"
+            >
+              {block.emoji ?? "💡"}
+            </button>
+            <div className="min-w-0 flex-1">
+              <InlineEditable
+                blockId={block.id}
+                onChange={(next, caret) => onSetSpans(block.id, next, caret)}
+                onFocus={() => onFocus(block.id)}
+                onKeyDown={(event) => onKeyDown(event, block)}
+                placeholder="Hinweis"
+                spans={spans}
+              />
+            </div>
+          </div>
+          {block.children?.length ? (
+            <div
+              className={cn(
+                "border-t border-black/5 px-3 pb-3 dark:border-white/5",
+                block.collapsed && "hidden",
+              )}
+            >
+              {block.children.map((child) => (
+                <BlockRow
+                  block={child}
+                  index={0}
+                  key={child.id}
+                  dragId={dragId}
+                  dropTarget={dropTarget}
+                  focus={focus}
+                  history={history}
+                  onAdd={onAdd}
+                  onChangeTable={onChangeTable}
+                  onUpdate={onUpdate}
+                  onConvert={onConvert}
+                  onDragStart={onDragStart}
+                  onDrop={onDrop}
+                  onDropTarget={onDropTarget}
+                  onDuplicate={onDuplicate}
+                  onFocus={onFocus}
+                  onImagePaste={onImagePaste}
+                  onKeyDown={onKeyDown}
+                  onMove={onMove}
+                  onTextInput={onTextInput}
+                  onPatchBlock={onPatchBlock}
+                  onPickSlash={onPickSlash}
+                  onRemove={onRemove}
+                  onSetSpans={onSetSpans}
+                  onToggle={onToggle}
+                  slashBlockId={slashBlockId}
+                  slashItems={slashItems}
+                  slashNavIndex={slashNavIndex}
+                  slashPos={slashPos}
+                  slashQuery={slashQuery}
+                />
+              ))}
+            </div>
+          ) : (
+            <button
+              className="ml-12 mr-4 mb-3 inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300/70 px-2 py-0.5 text-[11px] text-neutral-500 hover:border-neutral-400 dark:border-neutral-700"
+              onClick={() => onPatchBlock(block.id, { children: [emptyBlock("paragraph")] })}
+              type="button"
+            >
+              <IconPlus className="size-3" stroke={1.75} /> Inhalt
+            </button>
+          )}
         </div>
       );
+    }
     case "toggle":
       return (
-        <div className="py-0.5">
+        <div className="py-1 text-[15.5px] leading-[1.78]">
           <div className="flex items-start gap-2">
             <button
               aria-label={block.collapsed ? "Aufklappen" : "Zuklappen"}
-              className="mt-0.5 shrink-0 text-neutral-500"
+              className="mt-1 shrink-0 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
               onClick={() => onPatchBlock(block.id, { collapsed: !block.collapsed })}
               type="button"
             >
@@ -889,7 +1095,7 @@ function BlockContent({
       );
     case "code":
       return (
-        <pre className="my-1 overflow-x-auto rounded-lg bg-neutral-100 p-3 text-[13px] leading-relaxed">
+        <pre className="my-3 overflow-x-auto rounded-xl bg-neutral-100/80 dark:bg-neutral-900/90 p-4 font-mono text-[13.5px] leading-relaxed border border-neutral-200/50 dark:border-neutral-800">
           <InlineEditable
             blockId={block.id}
             onChange={(next, caret) => onSetSpans(block.id, next, caret)}
@@ -900,8 +1106,31 @@ function BlockContent({
           />
         </pre>
       );
-    case "divider":
-      return <hr className="my-3 border-neutral-200" />;
+    case "divider": {
+      if (!block.dividerStyle && !block.dividerAccent) {
+        return <hr className="my-6 border-neutral-200/80 dark:border-neutral-800" />;
+      }
+      const style = block.dividerStyle ?? "solid";
+      const accent = block.dividerAccent ?? "var(--border)";
+      const border =
+        style === "dashed"
+          ? "dashed"
+          : style === "dotted"
+            ? "dotted"
+            : style === "double"
+              ? "double"
+              : "solid";
+      return (
+        <hr
+          className="my-6 border-0 border-t-2"
+          style={{
+            borderTopStyle: border,
+            borderTopColor: accent,
+            borderTopWidth: style === "double" ? "6px" : "2px",
+          }}
+        />
+      );
+    }
     case "image":
       return (
         <ImageBlock
@@ -916,8 +1145,59 @@ function BlockContent({
           onChange={(table) => onChangeTable(block.id, table)}
         />
       );
+    case "columns":
+      return (
+        <ColumnsBlock
+          block={block}
+          history={history}
+          onAdd={onAdd}
+          onChangeTable={onChangeTable}
+          onConvert={onConvert}
+          onDragStart={onDragStart}
+          onDrop={onDrop}
+          onDropTarget={onDropTarget}
+          onDuplicate={onDuplicate}
+          onFocus={onFocus}
+          onImagePaste={onImagePaste}
+          onKeyDown={onKeyDown}
+          onMove={onMove}
+          onTextInput={onTextInput}
+          onPatchBlock={onPatchBlock}
+          onPickSlash={onPickSlash}
+          onRemove={onRemove}
+          onSetSpans={onSetSpans}
+          onToggle={onToggle}
+          onUpdate={onUpdate}
+          dragId={dragId}
+          dropTarget={dropTarget}
+          focus={focus}
+          slashBlockId={slashBlockId}
+          slashItems={slashItems}
+          slashNavIndex={slashNavIndex}
+          slashPos={slashPos}
+          slashQuery={slashQuery}
+        />
+      );
+    case "audio":
+      return (
+        <AudioBlock
+          block={block}
+          onPatch={(patch) => onPatchBlock(block.id, patch)}
+        />
+      );
+    case "iframe":
+      return (
+        <IframeBlock
+          block={block}
+          onPatch={(patch) => onPatchBlock(block.id, patch)}
+        />
+      );
     default:
-      return <div className="py-0.5 text-[15px] leading-[1.7]">{editable()}</div>;
+      return (
+        <div className="py-1 text-[15.5px] sm:text-[16px] leading-[1.8] text-neutral-800 dark:text-neutral-200 tracking-[-0.003em]">
+          {editable()}
+        </div>
+      );
   }
 }
 
@@ -936,8 +1216,8 @@ function ListNumbered({
   spans: NoteSpan[];
 }) {
   return (
-    <div className="flex items-start gap-2 py-0.5">
-      <span className="mt-[1px] min-w-[1.1rem] shrink-0 text-right text-[15px] text-neutral-500">
+    <div className="flex items-start gap-2.5 py-1 text-[15.5px] leading-[1.78] text-neutral-800 dark:text-neutral-200">
+      <span className="mt-[2px] min-w-[1.2rem] shrink-0 text-right text-[15px] font-medium text-neutral-400">
         1.
       </span>
       <InlineEditable
@@ -954,6 +1234,26 @@ function ListNumbered({
   );
 }
 
+/** Resolves an image URL or Obsidian vault filename into a usable HTTP src. */
+export function resolveNoteAssetUrl(url: string | undefined): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("/api/")
+  ) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("https://brain.local/asset/")) {
+    const raw = trimmed.slice("https://brain.local/asset/".length);
+    return `/api/brain/asset?name=${encodeURIComponent(decodeURIComponent(raw))}`;
+  }
+  const cleanName = trimmed.replace(/^(\.?\/)+/, "");
+  return `/api/brain/asset?name=${encodeURIComponent(cleanName)}`;
+}
+
 function ImageBlock({
   block,
   onPatch,
@@ -962,41 +1262,612 @@ function ImageBlock({
   onPatch: (patch: Partial<NoteBlock>) => void;
 }) {
   const url = block.url ?? "";
+  const resolvedSrc = resolveNoteAssetUrl(url);
+  const isVideo = /\.(mp4|webm|mov)$/i.test(url);
+
+  const width = block.width || "100%";
+  const align = block.align || "center";
+
+  const alignClass =
+    align === "left"
+      ? "mr-auto"
+      : align === "right"
+        ? "ml-auto"
+        : "mx-auto";
 
   return (
-    <div className="my-2">
+    <div className="group/img relative my-4 w-full">
       {url ? (
-        <figure>
-          <img
-            alt={block.caption ?? "Notiz-Bild"}
-            className="max-h-[420px] w-auto rounded-lg border border-black/8"
-            src={url}
-          />
+        <div
+          className={cn("flex flex-col transition-all", alignClass)}
+          style={{ width: width === "100%" ? "100%" : width }}
+        >
+          <div className="relative overflow-hidden rounded-xl border border-neutral-200/80 bg-neutral-50/50 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
+            {isVideo ? (
+              <video
+                controls
+                className="max-h-[520px] w-full rounded-xl object-contain bg-black/5"
+                src={resolvedSrc}
+              />
+            ) : (
+              <img
+                alt={block.caption ?? "Notiz-Bild"}
+                className="max-h-[520px] w-full rounded-xl object-contain"
+                loading="lazy"
+                src={resolvedSrc}
+              />
+            )}
+
+            {/* Quick floating controls toolbar on hover */}
+            <div className="absolute right-2 top-2 flex items-center gap-1 rounded-lg border border-black/10 bg-white/95 p-1 shadow-md opacity-0 backdrop-blur-sm transition-opacity group-hover/img:opacity-100 dark:border-white/10 dark:bg-neutral-900/95">
+              <button
+                className={cn(
+                  "px-2 py-0.5 text-[11px] font-medium rounded transition-colors",
+                  width === "33%"
+                    ? "bg-neutral-200 font-bold dark:bg-neutral-800"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-400"
+                )}
+                onClick={() => onPatch({ width: "33%" })}
+                title="Klein (33%)"
+                type="button"
+              >
+                33%
+              </button>
+              <button
+                className={cn(
+                  "px-2 py-0.5 text-[11px] font-medium rounded transition-colors",
+                  width === "66%"
+                    ? "bg-neutral-200 font-bold dark:bg-neutral-800"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-400"
+                )}
+                onClick={() => onPatch({ width: "66%" })}
+                title="Mittel (66%)"
+                type="button"
+              >
+                66%
+              </button>
+              <button
+                className={cn(
+                  "px-2 py-0.5 text-[11px] font-medium rounded transition-colors",
+                  width === "100%"
+                    ? "bg-neutral-200 font-bold dark:bg-neutral-800"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-400"
+                )}
+                onClick={() => onPatch({ width: "100%" })}
+                title="Voll (100%)"
+                type="button"
+              >
+                100%
+              </button>
+
+              <div className="h-3 w-px bg-neutral-200 dark:bg-neutral-700 mx-0.5" />
+
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      className="p-1 rounded text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                      title="Weitere Optionen"
+                      type="button"
+                    >
+                      <IconDots className="size-3.5" />
+                    </button>
+                  }
+                />
+                <DropdownMenuContent align="end" className="w-48 text-xs">
+                  <DropdownMenuLabel>Ausrichtung</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => onPatch({ align: "left" })}>
+                    Links
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onPatch({ align: "center" })}>
+                    Zentriert
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onPatch({ align: "right" })}>
+                    Rechts
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      const next = window.prompt("Bild-URL oder Datei-Name:", url);
+                      if (next !== null) onPatch({ url: next });
+                    }}
+                  >
+                    Bild austauschen
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => onPatch({ url: "" })}
+                  >
+                    Bild entfernen
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
           <input
             aria-label="Bildbeschreibung"
-            className="mt-1 w-full bg-transparent text-[12px] text-neutral-400 outline-none"
+            className="mt-1.5 w-full text-center bg-transparent text-[12px] text-neutral-400 dark:text-neutral-500 outline-none focus:text-neutral-700 dark:focus:text-neutral-300"
             defaultValue={block.caption ?? ""}
             onBlur={(event) => onPatch({ caption: event.target.value })}
-            placeholder="Bildbeschreibung"
+            placeholder="Bildbeschreibung hinzufügen..."
           />
-        </figure>
+        </div>
       ) : (
-        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-black/15 bg-neutral-50 py-8 text-[13px] text-neutral-500 transition-colors hover:border-black/25">
-          <IconPhoto className="size-4" stroke={1.5} />
-          Bild einfügen
-          <input
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = () => onPatch({ url: String(reader.result) });
-              reader.readAsDataURL(file);
-            }}
-            type="file"
-          />
-        </label>
+        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-neutral-300 bg-neutral-50/80 p-8 text-neutral-600 transition-colors hover:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900/40">
+          <IconPhoto className="size-8 text-neutral-400" stroke={1.25} />
+          <div className="text-center">
+            <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+              Bild oder Video hinzufügen
+            </p>
+            <p className="text-[11px] text-neutral-400">
+              Aus Datei auswählen oder Name aus dem Vault angeben
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 shadow-xs border border-neutral-200 hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700">
+              <IconPhoto className="size-3.5" />
+              Datei hochladen
+              <input
+                accept="image/*,video/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => onPatch({ url: String(reader.result) });
+                  reader.readAsDataURL(file);
+                }}
+                type="file"
+              />
+            </label>
+            <button
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 shadow-xs border border-neutral-200 hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700"
+              onClick={() => {
+                const entered = window.prompt("Bild-Dateiname aus dem Vault oder Web-URL (z.B. Screenshot.png):");
+                if (entered) onPatch({ url: entered.trim() });
+              }}
+              type="button"
+            >
+              Vault-Name oder URL
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- new blocks */
+
+/**
+ * A multi-column layout, Notion-style.
+ *
+ * Each column is an independent block array. A column is itself a block editor
+ * lite — typing inside it goes through the same InlineEditable / InlineEditable
+ * pipeline. The cross-block plumbing (Enter to split, Backspace to merge) is
+ * reused so a column behaves like the page, just narrower.
+ */
+function ColumnsBlock({
+  block,
+  history,
+  onAdd,
+  onChangeTable,
+  onConvert,
+  onDragStart,
+  onDrop,
+  onDropTarget,
+  onDuplicate,
+  onFocus,
+  onImagePaste,
+  onKeyDown,
+  onMove,
+  onTextInput,
+  onPatchBlock,
+  onPickSlash,
+  onRemove,
+  onSetSpans,
+  onToggle,
+  onUpdate,
+  dragId,
+  dropTarget,
+  focus,
+  slashBlockId,
+  slashItems,
+  slashNavIndex,
+  slashPos,
+  slashQuery,
+}: {
+  block: NoteBlock;
+  history: ReturnType<typeof useHistory>;
+  onAdd: (blockId: string) => void;
+  onChangeTable: (blockId: string, table: NonNullable<NoteBlock["table"]>) => void;
+  onConvert: (blockId: string, type: NoteBlockType) => void;
+  onDragStart: (id: string | null) => void;
+  onDrop: (id: string) => void;
+  onDropTarget: (id: string | null) => void;
+  onDuplicate: (id: string) => void;
+  onFocus: (id: string | null) => void;
+  onImagePaste?: (file: File) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>, block: NoteBlock) => void;
+  onMove: (id: string, direction: -1 | 1) => void;
+  onTextInput: (blockId: string, element: HTMLElement) => void;
+  onPatchBlock: (blockId: string, patch: Partial<NoteBlock>) => void;
+  onPickSlash: (item: SlashItem) => void;
+  onRemove: (id: string) => void;
+  onSetSpans: (blockId: string, spans: NoteSpan[], caret: number) => void;
+  onToggle: (slash: { blockId: string; query: string } | null) => void;
+  onUpdate: (recipe: (current: NoteBlock[]) => NoteBlock[], key?: string | null) => void;
+  dragId: string | null;
+  dropTarget: string | null;
+  focus: string | null;
+  slashBlockId?: string;
+  slashItems: SlashItem[];
+  slashNavIndex: number;
+  slashPos: { top: number; left: number } | null;
+  slashQuery: string;
+}) {
+  const cols = block.columns ?? [];
+  const updateColumns = (next: { width?: number; blocks: NoteBlock[] }[]) =>
+    onPatchBlock(block.id, { columns: next });
+
+  return (
+    <div className="my-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {cols.map((col, colIndex) => (
+        <div
+          className="min-h-[3rem] rounded-lg border border-dashed border-neutral-200/80 bg-neutral-50/40 p-2 dark:border-neutral-800 dark:bg-neutral-900/30"
+          key={colIndex}
+        >
+          {col.blocks.length === 0 ? (
+            <button
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300/70 px-2 py-0.5 text-[11px] text-neutral-500 hover:border-neutral-400 dark:border-neutral-700"
+              onClick={() =>
+                updateColumns(
+                  cols.map((c, i) =>
+                    i === colIndex
+                      ? { ...c, blocks: [emptyBlock("paragraph")] }
+                      : c,
+                  ),
+                )
+              }
+              type="button"
+            >
+              <IconPlus className="size-3" stroke={1.75} /> Block
+            </button>
+          ) : (
+            col.blocks.map((child) => (
+              <BlockRow
+                block={child}
+                history={history}
+                index={0}
+                key={child.id}
+                {...({
+                  dragId,
+                  dropTarget,
+                  focus,
+                  onAdd,
+                  onChangeTable,
+                  onUpdate,
+                  onConvert,
+                  onDragStart,
+                  onDrop,
+                  onDropTarget,
+                  onDuplicate,
+                  onFocus,
+                  onImagePaste,
+                  onKeyDown,
+                  onMove,
+                  onTextInput,
+                  onPatchBlock,
+                  onPickSlash,
+                  onRemove,
+                  onSetSpans,
+                  onToggle,
+                  slashBlockId,
+                  slashItems,
+                  slashNavIndex,
+                  slashPos,
+                  slashQuery,
+                })}
+              />
+            ))
+          )}
+        </div>
+      ))}
+      <button
+        className="inline-flex items-center justify-center gap-1 self-stretch rounded-lg border border-dashed border-neutral-300 px-2 py-3 text-[12px] text-neutral-500 hover:border-neutral-400 dark:border-neutral-700"
+        disabled={cols.length >= 3}
+        onClick={() =>
+          updateColumns([
+            ...cols,
+            { width: 1, blocks: [emptyBlock("paragraph")] },
+          ])
+        }
+        type="button"
+      >
+        <IconPlus className="size-3" stroke={1.75} /> Spalte
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Audio block: URL (http(s) / data: / vault filename) + optional caption.
+ *
+ * Recording is exposed when the browser supports `MediaRecorder`; otherwise the
+ * recorder hides itself and the upload fallback is the only path. Both write
+ * the same `url` field, so the saved Markdown does not encode which one was
+ * used — it just carries a `data:` URL.
+ */
+function AudioBlock({
+  block,
+  onPatch,
+}: {
+  block: NoteBlock;
+  onPatch: (patch: Partial<NoteBlock>) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const url = block.url ?? "";
+  const canRecord = typeof window !== "undefined" && typeof window.MediaRecorder !== "undefined";
+
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        const reader = new FileReader();
+        reader.onload = () => onPatch({ url: String(reader.result) });
+        reader.readAsDataURL(blob);
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+    } catch {
+      // Microphone access denied — keep the upload fallback.
+      setRecording(false);
+    }
+  };
+
+  const stop = () => {
+    recorderRef.current?.stop();
+    setRecording(false);
+  };
+
+  return (
+    <div className="my-3 rounded-xl border border-neutral-200/80 bg-neutral-50/40 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+      {url ? (
+        <audio className="w-full" controls src={url} />
+      ) : (
+        <div className="flex flex-col items-center gap-2 py-4 text-[12px] text-neutral-500">
+          <span>Audio hinzufügen</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 shadow-xs border border-neutral-200 hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700">
+              Datei hochladen
+              <input
+                accept="audio/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => onPatch({ url: String(reader.result) });
+                  reader.readAsDataURL(file);
+                }}
+                type="file"
+              />
+            </label>
+            {canRecord ? (
+              recording ? (
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 border border-red-200"
+                  onClick={stop}
+                  type="button"
+                >
+                  ● Stopp
+                </button>
+              ) : (
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 shadow-xs border border-neutral-200 hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700"
+                  onClick={start}
+                  type="button"
+                >
+                  Aufnehmen
+                </button>
+              )
+            ) : null}
+            <button
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 shadow-xs border border-neutral-200 hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700"
+              onClick={() => {
+                const entered = window.prompt("Audio-URL oder Vault-Dateiname:");
+                if (entered) onPatch({ url: entered.trim() });
+              }}
+              type="button"
+            >
+              URL oder Vault-Name
+            </button>
+          </div>
+        </div>
+      )}
+      <input
+        aria-label="Audio-Beschreibung"
+        className="mt-1 w-full bg-transparent text-center text-[12px] text-neutral-400 outline-none focus:text-neutral-700 dark:focus:text-neutral-300"
+        defaultValue={block.caption ?? ""}
+        onBlur={(event) => onPatch({ caption: event.target.value })}
+        placeholder="Audiobeschreibung hinzufügen …"
+      />
+      {url ? (
+        <button
+          className="mt-1 inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-700"
+          onClick={() => onPatch({ url: "" })}
+          type="button"
+        >
+          Ersetzen
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Embedded iframe block (YouTube / Loom / Figma / Excalidraw / PDF / generic).
+ *
+ * The browser's `X-Frame-Options` cannot be read from JavaScript; a sandboxed
+ * iframe is the best we can do, and a host that blocks embedding will show
+ * nothing inside. We detect that case (the iframe stays blank after a short
+ * delay and never fires `load`) and reveal the "extern öffnen" fallback.
+ */
+function IframeBlock({
+  block,
+  onPatch,
+}: {
+  block: NoteBlock;
+  onPatch: (patch: Partial<NoteBlock>) => void;
+}) {
+  const url = block.url ?? "";
+  const provider = block.iframeProvider ?? "generic";
+  const title = block.iframeTitle ?? "";
+  const [blocked, setBlocked] = useState(false);
+  const [showEdit, setShowEdit] = useState(!url);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // A blank iframe that never fires load is a frame-ancestors block. Reset on URL change.
+  useEffect(() => {
+    setBlocked(false);
+    if (!url) return;
+    const timer = window.setTimeout(() => {
+      try {
+        const frame = iframeRef.current;
+        // Same-origin access is denied for cross-origin frames; the catch is the signal.
+        const probe = frame?.contentWindow?.length;
+        if (typeof probe !== "number") setBlocked(true);
+      } catch {
+        setBlocked(true);
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [url]);
+
+  const embedSrc = (() => {
+    if (!url) return "";
+    if (provider === "youtube") {
+      try {
+        const u = new URL(url);
+        const id = u.searchParams.get("v") ?? u.pathname.split("/").pop();
+        return id ? `https://www.youtube-nocookie.com/embed/${id}` : url;
+      } catch {
+        return url;
+      }
+    }
+    if (provider === "loom") {
+      try {
+        const u = new URL(url);
+        const id = u.pathname.split("/").pop();
+        return id ? `https://www.loom.com/embed/${id}` : url;
+      } catch {
+        return url;
+      }
+    }
+    if (provider === "figma") {
+      try {
+        const u = new URL(url);
+        u.searchParams.set("embed-host", "connect");
+        return u.toString();
+      } catch {
+        return url;
+      }
+    }
+    return url;
+  })();
+
+  if (showEdit || !url) {
+    return (
+      <div className="my-3 flex flex-col items-center gap-2 rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-4 text-[12px] text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <span>Einbettung: YouTube, Loom, Figma, Excalidraw, PDF …</span>
+        <input
+          aria-label="Einbettungs-URL"
+          className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1 text-[13px] dark:border-neutral-800 dark:bg-neutral-900"
+          defaultValue={url}
+          onBlur={(event) => {
+            const value = event.target.value.trim();
+            if (!value) return;
+            const lower = value.toLowerCase();
+            const detected: typeof provider =
+              lower.includes("youtube") || lower.includes("youtu.be")
+                ? "youtube"
+                : lower.includes("loom.com")
+                  ? "loom"
+                  : lower.includes("figma.com")
+                    ? "figma"
+                    : lower.includes("excalidraw.com")
+                      ? "excalidraw"
+                      : lower.endsWith(".pdf")
+                        ? "pdf"
+                        : "generic";
+            onPatch({ url: value, iframeProvider: detected });
+            setShowEdit(false);
+          }}
+          placeholder="https://"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-3 overflow-hidden rounded-xl border border-neutral-200/80 dark:border-neutral-800">
+      <header className="flex items-center gap-2 border-b border-neutral-200/70 bg-neutral-50/60 px-2 py-1 text-[11px] text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/50">
+        <span className="truncate">{title || provider}</span>
+        <a
+          className="ml-auto inline-flex items-center gap-1 underline-offset-2 hover:underline"
+          href={url}
+          rel="noreferrer"
+          target="_blank"
+        >
+          extern öffnen
+        </a>
+        <button
+          className="text-[11px] text-neutral-400 hover:text-neutral-700"
+          onClick={() => setShowEdit(true)}
+          type="button"
+        >
+          bearbeiten
+        </button>
+      </header>
+      {provider === "pdf" ? (
+        <object
+          aria-label={title || "PDF"}
+          className="h-[480px] w-full bg-white"
+          data={url}
+          type="application/pdf"
+        >
+          <a href={url} rel="noreferrer" target="_blank">PDF öffnen</a>
+        </object>
+      ) : blocked ? (
+        <div className="flex flex-col items-center gap-2 bg-neutral-50/40 p-6 text-center text-[12px] text-neutral-500 dark:bg-neutral-900/30">
+          <p className="max-w-md">
+            Diese Seite erlaubt das Einbetten nicht. Über „extern öffnen" kannst du sie im Browser
+            ansehen.
+          </p>
+        </div>
+      ) : (
+        <iframe
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          className="h-[420px] w-full bg-white"
+          loading="lazy"
+          onLoad={() => setBlocked(false)}
+          onError={() => setBlocked(true)}
+          ref={iframeRef}
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"
+          src={embedSrc}
+          title={title || "Einbettung"}
+        />
       )}
     </div>
   );
@@ -1063,6 +1934,9 @@ function BlockMenu({
         <DropdownMenuItem className="gap-2 rounded-lg px-2.5 py-2" onClick={() => onConvert(block.id, "table")}>
           <IconTable className="size-4" stroke={1.5} /> Tabelle
         </DropdownMenuItem>
+        <DropdownMenuItem className="gap-2 rounded-lg px-2.5 py-2" onClick={() => onConvert(block.id, "image")}>
+          <IconPhoto className="size-4" stroke={1.5} /> Bild & Medien
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="gap-2 rounded-lg px-2.5 py-2" onClick={() => onMove(block.id, -1)}>
           Nach oben
@@ -1103,7 +1977,7 @@ function SlashMenu({
 
   return (
     <div
-      className="fixed z-50 max-h-80 w-72 overflow-y-auto rounded-xl border border-black/10 bg-white py-1 shadow-xl"
+      className="fixed z-[110] max-h-80 w-72 overflow-y-auto rounded-xl border border-black/10 bg-white py-1 shadow-xl"
       style={{ top: position.top, left: position.left }}
     >
       {items.length === 0 ? (
@@ -1280,6 +2154,10 @@ function placeholderFor(type: NoteBlockType): string {
       return "Hinweis";
     case "todo":
       return "Aufgabe";
+    case "audio":
+      return "Audio (URL oder Datei)";
+    case "iframe":
+      return "Einbettung (URL oder Anbieter)";
     case "bullet":
     case "number":
       return "";

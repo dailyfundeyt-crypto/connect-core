@@ -5,6 +5,8 @@ import {
 } from "@copilotkit/react-core/v2";
 import {
   IconArrowUp,
+  IconArrowsDiagonal2,
+  IconArrowsDiagonalMinimize2,
   IconPlayerStopFilled,
   IconPlus,
 } from "@tabler/icons-react";
@@ -37,7 +39,6 @@ import {
 import { newId } from "@/lib/new-id";
 import { cn } from "@/lib/utils";
 import { AgentBrowserModeSelect } from "@/components/agents/agent-browser-mode";
-import { AgentModelPicker } from "@/components/agents/agent-model-picker";
 import { AgentMcpButton } from "@/components/agent-hub/agent-mcp-button";
 import { ComposerPlusMenu } from "@/components/channels/composer/composer-plus-menu";
 import { Button } from "../../ui/button";
@@ -363,6 +364,7 @@ export function Composer({
     initialValue ? [{ type: "text", text: initialValue }] : [],
   );
   const [voiceListening, setVoiceListening] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitInFlight = useRef(false);
   const promptAreaRef = useRef<PromptAreaHandle>(null);
@@ -1145,6 +1147,7 @@ export function Composer({
           return;
         }
         setValue([]);
+        setIsExpanded(false);
         dismissRejections();
         // Taken off the composer as the message is parked, so the strip empties with the words
         // rather than leaving the files looking like they are still to be sent. Only these —
@@ -1172,6 +1175,7 @@ export function Composer({
       setIsSubmitting(true);
       // Clear optimistically; restore if the send fails before becoming a message.
       setValue([]);
+      setIsExpanded(false);
       /*
        * The refusals go with them, and do NOT come back if the send fails. They are about files
        * that never made it onto this message, so the words being restored has nothing to do with
@@ -1414,7 +1418,7 @@ export function Composer({
     </p>
   ) : null;
 
-  if (compact) {
+  if (compact && !isExpanded) {
     const floatingChrome = floating;
     return (
       /*
@@ -1478,16 +1482,22 @@ export function Composer({
                 ) : null}
                 {agentId ? (
                   <>
-                    <AgentModelPicker agentId={agentId} size="sm" />
                     <AgentBrowserModeSelect agentId={agentId} compact />
                     <AgentMcpButton agentId={agentId} />
                   </>
-                ) : (
-                  <span className="px-1 text-[11px] text-muted-foreground">
-                    Auto
-                  </span>
-                )}
+                ) : null}
                 <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    aria-label="Eingabefeld vergrößern"
+                    className="size-8 rounded-full text-muted-foreground/70 hover:bg-accent hover:text-foreground p-0"
+                    onClick={() => setIsExpanded(true)}
+                    size="icon"
+                    title="Eingabefeld vergrößern"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <IconArrowsDiagonal2 className="size-4" />
+                  </Button>
                   {enableVoice ? (
                     <ComposerMicButton
                       disabled={disabled}
@@ -1567,15 +1577,21 @@ export function Composer({
                 triggers={triggers}
                 value={value}
               />
+              <Button
+                aria-label="Eingabefeld vergrößern"
+                className="size-8 self-end rounded-full text-muted-foreground/70 hover:bg-accent hover:text-foreground p-0 shrink-0"
+                onClick={() => setIsExpanded(true)}
+                size="icon"
+                title="Eingabefeld vergrößern"
+                type="button"
+                variant="ghost"
+              >
+                <IconArrowsDiagonal2 className="size-4" />
+              </Button>
               {enableVoice ? (
                 <div className="flex shrink-0 items-center gap-1 self-end">
                   {agentId ? (
                     <>
-                      <AgentModelPicker
-                        agentId={agentId}
-                        className="self-end"
-                        size="sm"
-                      />
                       <AgentBrowserModeSelect
                         agentId={agentId}
                         className="self-end"
@@ -1602,11 +1618,6 @@ export function Composer({
                 </div>
               ) : agentId ? (
                 <>
-                  <AgentModelPicker
-                    agentId={agentId}
-                    className="self-end"
-                    size="sm"
-                  />
                   <AgentBrowserModeSelect
                     agentId={agentId}
                     className="self-end"
@@ -1648,7 +1659,7 @@ export function Composer({
     // The same `containerRef`, on the wrapper this branch already had: the paste listener is scoped
     // to whatever holds the ref, so a branch without it can be pasted into and nothing happens.
     <div
-      className={cn("flex w-xl flex-col", className)}
+      className={cn("flex w-xl flex-col transition-all duration-200", isExpanded && "min-h-[420px]", className)}
       ref={containerRef}
       {...dropZone}
     >
@@ -1656,37 +1667,63 @@ export function Composer({
       {tooManyStagedNotice}
       <form
         aria-busy={isBusy}
-        className="overflow-hidden rounded-2xl border border-border bg-card"
+        className={cn(
+          "overflow-hidden rounded-2xl border border-border bg-card flex flex-col transition-all duration-200 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+          isExpanded
+            ? "h-[55vh] min-h-[380px] max-h-[720px] shadow-2xl ring-1 ring-border/50"
+            : "",
+        )}
         onSubmit={handleFormSubmit}
       >
         {filePicker}
 
-        <div className="grow px-3 pt-3 pb-2">
-          <AttachmentStrip
-            files={files}
-            images={images}
-            onRemove={discardAttachment}
-          />
+        <div className={cn("grow px-3 pt-3 pb-2 flex flex-col min-h-0", isExpanded && "flex-1")}>
+          <div className="flex items-start justify-between gap-2 pb-1">
+            <div className="flex-1 min-w-0">
+              <AttachmentStrip
+                files={files}
+                images={images}
+                onRemove={discardAttachment}
+              />
+            </div>
+            <Button
+              aria-label={isExpanded ? "Eingabefeld verkleinern" : "Eingabefeld vergrößern"}
+              className="size-7 shrink-0 rounded-lg text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+              onClick={() => setIsExpanded(!isExpanded)}
+              size="icon"
+              title={isExpanded ? "Eingabefeld verkleinern" : "Eingabefeld vergrößern"}
+              type="button"
+              variant="ghost"
+            >
+              {isExpanded ? (
+                <IconArrowsDiagonalMinimize2 className="size-3.5" />
+              ) : (
+                <IconArrowsDiagonal2 className="size-3.5" />
+              )}
+            </Button>
+          </div>
           <PromptArea
             aria-label="Message"
-            autoGrow
+            autoGrow={!isExpanded}
             className={cn(
-              "w-full border-0 bg-transparent p-0 text-sm shadow-none",
+              "w-full border-0 bg-transparent p-0 text-sm shadow-none leading-relaxed",
+              isExpanded && "flex-1 min-h-[260px] overflow-y-auto",
               editorClassName,
             )}
             disabled={disabled}
-            maxHeight={MAX_HEIGHT_PX}
+            maxHeight={isExpanded ? 600 : MAX_HEIGHT_PX}
+            minHeight={isExpanded ? 260 : undefined}
             onChange={handleChange}
             onImagePaste={canAttach ? stagePastedImage : undefined}
             onSubmit={submitDraft}
-            placeholder="Ask anything"
+            placeholder={voiceListening ? "Hört zu..." : "Ask anything"}
             ref={promptAreaRef}
             triggers={triggers}
             value={value}
           />
         </div>
 
-        <div className="mb-2 flex items-center justify-between px-2">
+        <div className={cn("mb-2 flex shrink-0 items-center justify-between px-2", isExpanded && "pt-1 border-t border-border/30")}>
           {attachmentsEnabled ? (
             <ComposerPlusMenu
               agentId={agentId}
@@ -1700,10 +1737,26 @@ export function Composer({
           <div className="flex items-center gap-2">
             {agentId ? (
               <>
-                <AgentModelPicker agentId={agentId} size="sm" />
                 <AgentBrowserModeSelect agentId={agentId} compact />
-                    <AgentMcpButton agentId={agentId} />
+                <AgentMcpButton agentId={agentId} />
               </>
+            ) : null}
+            {enableVoice ? (
+              <ComposerMicButton
+                disabled={disabled}
+                onRecordingChange={setVoiceListening}
+                onTranscript={(spoken) => {
+                  setValue((current) => {
+                    if (isSegmentsEmpty(current)) {
+                      return [text(spoken)];
+                    }
+                    return [...current, text(" "), text(spoken)];
+                  });
+                }}
+              />
+            ) : null}
+            {enableVoice && onVoiceCall ? (
+              <VoiceCallButton onClick={onVoiceCall} />
             ) : null}
             {canStop ? (
               <Button

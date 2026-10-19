@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_agent","arguments":{"agent_id":"seo-agent","question":"Was sind die 3 wichtigsten SEO-Faktoren für eine lokale Bäckerei-Website?"}}}

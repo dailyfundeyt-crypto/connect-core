@@ -25,6 +25,7 @@ import {
   type SaveState,
 } from "./note-editor-controls";
 import { NoteEditorToolbar } from "./note-editor-toolbar";
+import "./note-editor.css";
 
 /** Wie lange nach der letzten Eingabe wir schreiben. Kurz genug, um nichts zu verlieren. */
 const AUTOSAVE_DELAY_MS = 600;

@@ -10,6 +10,7 @@ const nav = [
   { href: "#features", label: "Features" },
   { href: "#how", label: "How it works" },
   { href: "#install", label: "Install" },
+  { href: "#community", label: "Community" },
   { href: "#download", label: "Download" },
 ];
 

@@ -1,0 +1,5 @@
+﻿faf2c9a fix(lab): render the apps inside a folder, and keep the note editor reachable
+105606f feat(lab): one action row for apps, groups, notes and note folders
+9eca0d2 fix(lab): stop the notes from pushing the rail actions off screen
+a74f08e fix(lab): keep the rail intact, add notes as their own section
+776ac75 fix(companies): URL decides the company, heal quoted keys, show ungrouped apps

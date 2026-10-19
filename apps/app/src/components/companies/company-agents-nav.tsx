@@ -5,7 +5,12 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  agentHasUnread,
+  pickActiveSegment,
+  segmentsFromRoster,
+} from "@/lib/agents/agent-conversation";
 import { useEffect, useMemo, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
@@ -33,6 +38,7 @@ import { createChannelMutationOptions } from "@/lib/channels/mutations";
 import {
   channelKeys,
   channelListQueryOptions,
+  type ChannelSummary,
 } from "@/lib/channels/queries";
 import { listProjects, subscribeProjects } from "@/lib/companies/projects";
 import {
@@ -57,6 +63,7 @@ import {
   type CompanyLevel,
 } from "@/lib/companies/level";
 import { setSiteMarkAgent, getSiteMark, subscribeSiteMark } from "@/lib/companies/site-mark";
+import { relativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
 
 /*
@@ -86,17 +93,41 @@ function isAgentOnline(id: string): boolean {
 /**
  * Company Agents — only agents that belong to this company and are not
  * already nested in a Gruppe. Other / owned bots live under Marketplace → Meine Bots.
+ *
+ * oneconv: jeder Agent führt genau ein durchgehendes Gespräch. Die Sidebar
+ * zeigt jeden Agent mit der letzten Nachricht (oder "Neues Gespräch") als
+ * Vorschau. Eine separate "Channels"- oder "Gespräche"-Sektion gibt es
+ * nicht mehr, sonst stünde der gleiche Chat zweimal in der Liste.
  */
 export function CompanyAgentsNav({
   searching,
+  query = "",
+  channels: channelsProp,
 }: {
   searching: boolean;
+  /** oneconv: the sidebar search, so it finds agents now that there is no channel list. */
+  query?: string;
+  /**
+   * Optional: vom Caller gefilterte Channels (z. B. nur die Channels dieser
+   * Company). Wenn nicht übergeben, holt die Komponente sie selbst.
+   * Wir nehmen die gefilterten Channels vom AppSidebar-Caller, damit jeder
+   * Agent-Zeile eindeutig "sein" Gespräch aus companyChannels findet und
+   * wir keine separaten Queries doppelt halten.
+   */
+  channels?: readonly import("@/lib/channels/queries").ChannelSummary[];
 }) {
   const navigate = useNavigate();
+  const currentPath = useRouterState({ select: (state) => state.location.pathname });
   const queryClient = useQueryClient();
   const createChannel = useMutation(createChannelMutationOptions(queryClient));
   const agentsQuery = useQuery(agentListQueryOptions());
-  const channels = useInfiniteQuery(channelListQueryOptions());
+  const channelsQuery = useInfiniteQuery(channelListQueryOptions());
+  // Caller darf die schon nach Company gefilterte Liste durchreichen, damit
+  // die unread-Marker zu den sichtbaren Channels passen. Ohne Caller nehmen
+  // wir das, was die Sidebar-Query gerade hält.
+  const channels = {
+    data: channelsProp ?? channelsQuery.data,
+  };
   const [companyId, setCompanyId] = useState<string | null>(() =>
     readActiveCompanyId(),
   );
@@ -172,6 +203,7 @@ export function CompanyAgentsNav({
 
     if (!company) {
       return {
+        matches: [] as AgentProfile[],
         ungrouped: [] as AgentProfile[],
         companyAgentCount: 0,
         groupedCount: 0,
@@ -197,36 +229,49 @@ export function CompanyAgentsNav({
       .filter((a): a is AgentProfile => Boolean(a));
 
     return {
+      matches: companyAgents,
       ungrouped: ordered,
       companyAgentCount: companyAgents.length,
       groupedCount: companyAgents.length - ungrouped.length,
     };
   }, [agentsQuery.data, company, projectTick, identityTick, orderTick]);
 
-  if (searching) return null;
+  const needle = query.trim().toLowerCase();
+  const searchHits = searching
+    ? roster.matches.filter(
+        (a) => a.name.toLowerCase().includes(needle) || (a.title ?? "").toLowerCase().includes(needle),
+      )
+    : [];
+  if (searching && searchHits.length === 0) {
+    return (
+      <p className="px-2 py-3 text-xs text-sidebar-foreground/45 group-data-[collapsible=icon]:hidden">
+        Kein Agent heißt „{query.trim()}“.
+      </p>
+    );
+  }
 
   if (agentsQuery.isPending && roster.companyAgentCount === 0) {
     return (
       <div className="mb-2 group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
-          Agents
+          Agenten
         </SidebarGroupLabel>
         <p className="px-2 py-1 text-xs text-sidebar-foreground/35">
-          Loading coworkers…
+          Agenten werden geladen…
         </p>
       </div>
     );
   }
 
-  if (roster.ungrouped.length === 0) {
+  if (roster.ungrouped.length === 0 && !searching) {
     return (
       <div className="mb-2 group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
-          Agents
+          Agenten
         </SidebarGroupLabel>
         <p className="px-2 py-1 text-xs text-sidebar-foreground/35">
           {agentsQuery.isError
-            ? "Coworkers couldn’t be loaded."
+            ? "Agenten konnten nicht geladen werden."
             : roster.companyAgentCount > 0
               ? "Alle Company-Agents sind Gruppen zugeordnet."
               : "Noch keine Agents in dieser Company. Andere Bots: Marketplace → Meine Bots."}
@@ -244,18 +289,22 @@ export function CompanyAgentsNav({
     const { isDesktopApp, navigateDesktopBrowser } = await import(
       "@/lib/desktop-bridge"
     );
-    const existing = channels.data?.find((ch) =>
-      ch.agentIds.includes(agent.id),
-    );
-    if (existing) {
-      if (isDesktopApp()) {
-        navigateDesktopBrowser(`http://localhost:3010/channel/${existing.id}`);
-        return;
+    // oneconv: a click on an agent opens its one conversation (no channel to choose).
+    // Im Web-Frontend: vorher sicherstellen, dass es für diesen Agent ein
+    // dauerhaftes Gespräch gibt (legt eins an, falls keins existiert) — so
+    // taucht die Unterhaltung in der Sidebar-Roster auf und ein zweiter
+    // Klick führt zurück ins gleiche Gespräch.
+    if (!isDesktopApp()) {
+      try {
+        const channel = await createChannel.mutateAsync([agent.id]);
+        queryClient.setQueryData(channelKeys.detail(channel.id), channel);
+        void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+      } catch (err) {
+        // Server-Fehler beim Anlegen ist nicht blockierend — die Route
+        // `/agent/$agentId` würde ohnehin selbst ein Gespräch anlegen.
+        console.warn("[company-agents-nav] ensure channel failed:", err);
       }
-      await navigate({
-        to: "/channel/$channelId",
-        params: { channelId: existing.id },
-      });
+      await navigate({ to: "/agent/$agentId", params: { agentId: agent.id } });
       return;
     }
     const channel = await createChannel.mutateAsync([agent.id]);
@@ -305,6 +354,27 @@ export function CompanyAgentsNav({
     }
   };
 
+  /**
+   * Letzte Nachricht pro Agent — kommt aus dem aktiven Segment (das
+   * jüngste live Segment dieses Agenten). Ein Agent ohne Gespräch zeigt
+   * "Neues Gespräch", damit klar ist, dass der Klick es anlegt.
+   */
+  const previewByAgent = useMemo(() => {
+    const list = channels.data ?? [];
+    const map = new Map<string, { lastMessage: string; lastMessageAt: string }>();
+    for (const agent of roster.ungrouped) {
+      const segments = segmentsFromRoster(list, agent.id);
+      const active = pickActiveSegment(segments);
+      if (active?.lastMessage && active.lastMessageAt) {
+        map.set(agent.id, {
+          lastMessage: active.lastMessage,
+          lastMessageAt: active.lastMessageAt,
+        });
+      }
+    }
+    return map;
+  }, [channels.data, roster.ungrouped]);
+
   /** Companies this bot could move to: every company except the one it is on now. */
   const moveTargets = (agentId: string) =>
     companies.filter((c) => !c.agentIds.includes(agentId));
@@ -331,7 +401,7 @@ export function CompanyAgentsNav({
                   "bg-sky-50 ring-1 ring-sky-400/60 dark:bg-sky-950/40",
               )}
               draggable
-              isActive={siteSelected}
+              isActive={siteSelected || currentPath === `/agent/${agent.id}`}
               onClick={() => void openAgent(agent)}
               onDragStart={(event) => {
                 event.dataTransfer.setData(DND_AGENT, agent.id);
@@ -387,25 +457,56 @@ export function CompanyAgentsNav({
                   <span className="block truncate text-[13px] font-medium tracking-tight">
                     {agent.name}
                   </span>
+                  {agentHasUnread(channels.data, agent.id) && currentPath !== `/agent/${agent.id}` ? (
+                    <span aria-label="Neue Nachricht" className="size-2 shrink-0 rounded-full bg-sky-400" data-testid="agent-unread" />
+                  ) : null}
                   {siteSelected ? (
                     <span className="inline-flex h-4 items-center rounded-full bg-sky-500/15 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
                       Site
                     </span>
                   ) : null}
                 </span>
-                {handle ? (
-                  <span className="block truncate text-[11px] text-sidebar-foreground/45">
-                    {handle}
-                  </span>
-                ) : null}
+                {(() => {
+                  const preview = previewByAgent.get(agent.id);
+                  if (preview) {
+                    return (
+                      <span
+                        className={cn(
+                          "block truncate text-[11px]",
+                          agentHasUnread(channels.data, agent.id)
+                            ? "font-medium text-foreground/90"
+                            : "text-sidebar-foreground/45",
+                        )}
+                      >
+                        {preview.lastMessage}
+                      </span>
+                    );
+                  }
+                  if (handle) {
+                    return (
+                      <span className="block truncate text-[11px] text-sidebar-foreground/45">
+                        {handle}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="block truncate text-[11px] italic text-sidebar-foreground/35">
+                      Neues Gespräch
+                    </span>
+                  );
+                })()}
               </span>
               <span
                 aria-hidden
                 className={cn(
-                  "ml-auto hidden size-1.5 shrink-0 rounded-full group-data-[collapsible=icon]:hidden",
-                  online ? "bg-emerald-500/80" : "bg-sidebar-foreground/20",
+                  "ml-auto hidden shrink-0 text-[10px] tabular-nums text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden",
                 )}
-              />
+              >
+                {(() => {
+                  const preview = previewByAgent.get(agent.id);
+                  return preview ? relativeTime(preview.lastMessageAt) : "";
+                })()}
+              </span>
             </SidebarMenuButton>
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-52 rounded-xl p-1.5">
@@ -457,10 +558,10 @@ export function CompanyAgentsNav({
   return (
     <div className="mb-2 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
       <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45 group-data-[collapsible=icon]:sr-only">
-        Agents
+        Agenten
       </SidebarGroupLabel>
-      <ul className="flex w-full min-w-0 flex-col gap-0.5 group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
-        {roster.ungrouped.map(renderRow)}
+      <ul className="flex w-full min-w-0 flex-col gap-0.5 group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1" data-testid="agents-menu">
+        {(searching ? searchHits : roster.ungrouped).map(renderRow)}
       </ul>
       {moveError ? (
         <p className="mt-1 px-2 text-[11px] text-destructive group-data-[collapsible=icon]:hidden">

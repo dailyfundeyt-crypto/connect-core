@@ -1,9 +1,11 @@
 import {
+  IconBrain,
   IconBrandChrome,
   IconDeviceDesktop,
   IconLogout,
   IconMoon,
   IconPuzzle,
+  IconDeviceMobile,
   IconSettings,
   IconSun,
 } from "@tabler/icons-react";
@@ -20,6 +22,7 @@ import { CompanyAppFoldersNav } from "@/components/companies/company-app-folders
 import { CometSlideOver } from "@/components/companies/comet-slide-over";
 import { LabIconRail, LabToolsNav } from "@/components/companies/lab-tools-nav";
 import { UserAvatar } from "@/components/app-sidebar/user-avatar";
+import { SparkLogo } from "@/components/brand/spark-logo";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +65,9 @@ import {
   CHROME_START_PATH_HINT,
   openLabUrlInChrome,
 } from "@/lib/ui/lab-prefs";
+
+/** Profilmenü: Eintrag „Extensions“ (Chrome Web Store) ausgeblendet – auf true stellen zum Wiederherstellen. */
+const SHOW_EXTENSIONS_MENU_ITEM = false;
 
 /**
  * Slim chrome for Lab + Unternehmen — tools / company bots.
@@ -129,6 +135,40 @@ export function LevelChromeSidebar(
       ? profile.name.trim()
       : currentUser?.name || currentUser?.email || "You";
 
+  /** Profilmenü › Connect-Chrome: Browser-Tab-Agenten auf dem PC einschalten (Erweiterung Connect Sync). */
+  const activateBrowserAgents = async () => {
+    setChromeBusy(true);
+    setChromeMsg(null);
+    setChromeOk(false);
+    try {
+      const res = await fetch("/api/connect/browser-agents", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        ok?: boolean; error?: string; agentsEnabled?: boolean; connected?: boolean; tabs?: number; browser?: string | null; launched?: boolean; launchError?: string | null;
+      } | null;
+      if (!res.ok || !body?.ok) {
+        setChromeMsg(body?.error || "Browser-Tab-Agenten nur in der Connect App am PC (localhost:3101).");
+        return;
+      }
+      setChromeOk(Boolean(body.connected));
+      setChromeMsg(
+        body.connected
+          ? `Browser-Tab-Agenten aktiv · ${body.browser ?? "Browser"} verbunden (${body.tabs ?? 0} Tabs). Agenten steuern Tabs mit browser_open, browser_tabs …`
+          : body.launched
+            ? "Browser-Tab-Agenten aktiv · Connect-Chrome startet, verbindet sich gleich …"
+            : `Browser-Tab-Agenten aktiv, aber kein Browser verbunden${body.launchError ? ` (${body.launchError})` : ""}. Erweiterung Connect Sync in Helium laden.`,
+      );
+    } catch {
+      setChromeMsg("Connect App am PC nicht erreichbar.");
+    } finally {
+      setChromeBusy(false);
+    }
+  };
+
   const openConnectChrome = async (explicitUrl?: string) => {
     setChromeBusy(true);
     setChromeMsg(null);
@@ -167,9 +207,9 @@ export function LevelChromeSidebar(
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="gap-0 border-b border-sidebar-border/50 px-1.5 pt-2 pb-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:pt-1.5">
-        {/* Top rail: Logo (Company-Switcher) · Focus · Messages · Browser · Unternehmen · collapse */}
+        {/* Top rail: Logo (Company-Switcher) · Focus · Messages · Browser · Analysis · collapse */}
         <div className="flex w-full shrink-0 items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-        <CompanySwitcher />
+        <CompanySwitcher showLabel />
         <CompanyLevelChips />
         <Button
           aria-label={
@@ -288,28 +328,40 @@ export function LevelChromeSidebar(
                     <IconSettings />
                     Settings
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void navigate({ to: "/brain" })}>
+                    <SparkLogo size={16} />
+                    Spark
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void navigate({ to: "/settings", hash: "handy-verbinden" })}>
+                    <IconDeviceMobile />
+                    Handy verbinden
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setDark(!dark)}>
                     {dark ? <IconSun /> : <IconMoon />}
                     {dark ? "Light mode" : "Dark mode"}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={chromeBusy}
-                    onClick={() => void openConnectChrome()}
+                    onClick={() => void activateBrowserAgents()}
+                    title="Browser-Tab-Agenten aktivieren (Helium/Connect-Chrome mit Connect Sync)"
                   >
                     <IconBrandChrome />
                     {chromeBusy ? "Chrome startet…" : "Connect-Chrome"}
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={chromeBusy}
-                    onClick={() =>
-                      void openConnectChrome(
-                        "https://chromewebstore.google.com/category/extensions",
-                      )
-                    }
-                  >
-                    <IconPuzzle />
-                    Extensions
-                  </DropdownMenuItem>
+                  {/* „Extensions“ auf Stefans Wunsch ausgeblendet (17.10., PC + Handy); Code bleibt. */}
+                  {SHOW_EXTENSIONS_MENU_ITEM ? (
+                    <DropdownMenuItem
+                      disabled={chromeBusy}
+                      onClick={() =>
+                        void openConnectChrome(
+                          "https://chromewebstore.google.com/category/extensions",
+                        )
+                      }
+                    >
+                      <IconPuzzle />
+                      Extensions
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem
                     onClick={() =>
                       void navigate({ to: "/settings", hash: "lab-desktop" })

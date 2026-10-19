@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconCircleCheck, IconCircleX, IconDeviceMobile, IconDownload, IconLoader2 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { PageRows } from "@/components/layout/page-shell";
@@ -59,6 +60,25 @@ export function PcBridgeLocalSection({ worker }: { worker: PcBridgeLocalWorker }
           {worker.lastError ? <p className="text-[12.5px] text-amber-500">{worker.lastError}</p> : null}
           <ProviderRows providers={worker.providers} />
           {worker.grokBotCount ? <p className="text-[12px] text-muted-foreground">{worker.grokBotCount} Grok Bots sind auf dem Handy wählbar.</p> : null}
+          {worker.helium ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border px-3 py-2" data-testid="helium-local">
+              <span className="text-sm font-medium">Helium (Connect Sync)</span>
+              <span className={`text-[12px] ${worker.helium.connected ? "text-emerald-500" : "text-muted-foreground"}`}>
+                {worker.helium.connected
+                  ? `verbunden · ${worker.helium.tabs} Tabs · ${worker.helium.windows} Fenster`
+                  : `nicht verbunden · zuletzt ${lastSeenText(worker.helium.lastSeen)}`}
+              </span>
+              <span className="text-[12px] text-muted-foreground">
+                · Handy-Befehle {worker.helium.commandsDone}
+                {worker.helium.commandsFailed ? `, Fehler ${worker.helium.commandsFailed}` : ""}
+              </span>
+              {!worker.helium.connected ? (
+                <span className="w-full text-[12px] text-muted-foreground">
+                  Einmal laden: helium://extensions → Entwicklermodus → „Entpackte Erweiterung laden“ → C:\Users\Kunc GmbH\Downloads\OpenBot-v2-Helium\extensions\connect-sync
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </PageRows>
     </div>
@@ -119,6 +139,14 @@ export function PcBridgeRelaySection({ status }: { status: Extract<PcBridgeStatu
             <span className="text-[12px] text-muted-foreground">· {status.links.length} Agent(en) verknüpft</span>
           </div>
           <ProviderRows providers={status.providers} />
+          <Link
+            className="flex items-center justify-between gap-3 rounded-xl border border-sky-500/25 bg-sky-500/[0.06] px-3 py-2.5 text-sm font-medium"
+            hash="mein-helium"
+            to="/settings"
+          >
+            <span>Mein Helium – Tabs am PC sehen und steuern</span>
+            <span aria-hidden className="text-muted-foreground">›</span>
+          </Link>
         </div>
       </PageRows>
 

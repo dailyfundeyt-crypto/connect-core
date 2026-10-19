@@ -57,7 +57,7 @@ export function BrainLocationEditor() {
           </span>
         ) : location.data?.source === "env" ? (
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-            aus connect.env
+            voreingestellt
           </span>
         ) : null}
       </div>

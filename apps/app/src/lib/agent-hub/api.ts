@@ -51,7 +51,7 @@ export type AgentHubCatalog = {
   defaults: Record<string, string>;
 };
 
-export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible" | "codex-cli" | "claude-cli";
+export type ModelProvider = "default" | "openai" | "anthropic" | "ollama-local" | "ollama-cloud" | "openai-compatible" | "codex-cli" | "claude-cli" | "antigravity-cli";
 
 export type AgentModelView = {
   provider: ModelProvider;
@@ -203,7 +203,7 @@ export function cliProvidersQuery() {
   });
 }
 
-export async function startCliProviderLogin(kind: "codex" | "claude") {
+export async function startCliProviderLogin(kind: "codex" | "claude" | "antigravity") {
   const response = await client(`${base}/cli-providers/${enc(kind)}/login`, { method: "POST", body: {}, fallback: "Anmeldung konnte nicht gestartet werden" });
   return (await response.json()) as { started: boolean; message: string };
 }
