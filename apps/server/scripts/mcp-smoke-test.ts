@@ -51,7 +51,7 @@ async function main() {
   const all = await listConnectMcpTokens(db, "dev-local-user");
   console.log(`[smoke] tokens for dev-local-user: ${all.length}`);
   for (const t of all) {
-    console.log(`  - ${t.id} label="${t.label}" lifetime=${t.lifetime} hash=${t.tokenHash.slice(0, 12)}…`);
+    console.log(`  - ${t.id} label="${t.label}" lifetime=${t.lifetime} scope=${t.scope}`);
   }
 
   console.log("[smoke] OK");
