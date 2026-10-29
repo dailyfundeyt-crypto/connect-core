@@ -37,6 +37,7 @@ import { buildUsageMcpTools } from "./tools/usage-tools";
 import { buildConductorMcpTools } from "./tools/conductor-tools";
 import { buildDesktopMcpTools } from "./tools/desktop-tools";
 import { buildSparkLearnHandlerTools } from "./handlers/spark-learn";
+import { buildCompanyProfileTools } from "./handlers/company-profiles";
 
 /**
  * Registry-Build-Deps. Werden vom Mount-Punkt in `app.ts` gesetzt.
@@ -49,6 +50,8 @@ export type ConnectMcpBuildDeps = {
   database?: Database;
   profileStore?: AgentProfileStore;
   agentMcp?: AgentMcpDeps;
+  /** Social-/Supabase-Zugang für Unternehmensprofile (nur lokal in der App verfügbar). */
+  companyProfileQuery?: ((text: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>>) | null;
 };
 
 /**
@@ -129,6 +132,14 @@ export function buildConnectMcpToolRegistry(deps: ConnectMcpBuildDeps): McpToolD
 
   // Spark-Learn MCP Tools (Lane 7: spark_ask, spark_semantic_search, spark_related, spark_quiz_next, spark_learn_status, spark_propose, spark_youtube_import)
   tools.push(...buildSparkLearnHandlerTools({ database: deps.database }));
+
+  // Unternehmensprofile + Zuordnung zu externen Agenten (company_profiles.list / company_profiles.assign)
+  tools.push(
+    ...buildCompanyProfileTools({
+      ...(deps.database ? { database: deps.database } : {}),
+      ...(deps.companyProfileQuery ? { query: deps.companyProfileQuery } : { query: null }),
+    }),
+  );
 
   registry = applyReadOnlyClassification(tools);
   return registry;

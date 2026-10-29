@@ -55,7 +55,7 @@ import { createThreadReader } from "./channels/thread-status";
 import { createCliBridgeRoutes } from "./cli-bridge/routes";
 import { installLocalPcBridgeRoutes, installPcBridgeRoutes, pcQuery } from "./pc-bridge";
 import { createHeliumSyncRoutes } from "./helium-sync";
-import { installLocalSocialRoutes } from "./social";
+import { installLocalSocialRoutes, localSocialBackend } from "./social";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
@@ -1333,6 +1333,12 @@ export function createApp(
   // Single-User-Override (Dev-Loopback ohne Sign-In).
   //
   // Format: JSON-RPC 2.0 (`/jsonrpc`), GET `/manifest` und `/health`.
+  //
+  // Connect Social liefert die Unternehmensprofile (nur lokal in der App verfuegbar).
+  // Der Social-Backend wird einmal erzeugt und an beide Stellen gereicht: an die
+  // Social-Routen und an die Connect-MCP-Tools (company_profiles.*).
+  const socialBackend = process.env.CONNECT_SERVERLESS === "1" ? null : localSocialBackend();
+
   if (attachmentDatabase) {
     // Tool-Registry wird gebaut, wenn Profile-Store + AgentMcp-Deps da sind.
     // Commit 2: agents-Tools. Commits 3-4 erweitern um browser/mini-apps/knowledge.
@@ -1341,12 +1347,14 @@ export function createApp(
           database: attachmentDatabase,
           profileStore: agentProfileStore,
           agentMcp: buildAgentMcpDeps(attachmentDatabase, agentProfileStore),
+          companyProfileQuery: socialBackend?.query() ?? null,
         })
       : [];
     app.route(
       "/api/connect-mcp",
       createConnectMcpRouter({
         tools,
+        database: attachmentDatabase,
         resolveToken: (token) => resolveConnectMcpToken(attachmentDatabase, token),
         ...(config.singleUser
           ? { singleUser: { id: "dev-local-user", email: "stefankunc994@gmail.com", name: "Stefan Kunc" } }
@@ -1371,7 +1379,7 @@ export function createApp(
   } else {
     installLocalPcBridgeRoutes(app as never, requireUser as never);
     // Connect Social (helium-social): öffentliche Firmenprofile/Feed, zentral in Supabase (pc-bridge.env).
-    installLocalSocialRoutes(app, requireUser);
+    if (socialBackend) installLocalSocialRoutes(app, requireUser, socialBackend);
     // Helium-Erweiterung „Connect Sync“: Tabs melden + Befehle vom Handy (nur 127.0.0.1, Token-Kopplung).
     app.route("/api/helium-sync", createHeliumSyncRoutes(requireUser as never));
     // Handy-In-App-Browser: lokale Apps (localhost:<port>) über den QR-Tunnel, nur mit Login + Port-Whitelist.
