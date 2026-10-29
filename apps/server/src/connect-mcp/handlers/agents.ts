@@ -107,6 +107,11 @@ const LIST_AGENTS: McpToolDef = {
         enum: ["public", "private", "all"],
         description: "Filtert nach Sichtbarkeit (default: all)",
       },
+      company: {
+        type: "string",
+        description:
+          "Optionaler Filter: nur Agenten, die dieser Firma zugeordnet sind (ID oder Name der Firma).",
+      },
     },
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
@@ -240,8 +245,8 @@ const CREATE_TASK: McpToolDef = {
 // ============================================================================
 
 export type AgentsToolDeps = {
-  profileStore: AgentProfileStore;
-  agentMcp: AgentMcpDeps;
+  profileStore?: AgentProfileStore;
+  agentMcp?: AgentMcpDeps;
   database?: Database;
 };
 
@@ -250,14 +255,41 @@ export function buildAgentsTools(deps: AgentsToolDeps): McpToolDef[] {
     list_agents: async (args, ctx) => {
       const includeHidden = optionalBoolean(args, "include_hidden", false);
       const visibility = optionalString(args, "visibility") ?? "all";
+      const companyFilter = optionalString(args, "company")?.trim() || null;
+
+      // Firmen-Filter: die Zuordnung Agent→Firma liegt im Workspace des
+      // Nutzers (`connect_workspace_kv`, `u:<userId>:connect.companies.custom`).
+      // Fremde Firmen sind fuer diesen Nutzer nicht sichtbar.
+      let allowedAgentIds: Set<string> | null = null;
+      let filteredCompany: { id: string; name: string } | null = null;
+      if (companyFilter) {
+        if (!deps.database) {
+          return errorResult("Datenbank nicht verfuegbar — Firmen-Filter nicht moeglich.");
+        }
+        const { findWorkspaceCompany } = await import("../companies");
+        const company = await findWorkspaceCompany(deps.database, ctx.actorId, companyFilter);
+        if (!company) {
+          return errorResult(
+            `Firma "${companyFilter}" wurde nicht gefunden oder gehoert nicht dir.`,
+          );
+        }
+        allowedAgentIds = new Set(company.agentIds);
+        filteredCompany = { id: company.id, name: company.name };
+      }
+
       const actor = { id: ctx.actorId, role: "user" as const };
+      if (!deps.profileStore) return errorResult("ProfileStore nicht initialisiert.");
       const profiles = await deps.profileStore.list(actor, includeHidden);
-      const filtered =
+      const visible =
         visibility === "all"
           ? profiles
           : profiles.filter((p) => p.visibility === visibility);
+      const filtered = allowedAgentIds
+        ? visible.filter((p) => allowedAgentIds!.has(p.id))
+        : visible;
       return jsonResult({
         count: filtered.length,
+        ...(filteredCompany ? { company: filteredCompany } : {}),
         agents: filtered.map((p) => ({
           id: p.id,
           name: p.name,
@@ -273,6 +305,7 @@ export function buildAgentsTools(deps: AgentsToolDeps): McpToolDef[] {
     get_agent_profile: async (args, ctx) => {
       const agentId = requireString(args, "agent_id");
       const actor = { id: ctx.actorId, role: "user" as const };
+      if (!deps.profileStore) return errorResult("ProfileStore nicht initialisiert.");
       const profile = await deps.profileStore.get(actor, agentId);
       if (!profile) {
         return errorResult(`Agent '${agentId}' nicht gefunden oder nicht zugänglich.`);
@@ -309,6 +342,7 @@ export function buildAgentsTools(deps: AgentsToolDeps): McpToolDef[] {
     chat_with_agent: async (args, ctx) => {
       const agentId = requireString(args, "agent_id");
       const prompt = requireString(args, "prompt", { maxLen: 32_000 });
+      if (!deps.agentMcp) return errorResult("AgentMcp nicht initialisiert.");
       const result = await deps.agentMcp.invokeChat({ agentId, prompt });
       return jsonResult({ agent_id: agentId, response: result });
     },
@@ -316,6 +350,7 @@ export function buildAgentsTools(deps: AgentsToolDeps): McpToolDef[] {
     query_agent: async (args) => {
       const agentId = requireString(args, "agent_id");
       const question = requireString(args, "question", { maxLen: 32_000 });
+      if (!deps.agentMcp) return errorResult("AgentMcp nicht initialisiert.");
       const result = await deps.agentMcp.invokeQuery({ agentId, question });
       return jsonResult({ agent_id: agentId, answer: result });
     },
@@ -323,6 +358,7 @@ export function buildAgentsTools(deps: AgentsToolDeps): McpToolDef[] {
     steer_agent: async (args, ctx) => {
       const agentId = requireString(args, "agent_id");
       const instruction = requireString(args, "instruction", { maxLen: 4_000 });
+      if (!deps.agentMcp) return errorResult("AgentMcp nicht initialisiert.");
       const result = await deps.agentMcp.invokeSteer({ agentId, instruction });
       return jsonResult({
         agent_id: agentId,

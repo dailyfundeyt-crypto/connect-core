@@ -133,7 +133,10 @@ export function buildConnectMcpToolRegistry(deps: ConnectMcpBuildDeps): McpToolD
   // Spark-Learn MCP Tools (Lane 7: spark_ask, spark_semantic_search, spark_related, spark_quiz_next, spark_learn_status, spark_propose, spark_youtube_import)
   tools.push(...buildSparkLearnHandlerTools({ database: deps.database }));
 
-  // Unternehmensprofile + Zuordnung zu externen Agenten (company_profiles.list / company_profiles.assign)
+  // Firmen + Zuordnung zu externen Agenten (company_profiles.list / .assign /
+  // .rename) und die Agenten-Zuordnung (companies.list / .agents /
+  // .assign_agent / .unassign_agent). Alle lesen aus derselben Quelle:
+  // `connect_workspace_kv` (Workspace des Nutzers).
   tools.push(
     ...buildCompanyProfileTools({
       ...(deps.database ? { database: deps.database } : {}),
