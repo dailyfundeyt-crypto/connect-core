@@ -20,6 +20,7 @@ import { createAgentHubRoutes } from "./agent-hub/routes";
 import { buildAgentMcpDeps } from "./agent-hub/agent-mcp-deps";
 import { createAgentMcpRoutes } from "./agent-hub/agent-mcp-routes";
 import { createConnectMcpRouter } from "./connect-mcp/router";
+import { createMcpOAuthRoutes } from "./connect-mcp/oauth-routes";
 import { resolveConnectMcpToken } from "./connect-mcp/tokens";
 import { buildConnectMcpToolRegistry } from "./connect-mcp/tool-registry";
 import {
@@ -32,7 +33,7 @@ import {
   DEPLOYMENT_INITIATOR,
   recordAuditEvent,
 } from "./audit";
-import { createDevRequireUser } from "./auth/dev-actor";
+import { createDevRequireUser, DEV_ACTOR } from "./auth/dev-actor";
 import {
   type AppVariables,
   type AuthService,
@@ -1357,8 +1358,97 @@ export function createApp(
         database: attachmentDatabase,
         resolveToken: (token) => resolveConnectMcpToken(attachmentDatabase, token),
         ...(config.singleUser
-          ? { singleUser: { id: "dev-local-user", email: "stefankunc994@gmail.com", name: "Stefan Kunc" } }
+          ? {
+              singleUser: {
+                id: DEV_ACTOR.id,
+                email: DEV_ACTOR.email,
+                name: DEV_ACTOR.name,
+              },
+            }
           : {}),
+      }),
+    );
+
+    /*
+     * MCP-OAuth (Authorization Code + PKCE).
+     *
+     * Damit sich ein MCP-Client wie bei jedem anderen MCP-Server anmelden kann:
+     * der Browser meldet sich mit dem Google-Konto an, und das Access-Token ist
+     * an genau dieses Konto gebunden. Damit liefert der MCP-Server die Firmen
+<<<<<<< Updated upstream
+     * und Agenten dieses Kontos ├ö├ç├Â ein anderes Google-Konto sieht andere Daten.
+     *
+     * Aktiv nur, wenn eine Anmeldung wirklich mÔö£├églich ist: im Single-User-Modus
+     * gÔö£├▒be es nichts zu bestÔö£├▒tigen, und eine Freigabe-Seite ohne echte IdentitÔö£├▒t
+     * wÔö£├▒re eine TÔö£├▒uschung. Der OAuth-Flow ist deshalb an `auth` gebunden.
+=======
+     * und Agenten dieses Kontos ÔÇö ein anderes Google-Konto sieht andere Daten.
+     *
+     * Aktiv nur, wenn eine Anmeldung wirklich m├Âglich ist: im Single-User-Modus
+     * g├ñbe es nichts zu best├ñtigen, und eine Freigabe-Seite ohne echte Identit├ñt
+     * w├ñre eine T├ñuschung. Der OAuth-Flow ist deshalb an `auth` gebunden.
+>>>>>>> Stashed changes
+     */
+    const mcpOAuthEnabled = Boolean(auth) && !config.singleUser;
+    const mcpPublicUrl =
+      config.publicUrl?.replace(/\/+$/, "") ?? `http://localhost:${config.port}`;
+    const mcpOAuthRoutes = createMcpOAuthRoutes({
+      database: attachmentDatabase,
+      enabled: mcpOAuthEnabled,
+      publicUrl: mcpPublicUrl,
+      resolveSession: async (context) => {
+        if (config.singleUser) {
+          return {
+            id: DEV_ACTOR.id,
+            email: DEV_ACTOR.email,
+            name: DEV_ACTOR.name,
+          };
+        }
+        if (!auth) return null;
+        const session = await auth.api.getSession({
+          headers: context.req.raw.headers,
+          query: { disableCookieCache: true },
+        });
+        if (!session?.user) return null;
+        return {
+          id: session.user.id,
+          email: session.user.email ?? null,
+          name: session.user.name ?? null,
+        };
+      },
+    });
+    app.route("/api/connect-mcp", mcpOAuthRoutes);
+
+    /*
+<<<<<<< Updated upstream
+     * Die Metadaten liegen zusÔö£├▒tzlich am Host-Root: ein MCP-Client schlÔö£├▒gt
+=======
+     * Die Metadaten liegen zus├ñtzlich am Host-Root: ein MCP-Client schl├ñgt
+>>>>>>> Stashed changes
+     * `https://<host>/.well-known/oauth-protected-resource` nach, nicht den
+     * Pfad mit `/api/connect-mcp` davor. Ohne diese Doppelung findet ein
+     * Standard-Client keinen Authorization-Server und meldet "kein Login
+     * moeglich", obwohl der Server ihn anbietet.
+     */
+    app.get("/.well-known/oauth-protected-resource", (context) =>
+      context.json({
+        resource: mcpPublicUrl,
+        authorization_servers: [mcpPublicUrl],
+        scopes_supported: ["read", "full"],
+        bearer_methods_supported: ["header"],
+      }),
+    );
+    app.get("/.well-known/oauth-authorization-server", (context) =>
+      context.json({
+        issuer: mcpPublicUrl,
+        authorization_endpoint: `${mcpPublicUrl}/api/connect-mcp/authorize`,
+        token_endpoint: `${mcpPublicUrl}/api/connect-mcp/token`,
+        registration_endpoint: `${mcpPublicUrl}/api/connect-mcp/register`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code", "refresh_token"],
+        code_challenge_methods_supported: ["S256", "plain"],
+        token_endpoint_auth_methods_supported: ["none"],
+        scopes_supported: ["read", "full"],
       }),
     );
   }

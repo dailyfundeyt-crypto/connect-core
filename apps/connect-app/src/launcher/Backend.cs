@@ -87,6 +87,19 @@ internal sealed class Backend
     public string DatabaseUrl(Dictionary<string, string> env) =>
         $"postgres://connect:{env["CONNECT_APP_DB_PASSWORD"]}@127.0.0.1:{_p.PgPort}/connect";
 
+    /// <summary>Ist eine echte Anmeldung (Google/Microsoft/Okta) moeglich? Dann laeuft die App
+    /// NICHT im Single-User-Modus: jede Person meldet sich mit ihrem Konto an und sieht
+    /// damit genau ihre eigenen Firmen, Agenten und Chats.</summary>
+    private static bool HasIdentityProvider(Dictionary<string, string> envFile)
+    {
+        string Get(string k) => envFile.TryGetValue(k, out var v) ? (v ?? "").Trim() : "";
+        bool Has(string a, string b) => Get(a).Length > 0 && Get(b).Length > 0;
+        return Has("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET")
+            || Has("MICROSOFT_OAUTH_CLIENT_ID", "MICROSOFT_OAUTH_CLIENT_SECRET")
+            || Get("OKTA_OAUTH_ISSUER").Length > 0
+            || Get("BETTER_AUTH_SECRET").Length > 0;
+    }
+
     /// <summary>Umgebung fuer Migration und Server. Port/Pfade kommen immer frisch vom Launcher,
     /// damit ein Update (neuer Programmordner) nichts in den Daten anpassen muss.</summary>
     public Dictionary<string, string> ServerEnv(Dictionary<string, string> envFile)
@@ -94,18 +107,22 @@ internal sealed class Backend
         var e = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in envFile) if (!kv.Key.StartsWith("CONNECT_APP_", StringComparison.OrdinalIgnoreCase)) e[kv.Key] = kv.Value;
         var origin = $"http://localhost:{_p.AppPort}";
+        var hasIdp = HasIdentityProvider(envFile);
         e["DATABASE_URL"] = DatabaseUrl(envFile);
         e["PORT"] = _p.AppPort.ToString();
         e["SERVER_PORT"] = _p.AppPort.ToString();
         e["NODE_ENV"] = "production";
-        e["CONNECT_SINGLE_USER"] = "true";
+        // Single-User heisst: jeder Request ist derselbe Administrator, ohne Anmeldung.
+        // Sobald ein Identity Provider konfiguriert ist, ist das aus — dann bindet
+        // jede Anmeldung an ihr eigenes Konto (eigene Firmen, eigene Agenten).
+        e["CONNECT_SINGLE_USER"] = hasIdp ? "false" : "true";
         e["APP_DIST_DIR"] = _p.AppDistDir;
         e["TENANT_PACKAGE_DIR"] = _p.TenantDir;
         e["CONNECT_APP_URL"] = origin;
         e["OPENBOT_APP_URL"] = origin;
         e["TRUSTED_ORIGINS"] = $"{origin},http://127.0.0.1:{_p.AppPort}";
         e["PATH"] = Path.GetDirectoryName(_p.BunExe) + ";" + _p.PgBin + ";" + Environment.GetEnvironmentVariable("PATH");
-        // Geerbte Login-/DB-Variablen aus der Benutzerumgebung neutralisieren (Single-User, eigene DB),
+        // Geerbte Login-/DB-Variablen aus der Benutzerumgebung neutralisieren (eigene DB),
         // ausser sie stehen bewusst in connect.env.
         foreach (var k in new[] { "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET",
                      "MICROSOFT_OAUTH_CLIENT_ID", "MICROSOFT_OAUTH_CLIENT_SECRET", "OKTA_OAUTH_ISSUER", "CONNECT_PUBLIC_URL" })
