@@ -140,6 +140,8 @@ export type McpToolResult = {
 export type McpToolContext = {
   /** User, der das Tool aufruft (kommt aus dem Bearer-Token) */
   actorId: string;
+  /** E-Mail des aufrufenden Nutzers (für Zuordnungen, die über E-Mail auflösen) */
+  actorEmail?: string | null;
   /** Optional: expliziter Agent-Context, falls das Tool agent-scoped ist */
   agentId?: string;
   /** Optional: Request-Signal für Cancellation */
@@ -383,6 +385,7 @@ export async function dispatchJsonRpc(
       if (tool.handler) {
         result = await tool.handler(validated.args, {
           actorId: actor.id,
+          actorEmail: actor.email ?? null,
           grant,
         });
       } else {
@@ -525,6 +528,30 @@ export function getAllowedTunnelHosts(configuredHosts?: string[]): Set<string> {
   return set;
 }
 
+/**
+ * Header, die ausschließlich von Cloudflare gesetzt werden. Ist einer davon
+ * vorhanden, ist der Request ein Tunnel-Request — unabhängig davon, ob die
+ * TCP-Verbindung lokal (Loopback, cloudflared-Prozess auf diesem Rechner) oder
+ * von außen kommt.
+ *
+ * Vorher war die CF-Prüfung an `isLoopbackRemote` gekoppelt: nur wenn die
+ * Remote-Adresse Loopback war, zählten cf-ray/cf-connecting-ip als Tunnel.
+ * Dadurch konnte ein Request mit CF-Headern über einen Nicht-Loopback-Pfad
+ * als "lokal" durchrutschen.
+ */
+const CLOUDFLARE_TUNNEL_HEADERS = ["cf-connecting-ip", "cf-ray", "cf-ipcountry"] as const;
+
+/** true, wenn der Header einen Cloudflare-Tunnel-Kontext belegt. */
+export function hasCloudflareTunnelHeader(context: Context): boolean {
+  for (const name of CLOUDFLARE_TUNNEL_HEADERS) {
+    const value = context.req.header(name);
+    if (value && value.trim() !== "") return true;
+  }
+  const cdnLoop = context.req.header("cdn-loop");
+  if (cdnLoop && /cloudflare/i.test(cdnLoop)) return true;
+  return false;
+}
+
 export function isTunnelContext(
   context: Context,
   allowedTunnelHosts?: Set<string>,
@@ -539,14 +566,20 @@ export function isTunnelContext(
     return true;
   }
 
-  // 2. Cloudflare nur, wenn Request vom lokalen cloudflared (Remote-Adresse Loopback) kommt
+  // 2. Cloudflare-Header: cf-connecting-ip / cf-ray / cf-ipcountry /
+  //    cdn-loop: cloudflare. Unabhängig von der Remote-Adresse (fail-closed).
+  if (hasCloudflareTunnelHeader(context)) {
+    return true;
+  }
+
+  // 3. Proxy-Header (Forwarded / X-Real-IP) belegen ebenfalls einen Tunnel.
+  if (context.req.header("forwarded") || context.req.header("x-real-ip")) {
+    return true;
+  }
+
+  // 4. Cloudflare-Quick-Tunnel nur, wenn Request vom lokalen cloudflared
+  //    (Remote-Adresse Loopback) kommt.
   if (isLoopbackRemote) {
-    const cfRay = context.req.header("cf-ray");
-    const cfIp = context.req.header("cf-connecting-ip");
-    const cdnLoop = context.req.header("cdn-loop");
-    if (cfRay || cfIp || (cdnLoop && /cloudflare/i.test(cdnLoop))) {
-      return true;
-    }
     if (host && host.endsWith(".trycloudflare.com")) {
       return true;
     }
@@ -572,14 +605,43 @@ export function checkAccess(
 
   // Regel: Nicht-Loopback ohne erlaubten Tunnel-Host => 403
   if (!isLoopbackRemote) {
-    if (!allowedHosts.has(host)) {
-      return {
-        allowed: false,
-        isTunnel: false,
-        reason: "Zugriff von Nicht-Loopback-Adresse ohne erlaubten Tunnel-Host verweigert.",
-      };
+    if (allowedHosts.has(host)) {
+      return { allowed: true, isTunnel: true };
     }
-    return { allowed: true, isTunnel: true };
+
+    /*
+     * ECHTER TUNNEL ÜBER CLOUDFLARE MIT LOOPBACK-HOST.
+     *
+     * cloudflared leitet den `Host`-Header der ORIGIN-Adresse weiter, nicht den
+     * öffentlichen Namen: hinter einem Quick-Tunnel kommt "Host: localhost:3101"
+     * an, während die Anfrage über das Internet zugestellt wurde (CF-Header
+     * `cf-connecting-ip`/`cf-ray`/`cf-ipcountry`/`cdn-loop` beweisen das, und
+     * `x-forwarded-for` nennt die echte fremde IP).
+     *
+     * Ohne diese Ausnahme wurde jeder echte Tunnel-Request abgewiesen, weil der
+     * Host-Header gar nicht dem Tunnel-Namen entspricht. Der Loopback-Host ist
+     * hier kein Freibrief: er wird nur zusammen mit den Cloudflare-Headern
+     * akzeptiert, und die Host-Allowlist bleibt für alles andere maßgeblich.
+     *
+     * Die Token-Verwaltung (/tokens) prüft `isStrictLoopbackRequest` und bleibt
+     * davon unberührt: dort sind CF-Header ein Ausschlussgrund, kein Nachweis.
+     */
+    const hasCloudflareProof = hasCloudflareTunnelHeader(context);
+    const loopbackHost =
+      LOOPBACK_HOSTS.has(host) ||
+      host.startsWith("localhost:") ||
+      host.startsWith("127.0.0.1:") ||
+      host.endsWith(".localhost");
+
+    if (hasCloudflareProof && loopbackHost) {
+      return { allowed: true, isTunnel: true };
+    }
+
+    return {
+      allowed: false,
+      isTunnel: false,
+      reason: "Zugriff von Nicht-Loopback-Adresse ohne erlaubten Tunnel-Host verweigert.",
+    };
   }
 
   // Remote ist Loopback:

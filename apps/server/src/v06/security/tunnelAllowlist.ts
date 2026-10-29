@@ -41,16 +41,34 @@ export const DEFAULT_TUNNEL_ALLOWED_EXACT_PATHS = [
 
 /**
  * Erkennung, ob ein Request über einen Cloudflare-Tunnel oder Reverse-Proxy hereinkommt.
+ *
+ * Fail-closed: jeder der Cloudflare-Header (cf-connecting-ip, cf-ray, cf-ipcountry,
+ * cdn-loop: cloudflare) belegt einen Tunnel-Kontext — unabhängig davon, ob die
+ * TCP-Verbindung von Loopback oder von außen kommt. Ebenso zählen die
+ * Proxy-Header Forwarded und X-Real-IP.
  */
 export function isTunnelRequest(c: Context): boolean {
   const cfRay = c.req.header("cf-ray");
   const cfConnectingIp = c.req.header("cf-connecting-ip");
+  const cfIpCountry = c.req.header("cf-ipcountry");
+  const cdnLoop = c.req.header("cdn-loop");
   const tunnelHeader = c.req.header("x-connect-tunnel");
+  const forwarded = c.req.header("forwarded");
+  const realIp = c.req.header("x-real-ip");
   const host = c.req.header("host") || "";
   const forwardedHost = c.req.header("x-forwarded-host") || "";
 
-  // Cloudflare-Header oder Tunnel-Header aktiv
-  if (cfRay || cfConnectingIp || tunnelHeader === "1" || tunnelHeader === "true") {
+  // Cloudflare-Header oder Tunnel-/Proxy-Header aktiv
+  if (
+    cfRay ||
+    cfConnectingIp ||
+    cfIpCountry ||
+    (cdnLoop && /cloudflare/i.test(cdnLoop)) ||
+    forwarded ||
+    realIp ||
+    tunnelHeader === "1" ||
+    tunnelHeader === "true"
+  ) {
     return true;
   }
 
