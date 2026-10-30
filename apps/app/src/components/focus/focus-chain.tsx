@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type FocusChainConfig,
   type FocusChainState,
+  type FocusChainStep,
   getChainState,
   getFocusChain,
   openExternal,
@@ -20,6 +21,9 @@ import {
   sameOriginPath,
   subscribeFocusChain,
 } from "@/lib/focus-chain";
+import { EXTERNAL_LINKS } from "@connect/contracts";
+import { getFlag } from "@/contracts/v06/flags";
+import { getFocusCardsV2 } from "@/v06/focus/focusCards";
 import { cn } from "@/lib/utils";
 
 export function useFocusChainConfig(): FocusChainConfig {
@@ -86,7 +90,28 @@ export function FocusChain({
 }) {
   const cfg = useFocusChainConfig();
   const navigate = useNavigate();
-  const steps = useMemo(() => cfg.steps.filter((s) => s.enabled && s.url.trim()), [cfg.steps]);
+  const isFocusV2 = getFlag("focusV2");
+  const isDesignV2 = getFlag("designV2");
+  const steps = useMemo(() => {
+    if (isFocusV2) {
+      // Focus v06 (A02): Reihenfolge aus FOCUS_ORDER_V2: plan -> datenbank -> aufgaben -> emails
+      // Agenten-Kontakte entfaellt, Aufgaben oeffnet Grok-Bot (konfigurierbar via focus.grokbotTarget)
+      return getFocusCardsV2({ googleAccount: cfg.googleAccount }).map((card) => ({
+        id: card.id,
+        name: card.name,
+        task: card.task,
+        url: card.url,
+        android: card.android,
+        ios: card.ios,
+        openMode: card.openMode,
+        intentStyle: card.intentStyle,
+        enabled: card.enabled,
+        hint: card.hint,
+      }));
+    }
+    // Flag aus: Altes Verhalten
+    return cfg.steps.filter((s) => s.enabled && s.url.trim());
+  }, [cfg.steps, cfg.googleAccount, isFocusV2]);
   const [state, setStateRaw] = useState<FocusChainState>(() => getChainState());
   const stateRef = useRef(state);
   const setState = useCallback((next: FocusChainState) => {
@@ -94,8 +119,15 @@ export function FocusChain({
     setStateRaw(next);
     saveChainState(next);
   }, []);
+  const isDone = useCallback(
+    (sId: string) =>
+      state.done.includes(sId) ||
+      (sId === "emails" && state.done.includes("email")) ||
+      (sId === "email" && state.done.includes("emails")),
+    [state.done],
+  );
   const index = Math.min(Math.max(0, state.index), Math.max(0, steps.length - 1));
-  const finished = steps.length > 0 && state.done.length >= steps.length && steps.every((s) => state.done.includes(s.id));
+  const finished = steps.length > 0 && steps.every((s) => isDone(s.id));
   const railRef = useRef<HTMLDivElement>(null);
   const programmatic = useRef(false);
 
@@ -261,14 +293,14 @@ export function FocusChain({
       <div className="flex items-center justify-between gap-2 px-4">
         <span aria-hidden className="size-10" />
         <div className="flex items-center gap-2">
-          <button aria-label="Vorheriger Schritt" className="flex size-9 items-center justify-center rounded-full border border-white/15 text-white active:bg-white/10 disabled:opacity-30" disabled={index === 0} onClick={() => go(index - 1)} type="button">
+          <button aria-label="Vorheriger Schritt" className={cn("flex size-9 items-center justify-center rounded-full transition-colors duration-180 disabled:opacity-30 cursor-pointer", isDesignV2 ? "border border-[var(--p-border)] bg-[var(--p-surface-2)] text-[var(--p-text-1)] hover:bg-[var(--p-surface-3)] active:bg-[var(--p-surface-1)]" : "border border-white/15 text-white active:bg-white/10")} disabled={index === 0} onClick={() => go(index - 1)} type="button">
             <IconChevronLeft className="size-4" />
           </button>
-          <p className="min-w-[8.5rem] text-center text-[13px] tabular-nums text-white/55" data-testid="focus-chain-pager">
+          <p className={cn("min-w-[8.5rem] text-center text-[13px] tabular-nums", isDesignV2 ? "text-[var(--p-text-2)] font-medium" : "text-white/55")} data-testid="focus-chain-pager">
             {index + 1} / {steps.length}
             {active ? ` · ${active.name}` : ""}
           </p>
-          <button aria-label="Nächster Schritt" className="flex size-9 items-center justify-center rounded-full border border-white/15 text-white active:bg-white/10 disabled:opacity-30" disabled={index >= steps.length - 1} onClick={() => go(index + 1)} type="button">
+          <button aria-label="Nächster Schritt" className={cn("flex size-9 items-center justify-center rounded-full transition-colors duration-180 disabled:opacity-30 cursor-pointer", isDesignV2 ? "border border-[var(--p-border)] bg-[var(--p-surface-2)] text-[var(--p-text-1)] hover:bg-[var(--p-surface-3)] active:bg-[var(--p-surface-1)]" : "border border-white/15 text-white active:bg-white/10")} disabled={index >= steps.length - 1} onClick={() => go(index + 1)} type="button">
             <IconChevronRight className="size-4" />
           </button>
         </div>
@@ -286,7 +318,7 @@ export function FocusChain({
       <div className="mt-3 flex gap-1.5 px-6">
         {steps.map((s, i) => (
           <span
-            className={cn("h-1 flex-1 rounded-full transition-colors", state.done.includes(s.id) ? "bg-emerald-400/80" : i === index ? "bg-white" : "bg-white/12")}
+            className={cn("h-1 flex-1 rounded-full transition-colors duration-180", isDesignV2 ? (isDone(s.id) ? "bg-emerald-500" : i === index ? "bg-[var(--p-accent)]" : "bg-[var(--p-surface-3)]") : (isDone(s.id) ? "bg-emerald-400/80" : i === index ? "bg-white" : "bg-white/12"))}
             key={s.id}
           />
         ))}
@@ -299,14 +331,21 @@ export function FocusChain({
         ref={railRef}
       >
         {steps.map((s, i) => {
-          const done = state.done.includes(s.id);
+          const done = isDone(s.id);
           const current = i === index;
+          const hint = (s as { hint?: string }).hint;
           return (
             <button
               className={cn(
-                "relative flex w-[86%] shrink-0 snap-center flex-col items-start rounded-[30px] border p-6 text-left transition duration-300 active:scale-[0.985]",
+                "relative flex w-[86%] shrink-0 snap-center flex-col items-start rounded-[30px] border p-6 text-left transition duration-200 active:scale-[0.985] cursor-pointer",
                 full ? "min-h-[46vh]" : "min-h-[250px]",
-                current ? "border-white/20 bg-[linear-gradient(160deg,rgba(255,255,255,0.09),rgba(255,255,255,0.02))] opacity-100" : "border-white/[0.07] bg-white/[0.02] opacity-55",
+                isDesignV2
+                  ? current
+                    ? "border-[var(--p-border-strong)] bg-[linear-gradient(160deg,var(--p-surface-2),var(--p-surface-1))] opacity-100 shadow-md"
+                    : "border-[var(--p-border)] bg-[var(--p-surface-1)] opacity-65 hover:opacity-90 hover:border-[var(--p-border-strong)]"
+                  : current
+                    ? "border-white/20 bg-[linear-gradient(160deg,rgba(255,255,255,0.09),rgba(255,255,255,0.02))] opacity-100"
+                    : "border-white/[0.07] bg-white/[0.02] opacity-55",
               )}
               data-testid={`focus-chain-card-${s.id}`}
               key={s.id}
@@ -314,17 +353,26 @@ export function FocusChain({
               type="button"
             >
               <span className="flex w-full items-center justify-between">
-                <span className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white">
+                <span className={cn("flex size-14 items-center justify-center overflow-hidden rounded-2xl border transition-colors", isDesignV2 ? "border-[var(--p-border)] bg-[var(--p-surface-2)]" : "border-white/10 bg-white")}>
                   {favicon(s.url) ? <img alt="" className="size-9" src={favicon(s.url)} /> : null}
                 </span>
-                <span className={cn("flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] tabular-nums", done ? "bg-emerald-400/15 text-emerald-300" : "bg-white/[0.06] text-white/45")}>
+                <span className={cn("flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] tabular-nums font-medium", done ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" : isDesignV2 ? "bg-[var(--p-surface-3)] text-[var(--p-text-2)] border border-[var(--p-border)]" : "bg-white/[0.06] text-white/45")}>
                   {done ? <IconCheck className="size-3.5" /> : null}
                   {done ? "erledigt" : `Schritt ${i + 1}`}
                 </span>
               </span>
               <span className="mt-auto w-full min-w-0 pt-8">
-                <span className="block hyphens-auto break-words font-semibold text-[clamp(22px,7vw,32px)] leading-tight tracking-tight text-white" lang="de">{s.name}</span>
-                <span className="mt-2 block text-[15px] leading-snug text-white/50">{s.task}</span>
+                <span className={cn("block hyphens-auto break-words font-semibold text-[clamp(22px,7vw,32px)] leading-tight tracking-tight", isDesignV2 ? "text-[var(--p-text-1)]" : "text-white")} lang="de">{s.name}</span>
+                <span className={cn("mt-2 block text-[15px] leading-snug", isDesignV2 ? "text-[var(--p-text-2)]" : "text-white/50")}>{s.task}</span>
+                {hint ? (
+                  <span
+                    className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-0.5 text-[11px] text-amber-200"
+                    data-testid="grokbot-target-hint"
+                    title={hint}
+                  >
+                    {hint}
+                  </span>
+                ) : null}
               </span>
             </button>
           );

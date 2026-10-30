@@ -1,0 +1,22 @@
+{
+  "name": "@connect/contracts",
+  "license": "MIT",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./routes": "./src/routes.ts",
+    "./api": "./src/api.ts",
+    "./flags": "./src/flags.ts",
+    "./sidebar": "./src/sidebar.ts",
+    "./swarm-v3": "./src/swarm-v3/index.ts",
+    "./swarm-v3/*": "./src/swarm-v3/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

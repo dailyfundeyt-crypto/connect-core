@@ -53,7 +53,7 @@ export function PageShell({
   title: string;
   width?: ShellWidth;
   backButton?: {
-    linkProps: LinkProps;
+    linkProps: Record<string, unknown>;
     label: string;
   };
 }) {
@@ -83,7 +83,7 @@ export function PageShell({
           {!!backButton && (
             <Button
               variant="ghost"
-              render={(props) => <Link {...backButton.linkProps} {...props} />}
+              render={(props) => <Link {...(backButton.linkProps as any)} {...props} />}
             >
               <IconChevronLeft />
               {backButton.label}

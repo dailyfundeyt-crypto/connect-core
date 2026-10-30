@@ -80,7 +80,9 @@ export function FocusOverlay({
     const urlLevel = typeof raw === "string" ? Number(raw) : raw;
     const onCompany = location.pathname.startsWith("/company/");
     const back: CompanyLevel =
-      onCompany && (urlLevel === 3 || urlLevel === 4) ? urlLevel : 2;
+      onCompany && (urlLevel === 3 || urlLevel === 4 || urlLevel === 5)
+        ? urlLevel
+        : 2;
     setActiveLevel(back);
     notifyDesktopLevel(back);
     if (onCompany && urlLevel === 1) {

@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { queryClient } from "./query-client";
+import { loadRuntimeFlags } from "./lib/flags/runtime";
 import { router } from "./router";
 import "@copilotkit/react-core/v2/styles.css";
 import "./styles.css";
@@ -25,13 +26,26 @@ function removePublicIntro() {
   if (intro) intro.remove();
 }
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} context={{ queryClient }} />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+/**
+ * Flags before the first render, not after it.
+ *
+ * A switched-on v06 surface has to be drawn on the first paint; reading the flags in an effect
+ * would render the old shell and then swap it, which is worse than waiting one local request.
+ * `loadRuntimeFlags` never rejects and gives up after a short bound, so a server that is down
+ * still gets a usable app with the compiled defaults.
+ */
+async function mount(root: HTMLElement) {
+  await loadRuntimeFlags();
+  createRoot(root).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} context={{ queryClient }} />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+}
+
+void mount(rootElement);
 
 // Backup: Public-Intro nach 2s zwangs-entfernen, falls React hängt. Das
 // ist defensiv — bei einem normalen Mount wird der Div bereits durch die

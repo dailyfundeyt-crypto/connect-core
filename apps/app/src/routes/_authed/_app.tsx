@@ -6,10 +6,13 @@ import {
   useParams,
 } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IconX } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { AppSidebar } from "@/components/app-sidebar/app-sidebar";
 import { FocusOverlay } from "@/components/companies/focus-overlay";
 import { LevelChromeSidebar } from "@/components/companies/level-chrome-sidebar";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
+import { Button } from "@/components/ui/button";
 import {
   type CompanyLevel,
   getActiveLevel,
@@ -17,11 +20,18 @@ import {
   subscribeLevel,
 } from "@/lib/companies/level";
 import {
+  getCompany,
+  listCompanies,
   readActiveCompanyId,
   resolveCompanyId,
 } from "@/lib/companies/store";
 import { isDesktopApp } from "@/lib/desktop-bridge";
 import { useNotchBridge } from "@/lib/voice/notch-bridge";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
+import {
+  CompanyAppWorkspace,
+  useActiveCompanyApp,
+} from "@/company-apps/registry";
 import {
   isMobileShellPath,
   MobileShell,
@@ -82,7 +92,8 @@ function RouteComponent() {
       (match.level === 1 ||
         match.level === 2 ||
         match.level === 3 ||
-        match.level === 4)
+        match.level === 4 ||
+        match.level === 5)
     ) {
       if (match.level !== getActiveLevel()) {
         setActiveLevel(match.level);
@@ -94,13 +105,13 @@ function RouteComponent() {
   // asked for — it switches to Messages (2) instead of being sent back to the company page.
   const conversationLinkRef = useRef<string | null>(null);
 
-  // Browser (3) + Unternehmen (4) leave HQ work routes.
+  // Browser (3), Unternehmen (4) and Agents (5) leave HQ work routes.
   useEffect(() => {
     if (mobileShell) return;
     const conversationLink = /^\/(agent|channel)\/[^/]+/.test(location.pathname);
     const freshLink = conversationLink && conversationLinkRef.current !== location.pathname;
     if (conversationLink) conversationLinkRef.current = location.pathname;
-    if (level !== 3 && level !== 4) return;
+    if (level !== 3 && level !== 4 && level !== 5) return;
     if (freshLink) {
       setActiveLevel(2);
       return;
@@ -126,6 +137,21 @@ function RouteComponent() {
 
   const companyId =
     params.companyId ?? readActiveCompanyId();
+
+  const currentUserQuery = useQuery(currentUserQueryOptions());
+  const { activeApp, closeApp } = useActiveCompanyApp();
+  const activeCompany = (companyId ? getCompany(companyId) : undefined) ?? listCompanies()[0] ?? null;
+
+  // When navigating to another route, close any active company app so the user sees the target page
+  const lastPathRef = useRef(location.pathname);
+  useEffect(() => {
+    if (lastPathRef.current !== location.pathname) {
+      lastPathRef.current = location.pathname;
+      if (activeApp) {
+        closeApp();
+      }
+    }
+  }, [location.pathname, activeApp, closeApp]);
 
   const focusAgent =
     level === 1
@@ -184,10 +210,42 @@ function RouteComponent() {
                 : "relative flex min-h-0 flex-1 flex-col overflow-hidden border-l border-neutral-200 bg-background"
           }
         >
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {/* Focus is its own page: the previous page is not rendered underneath. */}
-            {focusFullscreen ? null : <Outlet />}
-          </div>
+          {activeApp && activeCompany && hqShell ? (
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+              {/* App Bar */}
+              <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/50 bg-background/95 px-3.5 backdrop-blur z-10">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-sm truncate text-foreground">
+                    {activeApp.manifest.name ?? activeApp.manifest.id}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate">
+                    • {activeCompany.name}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => closeApp()}
+                  className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
+                >
+                  <IconX className="size-3.5" />
+                  <span>Schließen</span>
+                </Button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <CompanyAppWorkspace
+                  app={activeApp}
+                  company={activeCompany}
+                  identity={currentUserQuery.data ?? null}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {/* Focus is its own page: the previous page is not rendered underneath. */}
+              {focusFullscreen ? null : <Outlet />}
+            </div>
+          )}
           {level === 1 && companyId ? (
             <FocusOverlay
               companyId={companyId}

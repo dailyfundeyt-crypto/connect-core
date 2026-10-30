@@ -2,6 +2,9 @@ import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
 import {
   type AgentProfile,
+  type AgentSkill,
+  type AgentWebsite,
+  type AgentSubagent,
   type AgentVisibility,
   agentApiPath,
   agentKeys,
@@ -12,6 +15,16 @@ export type AgentInput = {
   title: string;
   roleDescription: string;
   visibility: AgentVisibility;
+  headline?: string | null;
+  role?: string | null;
+  description?: string | null;
+  avatarUrl?: string | null;
+  accountEmail?: string | null;
+  accountDisplayName?: string | null;
+  chosenCli?: string | null;
+  skills?: AgentSkill[] | unknown[];
+  websiteList?: AgentWebsite[] | unknown[];
+  subagents?: AgentSubagent[] | unknown[];
   /** Where this coworker runs. Empty means the Bot in the box. */
   endpoint?: string;
   /** Write-only auth value; omitted when the user leaves the key field empty. */

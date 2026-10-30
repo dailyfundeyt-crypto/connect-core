@@ -3,9 +3,18 @@
  *
  * ChatGPT + Cursor go through the Phase B Codex bridge (`/api/cli-bridge`). Other targets stay
  * local until their own bridges exist.
+ *
+ * A38 · T3-TAUSCH: Ziele mit T3-Engine (Codex, Claude, Cursor, Grok, Freebuff, Antigravity)
+ * gehen an die T3-Brücke (`POST /api/t3-agents/:agentId/messages`), wenn der Tausch eingeschaltet
+ * ist. Legacy-Ziele (Manus, Lovable) und der alte `cli-bridge` bleiben unverändert.
  */
 
 import { tryClient } from "@/lib/client";
+import {
+  CLI_TARGET_TO_T3_PROVIDER,
+  getT3Flag,
+  type T3ProviderId,
+} from "@/lib/t3/contracts";
 
 export type CliTarget =
   | "antigravity"
@@ -15,7 +24,8 @@ export type CliTarget =
   | "claude"
   | "grok"
   | "cursor"
-  | "lovable";
+  | "lovable"
+  | "freebuff";
 
 export type CliEntry = {
   id: string;
@@ -92,6 +102,12 @@ export const CLI_TARGETS: {
     prompt: "lovable>",
     hint: "Lovable builder CLI",
   },
+  {
+    id: "freebuff",
+    label: "Freebuff",
+    prompt: "freebuff>",
+    hint: "Freebuff CLI — Browser-OAuth, Built-in Browser-Use",
+  },
 ];
 
 const QUEUE_KEY = "connect.agent-cli-queue";
@@ -156,6 +172,41 @@ export function isBridgedCliTarget(target: CliTarget): boolean {
   return target === "codex" || target === "chatgpt" || target === "cursor";
 }
 
+/**
+ * A38 · Ob der Tausch der CLI-Auswahl eingeschaltet ist.
+ *
+ * `bridge` schaltet die T3-Brücke frei, `cliSwap` den Tausch an der Auswahl. Beide zusammen
+ * schalten das Routing um; per A01 sind beide standardmäßig AUS, also bleibt alles beim alten.
+ */
+export function isT3CliSwapActive(): boolean {
+  return getT3Flag("bridge") || getT3Flag("cliSwap");
+}
+
+/**
+ * A38 · Der T3-Treiber für dieses Ziel — oder `null` für ein Legacy-Ziel.
+ *
+ * `manus` und `lovable` haben keinen T3-Treiber (Vertrag A01: `"legacy"`). Sie bleiben auf dem
+ * alten Weg, damit der Tausch keinen Bestand verändert.
+ */
+export function t3ProviderForCliTarget(
+  target: CliTarget | string,
+): T3ProviderId | null {
+  const provider = CLI_TARGET_TO_T3_PROVIDER[target];
+  if (!provider || provider === "legacy") return null;
+  return provider;
+}
+
+/**
+ * A38 · Läuft dieses Ziel über die T3-Engine?
+ *
+ * Nur wenn der Tausch eingeschaltet ist UND das Ziel einen T3-Treiber hat. Alles andere bleibt,
+ * wo es war: Legacy-Ziele lokal, Codex-Bridge-Ziele über `/api/cli-bridge`.
+ */
+export function isT3CliTarget(target: CliTarget | string): boolean {
+  if (!isT3CliSwapActive()) return false;
+  return t3ProviderForCliTarget(target) !== null;
+}
+
 export function enqueueAgentCli(
   agentId: string,
   input: { target: CliTarget; command: string },
@@ -163,6 +214,7 @@ export function enqueueAgentCli(
   const command = input.command.trim();
   if (!command) return listAgentCli(agentId);
   const store = readQueue();
+  const t3 = isT3CliTarget(input.target);
   const bridged = isBridgedCliTarget(input.target);
   const entry: CliEntry = {
     id: `cli-${Date.now().toString(36)}`,
@@ -171,15 +223,19 @@ export function enqueueAgentCli(
     kind: "in",
     status: "queued",
     createdAt: new Date().toISOString(),
-    note: bridged
-      ? "Sending to Codex bridge…"
-      : "Waiting for local desktop bridge",
+    note: t3
+      ? "Sending to T3 bridge…"
+      : bridged
+        ? "Sending to Codex bridge…"
+        : "Waiting for local desktop bridge",
   };
   store[agentId] = [entry, ...(store[agentId] ?? [])].slice(0, 80);
   writeQueue(store);
 
   if (typeof window !== "undefined") {
-    if (bridged) {
+    if (t3) {
+      void dispatchT3Bridge(agentId, entry);
+    } else if (bridged) {
       void dispatchCodexBridge(agentId, entry);
     } else {
       const replyId = entry.id;
@@ -194,6 +250,42 @@ export function enqueueAgentCli(
   }
 
   return store[agentId];
+}
+
+/**
+ * A38 · Ein T3-Ziel an die T3-Brücke.
+ *
+ * Der Text geht an `POST /api/t3-agents/:agentId/messages` (A11/A21) und startet dort einen Turn.
+ * Die Antwort kommt NICHT hier zurück — sie läuft über den SSE-Stream in den T3-Chat (A22). Der
+ * Eintrag in dieser Warteschlange wird deshalb als „angenommen" markiert, mit der Thread-Id als
+ * Beleg; die eigentliche Antwort steht im Chat.
+ */
+async function dispatchT3Bridge(agentId: string, entry: CliEntry) {
+  try {
+    const { sendT3Message } = await import("@/lib/t3");
+    const provider = t3ProviderForCliTarget(entry.target) ?? undefined;
+    const response = await sendT3Message(
+      agentId,
+      {
+        clientMessageId: entry.id,
+        text: entry.command,
+        ...(provider ? { provider } : {}),
+      },
+    );
+    markAgentCliSent(
+      agentId,
+      entry.id,
+      `Accepted by T3 bridge (thread ${response.threadId ?? "—"})`,
+    );
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "T3 bridge failed";
+    markAgentCliError(agentId, entry.id, reason);
+    appendAgentCliReply(agentId, {
+      target: entry.target,
+      text: reason,
+    });
+  }
 }
 
 async function dispatchCodexBridge(agentId: string, entry: CliEntry) {

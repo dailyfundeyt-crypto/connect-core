@@ -1,10 +1,18 @@
 /**
- * Status-Stubs für weitere unsichtbare Anbieter-CLIs (Google/Veo, freebuff).
- * Volle Adapter später; hier nur Install-/Login-Hinweise für Einstellungen › Anbieter.
+ * Status weiterer unsichtbarer Anbieter-CLIs (Google/Veo, freebuff).
+ *
+ * freebuff ist kein Stub mehr: Status, Version und Login kommen aus
+ * `freebuff-status.ts` (prüft `FREEBUFF_CONFIG_DIR` bzw. `homedir()/.config/manicode`).
+ * Zusätzlich erscheinen die vier Konten-Slots als eigene Einträge
+ * (`kind: "freebuff:<slot-id>"`), damit sie in Einstellungen › Anbieter
+ * sichtbar und einzeln anmeldbar sind.
  */
+
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { FREEBUFF_SLOTS } from "./freebuff-slots";
+import { freebuffProviderStatus, freebuffSlotStatus } from "./freebuff-status";
 
 function npmGlobalRoots(): string[] {
   const roots: string[] = [];
@@ -30,7 +38,7 @@ function pkgMeta(pkg: string): { installed: boolean; version: string | null; ent
 }
 
 export type ExtraCliStatus = {
-  kind: "google-gemini" | "google-veo" | "freebuff";
+  kind: string;
   label: string;
   installed: boolean;
   version: string | null;
@@ -43,8 +51,26 @@ export type ExtraCliStatus = {
 export async function extraCliProviderStatus(): Promise<ExtraCliStatus[]> {
   const gemini = pkgMeta("@google/gemini-cli");
   const veo = pkgMeta("google-genai-api");
-  const freebuff = pkgMeta("freebuff");
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GENAI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim());
+
+  const freebuff = await freebuffProviderStatus();
+  // Version einmal ermitteln und für die Slots mitnutzen — sonst liefe
+  // `freebuff --version` fünfmal pro Statusabfrage.
+  const slots = await Promise.all(
+    FREEBUFF_SLOTS.map(async (slot): Promise<ExtraCliStatus> => {
+      const status = await freebuffSlotStatus(slot.id, { skipVersionProbe: true });
+      return {
+        kind: `freebuff:${slot.id}`,
+        label: slot.label,
+        installed: status.installed,
+        version: status.installed ? freebuff.version : status.version,
+        loggedIn: status.loggedIn,
+        detail: status.detail,
+        models: status.models,
+        installHint: status.installHint,
+      };
+    }),
+  );
 
   return [
     {
@@ -66,7 +92,7 @@ export async function extraCliProviderStatus(): Promise<ExtraCliStatus[]> {
       label: "Google Veo (Video aus Code)",
       installed: veo.installed,
       version: veo.version,
-      loggedIn: veo.installed ? (hasGeminiKey ? true : false) : null,
+      loggedIn: veo.installed ? hasGeminiKey : null,
       detail: veo.installed
         ? hasGeminiKey
           ? "Installiert. Video: google-genai --veo --prompt \"…\" --veo-duration 8"
@@ -77,15 +103,14 @@ export async function extraCliProviderStatus(): Promise<ExtraCliStatus[]> {
     },
     {
       kind: "freebuff",
-      label: "freebuff (Coding + Browser)",
+      label: freebuff.label,
       installed: freebuff.installed,
       version: freebuff.version,
-      loggedIn: freebuff.installed ? null : null,
-      detail: freebuff.installed
-        ? "Installiert. Einmal: freebuff login. Browser-Use ist eingebaut. Hinweis: ToS von freebuff selbst prüfen (Stefan: explizit für Browser-Steuerung gewünscht)."
-        : "Nicht installiert. Coding-Agent mit eingebautem Browser-Use.",
-      models: ["default"],
-      installHint: "npm install -g freebuff",
+      loggedIn: freebuff.loggedIn,
+      detail: freebuff.detail,
+      models: freebuff.models,
+      installHint: freebuff.installHint,
     },
+    ...slots,
   ];
 }

@@ -86,6 +86,7 @@ export async function dispatchModelTurn(input: {
 async function runManusApiPath(input: {
   agentId: string;
   text: string;
+  agentName?: string;
   fileHints?: string[];
 }): Promise<ModelTurnResult> {
   const key = getAgentManusApiKey(input.agentId);

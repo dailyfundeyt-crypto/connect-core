@@ -10,16 +10,37 @@ export const agentFormSchema = z.object({
     .trim()
     .min(1, "Name is required.")
     .max(80, "Name must be 80 characters or fewer."),
+  headline: z
+    .string()
+    .trim()
+    .max(120, "Headline must be 120 characters or fewer.")
+    .optional()
+    .nullable(),
+  role: z
+    .string()
+    .trim()
+    .max(100, "Role must be 100 characters or fewer.")
+    .optional()
+    .nullable(),
+  description: z
+    .string()
+    .trim()
+    .max(2000, "Description must be 2000 characters or fewer.")
+    .optional()
+    .nullable(),
+  avatarUrl: z.string().optional().nullable(),
   title: z
     .string()
     .trim()
-    .min(1, "Title is required.")
-    .max(120, "Title must be 120 characters or fewer."),
+    .max(120, "Title must be 120 characters or fewer.")
+    .optional()
+    .default(""),
   roleDescription: z
     .string()
     .trim()
-    .min(1, "Role description is required.")
-    .max(1000, "Role description must be 1000 characters or fewer."),
+    .max(2000, "Role description must be 2000 characters or fewer.")
+    .optional()
+    .default(""),
   visibility: z.enum(["public", "private"]),
   /**
    * The AG-UI endpoint this coworker runs on. Empty means the Bot in the box.
@@ -83,12 +104,29 @@ export const agentFormSchema = z.object({
       "Ungültige URL",
     ),
   browserUseAllowWrite: z.boolean(),
+  /**
+   * Phase B Schritt 9: Eigenes Konto pro Bot.
+   * Jeder Agent bekommt ein eigenes CLI-Konto mit eigenem Config-Verzeichnis.
+   * Die eingeloggte E-Mail wird am Agenten gespeichert und angezeigt.
+   */
+  accountEmail: z.string().email("Ungültige E-Mail-Adresse").or(z.literal("")).nullable(),
+  accountDisplayName: z.string().max(120).nullable(),
+  skills: z.array(z.any()).optional().nullable(),
+  // Phase C Schritt 13: Webseiten-Liste
+  websiteList: z.array(z.any()).optional().nullable(),
+  // Phase C Schritt 14: Subagenten (Online-KIs)
+  subagents: z.array(z.any()).optional().nullable(),
+  chosenCli: z.string().max(80).optional().nullable(),
 });
 
 export type AgentFormValues = z.infer<typeof agentFormSchema>;
 
 export const emptyAgentForm: AgentFormValues = {
   name: "",
+  headline: "",
+  role: "",
+  description: "",
+  avatarUrl: "",
   title: "",
   roleDescription: "",
   visibility: "private",
@@ -109,18 +147,38 @@ export const emptyAgentForm: AgentFormValues = {
   browserUseEnabled: false,
   browserUseStartUrl: "",
   browserUseAllowWrite: false,
+  // Phase B Schritt 9: Eigenes Konto pro Bot
+  accountEmail: null,
+  accountDisplayName: null,
+  // Phase C Schritt 10: Skills
+  skills: null,
+  // Phase C Schritt 13: Webseiten
+  websiteList: null,
+  // Phase C Schritt 14: Subagenten
+  subagents: null,
+  chosenCli: null,
 };
 
 /** Convert form values to API input; omit an empty key so editing preserves the current credential. */
 export function agentInputFrom(values: AgentFormValues) {
   // Connect bots always run on the local deployment Bot — never dial a remote AG-UI endpoint.
   // Visibility is always private: Public and Private in any older client both land as private.
+  const headline = values.headline?.trim() || values.title?.trim() || "";
+  const role = values.role?.trim() || "";
+  const description = values.description?.trim() || values.roleDescription?.trim() || "";
+  const title = headline || values.name;
+  const roleDescription = description || role || values.name;
+
   return {
     name: values.name,
-    title: values.title,
-    roleDescription: values.roleDescription,
+    title,
+    roleDescription,
     visibility: "private" as const,
     endpoint: "",
+    ...(headline ? { headline } : {}),
+    ...(role ? { role } : {}),
+    ...(description ? { description } : {}),
+    ...(values.avatarUrl ? { avatarUrl: values.avatarUrl } : {}),
     // Stufe 1.1: CLI-Engine. Wenn nicht gesetzt, läuft der Agent auf dem lokalen Modell.
     ...(values.cliEngineKind
       ? {
@@ -172,5 +230,36 @@ export function agentInputFrom(values: AgentFormValues) {
           },
         }
       : {}),
+    // Phase B Schritt 9: Eigenes Konto pro Bot
+    ...(values.accountEmail !== undefined
+      ? {
+          accountEmail: values.accountEmail || null,
+          accountDisplayName: values.accountDisplayName || null,
+        }
+      : {}),
+    // Phase C Schritt 10: Skills
+    ...(values.skills !== undefined && values.skills !== null
+      ? {
+          skills: values.skills,
+        }
+      : {}),
+    // Phase C Schritt 13: Webseiten-Liste
+    ...(values.websiteList !== undefined && values.websiteList !== null
+      ? {
+          websiteList: values.websiteList,
+        }
+      : {}),
+    // Phase C Schritt 14: Subagenten (Online-KIs)
+    ...(values.subagents !== undefined && values.subagents !== null
+      ? {
+          subagents: values.subagents,
+        }
+      : {}),
+    // Standard-CLI des Agenten (z.B. freebuff, codex, claude, antigravity, hermes)
+    ...(values.chosenCli
+      ? { chosenCli: values.chosenCli }
+      : values.cliEngineKind
+        ? { chosenCli: values.cliEngineKind }
+        : {}),
   };
 }

@@ -8,6 +8,7 @@ import {
   type ConnectCompany,
   getCompany as getSeedCompany,
 } from "./catalog";
+export type { ConnectCompany };
 import {
   formatCompanyHandle,
   handleFromName,

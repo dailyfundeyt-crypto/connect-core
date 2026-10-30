@@ -47,7 +47,7 @@ const SECTIONS: {
   items: {
     description: string;
     icon: React.ComponentType<{ className?: string }>;
-    linkOptions: LinkOptions;
+    linkOptions: Record<string, unknown>;
     title: string;
   }[];
 }[] = [
@@ -161,7 +161,7 @@ function RouteComponent() {
                  * goes exactly one place, so there is nothing else the row could mean.
                  */}
                 <Item
-                  render={(props) => <Link {...item.linkOptions} {...props} />}
+                  render={(props) => <Link {...(item.linkOptions as any)} {...props} />}
                   size="sm"
                 >
                   <ItemMedia>

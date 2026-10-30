@@ -244,7 +244,14 @@ export function buildAgentMap(ctx: Ctx, a: BrainAgentEntry) {
   const rules = a.files ?? [];
   if (rules.length) {
     lines.push("", "## Datei-Regeln");
-    for (const r of rules) lines.push(`- \`${r.path}\` - ${r.read === false ? "nicht lesen" : r.read ? "lesen" : ""}${r.write ? " + schreiben" : r.write === false ? " · nicht schreiben" : ""}`);
+    for (const r of rules) {
+      const parts: string[] = [];
+      if (r.read === true) parts.push("lesen");
+      else if (r.read === false) parts.push("nicht lesen");
+      if (r.write === true) parts.push("schreiben");
+      else if (r.write === false) parts.push("nicht schreiben");
+      lines.push(`- \`${r.path}\` - ${parts.join(" · ") || "kein Zugriff"}`);
+    }
   }
   lines.push("");
   return lines.join("\n");
@@ -736,3 +743,52 @@ export async function accessFor(root: string, worldPath: string) {
     })),
   };
 }
+
+/** Generiert und speichert die dedizierte Map-Datei eines Agenten in Maps/${slug}.md */
+export async function generateAndWriteAgentMap(
+  root: string,
+  slug: string,
+): Promise<{ mapPath: string; content: string; written: boolean }> {
+  const ctx = await context(root);
+  const agent = ctx.agents.find((a) => a.slug === slug);
+  if (!agent) {
+    throw new Error(`Agent mit Kürzel "${slug}" nicht in agents.json gefunden.`);
+  }
+  const content = buildAgentMap(ctx, agent);
+  const mapRelPath = `Maps/${agent.slug}.md`;
+  const full = path.join(ctx.w.core, ...mapRelPath.split("/"));
+  await mkdir(path.dirname(full), { recursive: true });
+  const old = await readFile(full, "utf8").catch(() => null);
+  let written = false;
+  if (old !== content) {
+    const tmp = `${full}.${process.pid}.tmp`;
+    await writeFile(tmp, content, "utf8");
+    await rename(tmp, full);
+    written = true;
+  }
+  return { mapPath: `${ctx.w.prefix}${mapRelPath}`, content, written };
+}
+
+/** Liest die Map-Datei eines Agenten (oder erzeugt sie falls noch nicht vorhanden). */
+export async function getAgentMap(
+  root: string,
+  slug: string,
+): Promise<{ mapPath: string; content: string; generated: boolean }> {
+  const ctx = await context(root);
+  const agent = ctx.agents.find((a) => a.slug === slug);
+  if (!agent) {
+    throw new Error(`Agent mit Kürzel "${slug}" nicht in agents.json gefunden.`);
+  }
+  const mapRelPath = `Maps/${agent.slug}.md`;
+  const full = path.join(ctx.w.core, ...mapRelPath.split("/"));
+  let content = await readFile(full, "utf8").catch(() => null);
+  let generated = false;
+  if (!content) {
+    content = buildAgentMap(ctx, agent);
+    await mkdir(path.dirname(full), { recursive: true });
+    await writeFile(full, content, "utf8");
+    generated = true;
+  }
+  return { mapPath: `${ctx.w.prefix}${mapRelPath}`, content, generated };
+}
+

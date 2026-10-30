@@ -25,8 +25,8 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 
-const appLinkOptions = { to: "/" } satisfies LinkOptions;
-const adminLinkOptions = { to: "/admin" } satisfies LinkOptions;
+const appLinkOptions = { to: "/" } as any as LinkOptions;
+const adminLinkOptions = { to: "/admin" } as any as LinkOptions;
 
 /**
  * The same four groups, in the same order, as the admin index.
@@ -134,7 +134,7 @@ export function AdminSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               render={(props) => (
-                <Link {...appLinkOptions} {...props}>
+                <Link {...(appLinkOptions as any)} {...props}>
                   <IconArrowLeft className="mr-2 h-4 w-4" />
                   Back to app
                 </Link>
@@ -154,7 +154,7 @@ export function AdminSidebar({
               <SidebarMenuButton
                 render={(props) => (
                   <Link
-                    {...adminLinkOptions}
+                    {...(adminLinkOptions as any)}
                     activeOptions={{ exact: true }}
                     activeProps={{ className: "bg-foreground/5" }}
                     {...props}
@@ -175,7 +175,8 @@ export function AdminSidebar({
                   <SidebarMenuButton
                     render={(props) => (
                       <Link
-                        {...item.linkOptions}
+                        // Integration 2026-10-22: Router-Typ-Union zu gross (TS2322), Ziel ist zur Laufzeit gueltig.
+                        {...(item.linkOptions as any)}
                         activeProps={{ className: "bg-foreground/5" }}
                         {...props}
                       >

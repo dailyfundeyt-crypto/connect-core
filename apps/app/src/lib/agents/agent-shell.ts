@@ -8,6 +8,11 @@
 
 import type { AgentModelFamily } from "@/lib/agents/agent-models";
 import { getAgentModelFamily } from "@/lib/agents/agent-models";
+import {
+  CLI_TARGET_TO_T3_PROVIDER,
+  getT3Flag,
+  type T3ProviderId,
+} from "@/lib/t3/contracts";
 
 export type AgentResidency = "local" | "cloud";
 
@@ -55,6 +60,10 @@ export const RESIDENCY_HINTS: Record<
     local: "Desktop / Chrome-Profil auf diesem PC",
     cloud: "Remote ohne dauerhaftes Desktop",
   },
+  antigravity: {
+    local: "Antigravity CLI (agy) — lokaler Prozess & Browser Use",
+    cloud: "Antigravity Cloud / Remote",
+  },
   manus: {
     local: "Nicht genutzt — Manus läuft immer über die Open API",
     cloud: "Manus Open API — Chat in Connect, Ausführung bei Manus",
@@ -71,6 +80,10 @@ export const RESIDENCY_HINTS: Record<
   grok: {
     local: "Grok-App / lokale Instanz — Text wird injiziert",
     cloud: "Grok im Browser",
+  },
+  cloud: {
+    local: "Nicht genutzt — Cloud-Agents laufen beim Anbieter",
+    cloud: "Muse-Inbox, Grok Bot per Webhook oder OpenAI-kompatible API",
   },
   connect: {
     local: "Hermes / Connect-API",
@@ -159,6 +172,121 @@ export function isShellFamily(
 export function agentUsesExternalShell(agentId: string | undefined): boolean {
   if (!agentId) return false;
   return isShellFamily(getAgentModelFamily(agentId));
+}
+
+/* ---------------------------------------------------------------------------------------- *
+ * T3-Laufweg (A38)
+ * ---------------------------------------------------------------------------------------- */
+
+/**
+ * Die Felder, aus denen sich das CLI-Ziel eines Agenten ergibt.
+ *
+ * `engine.kind` hat Vorrang vor `chosenCli` — dieselbe Regel wie in `agent-cli-turn.ts`, weil es
+ * dieselbe Frage beantwortet: Welche CLI fährt dieser Bot?
+ */
+export type AgentEngineSource = {
+  engine?: { kind?: string; model?: string; allowWrite?: boolean } | null;
+  chosenCli?: string | null;
+} | null
+  | undefined;
+
+/**
+ * Die Engine-Kinds, die eine echte CLI sind.
+ *
+ * `browser_profile`, `browser_use` und `manus` sind keine CLI-Prozesse — für sie gibt es weder
+ * einen T3-Treiber noch einen lokalen Prozess.
+ */
+const ENGINE_KIND_TO_CLI: Record<string, string> = {
+  antigravity: "antigravity",
+  chatgpt: "chatgpt",
+  claude: "claude",
+  codex: "codex",
+  cursor: "cursor",
+  freebuff: "freebuff",
+  grok: "grok",
+};
+
+/**
+ * Das CLI-Ziel dieses Agenten — als Ziel-Id, wie sie die Kataloge kennen.
+ *
+ * `null`, wenn der Agent keine CLI fährt (Browser-Profil, Manus, unbekannte Engine).
+ */
+export function resolveAgentCliTarget(
+  source: AgentEngineSource,
+): string | null {
+  const kind = source?.engine?.kind?.trim().toLowerCase();
+  if (kind && ENGINE_KIND_TO_CLI[kind]) return ENGINE_KIND_TO_CLI[kind];
+  const chosen = source?.chosenCli?.trim().toLowerCase();
+  if (chosen && CLI_TARGET_TO_T3_PROVIDER[chosen]) return chosen;
+  return null;
+}
+
+/**
+ * Der T3-Treiber dieses Agenten — oder `null`, wenn er über die alte Engine läuft.
+ *
+ * `manus` und `lovable` haben keinen T3-Treiber (Vertrag A01: `"legacy"`). Sie bleiben deshalb
+ * auf dem alten Weg; genau das ist der Punkt des Tauschs.
+ */
+export function resolveAgentT3Provider(
+  source: AgentEngineSource,
+): T3ProviderId | null {
+  const target = resolveAgentCliTarget(source);
+  if (!target) return null;
+  const provider = CLI_TARGET_TO_T3_PROVIDER[target];
+  if (!provider || provider === "legacy") return null;
+  return provider;
+}
+
+/**
+ * Ob die T3-Brücke im Browser überhaupt freigeschaltet ist.
+ *
+ * `bridge` schaltet die Brücke als Ganzes frei, `cliSwap` den Tausch der CLI-Auswahl. Beide
+ * schalten dasselbe Routing frei; per A01 sind beide standardmäßig AUS, also bleibt alles beim
+ * alten. Für den Chat (A22) zählt die Brücke, für die Auswahl der Tausch — deshalb diese eine
+ * Frage an zwei Orten.
+ */
+export function isT3RuntimeEnabled(): boolean {
+  return getT3Flag("bridge") || getT3Flag("cliSwap");
+}
+
+/**
+ * Ob dieser Agent über die T3-Engine läuft.
+ *
+ * NUR hinter dem Flag. `bridge` schaltet die Brücke als Ganzes frei, `cliSwap` den Tausch der
+ * CLI-Auswahl — beide schalten dasselbe Routing frei, und beide sind per A01 standardmäßig AUS.
+ */
+export function agentUsesT3Engine(source: AgentEngineSource): boolean {
+  if (!isT3RuntimeEnabled()) return false;
+  return resolveAgentT3Provider(source) !== null;
+}
+
+/**
+ * Der Laufweg dieses Agenten — dieselbe Frage, die die Route `/$agentId` stellt.
+ *
+ * `cloud` gewinnt immer: ein Cloud-Agent (Muse) läuft beim Anbieter, nicht über eine CLI, und
+ * darf nie still über eine CLI antworten. Danach `t3` — entweder weil der Server es so meldet
+ * (A37) oder weil der Agent eine Engine mit T3-Treiber hat und der Tausch eingeschaltet ist.
+ * Alles andere ist `cli` und bleibt unangetastet.
+ */
+export function resolveAgentRuntimeKind(input: {
+  /** Was der Server meldet: `"cli"`, `"cloud"` oder `"t3"`. */
+  serverRuntime?: string | null;
+  /** Das Profil des Agenten (Engine, gewählte CLI). */
+  profile?: AgentEngineSource;
+}): "cli" | "cloud" | "t3" {
+  const server = input.serverRuntime?.trim().toLowerCase();
+  if (server === "cloud") return "cloud";
+  /*
+   * `t3` gibt es nur, wenn die Brücke freigeschaltet ist.
+   *
+   * Der Server darf sie melden, solange der Schalter aus ist — der Client schaltet dann trotzdem
+   * nicht um, sonst gäbe es zwei Wege in denselben Zustand und der alte Chat wäre nicht mehr
+   * reproduzierbar. Der Chat (A22) braucht die Brücke ohnehin: `T3AgentChat` zeigt ohne sie nur
+   * seinen „deaktiviert"-Hinweis.
+   */
+  if (server === "t3") return getT3Flag("bridge") ? "t3" : "cli";
+  if (getT3Flag("bridge") && agentUsesT3Engine(input.profile)) return "t3";
+  return "cli";
 }
 
 export function getAgentShell(agentId: string): AgentShell {

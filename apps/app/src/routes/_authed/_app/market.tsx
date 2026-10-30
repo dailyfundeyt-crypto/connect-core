@@ -30,8 +30,9 @@ import { PublishDialog } from "@/components/market/publish-dialog";
 type SectionId = "companies" | "agents" | "mcp" | "tools" | "software";
 
 export const Route = createFileRoute("/_authed/_app/market")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { item?: string; section?: string } => ({
     item: typeof search.item === "string" ? search.item : undefined,
+    section: typeof search.section === "string" ? search.section : undefined,
   }),
   component: MarketScreen,
 });

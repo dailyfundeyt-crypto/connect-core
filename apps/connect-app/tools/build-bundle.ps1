@@ -6,7 +6,7 @@
     pgsql\               PostgreSQL 17 (bin/lib/share) + pgvector  (aus _build\pgsql, einmalig vorbereitet)
     connect\             Snapshot von apps/server (+drizzle-Migrationen), packages/shared, apps/examples/fintech,
                          gebaute Web-UI (apps/app/dist) und Produktions-node_modules
-  Liest die Quellen der Kopie NUR (Web-UI wird in einem Staging-Ordner gebaut, nichts in apps/app wird geschrieben).
+  Liest die Quellen der Kopie NUR (Web-UI wird mit --outDir nach _build\dist gebaut, nichts in apps/app wird geschrieben).
   Erneut ausfuehren, um Aenderungen der Kopie (neue Migrationen, Server-/UI-Code) zu uebernehmen.
   Aufruf:  powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-bundle.ps1 [-SkipUi] [-SkipDeps]
 #>
@@ -53,20 +53,27 @@ Mirror (Join-Path $Root "apps\helium-shell") $extDst @("setup", ".git", "node_mo
 $extVer = (Get-Content (Join-Path $extDst "manifest.json") -Raw | ConvertFrom-Json).version
 Say "Extension helium-shell $extVer gebuendelt (Port $port)"
 
-# 2) Web-UI im Staging bauen (apps/app wird nur gelesen)
+# 2) Web-UI bauen
+#
+# Gebaut wird in der Quelle (apps\app), NICHT in einem Staging-Abbild. Grund: Bun legt in
+# node_modules/.bun relative Symlinks an (node_modules/@base-ui/react -> ../../.bun/...). Jeder
+# Junction oder kopierte node_modules-Baum verschiebt diese relative Kette um eine Ebene zu
+# tief, und der Build scheitert dann an "Rollup failed to resolve import @base-ui/react/tooltip"
+# oder "Cannot find package '@tailwindcss/vite'", obwohl beide Pakete installiert sind.
+#
+# Die Quelle wird dabei NICHT veraendert: vite schreibt ausschliesslich nach --outDir, und das
+# zeigt auf _build\dist ausserhalb des Quellbaums. apps\app\dist bleibt unberuehrt.
 $ws = Join-Path $Build "ws"
 $dist = Join-Path $Build "dist"
 if (-not $SkipUi) {
-  $stApp = Join-Path $ws "apps\app"
-  Mirror (Join-Path $Root "apps\app") $stApp @("node_modules", "dist", "tests") @("*.bak-helium")
-  Copy-Item (Join-Path $Root "tsconfig.base.json") (Join-Path $ws "tsconfig.base.json") -Force
-  $nm = Join-Path $stApp "node_modules"
-  if (-not (Test-Path $nm)) { cmd /c mklink /J "`"$nm`"" "`"$(Join-Path $Root 'apps\app\node_modules')`"" | Out-Null }
-  Say "Baue Web-UI (vite build, Staging) ..."
-  Push-Location $stApp
+  $srcApp = Join-Path $Root "apps\app"
+  $viteJs = Join-Path $srcApp "node_modules\vite\bin\vite.js"
+  if (-not (Test-Path $viteJs)) { throw "vite fehlt: $viteJs" }
+  Say "Baue Web-UI (vite build) ..."
+  Push-Location $srcApp
   try {
     $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    & $Bun --bun node_modules/vite/bin/vite.js build --outDir $dist --emptyOutDir 2>&1 | ForEach-Object { "$_" } | Select-Object -Last 8
+    & $Bun --bun $viteJs build --outDir $dist --emptyOutDir 2>&1 | ForEach-Object { "$_" } | Select-Object -Last 8
     $code = $LASTEXITCODE; $ErrorActionPreference = $prev
     if ($code -ne 0 -or -not (Test-Path (Join-Path $dist "index.html"))) { throw "vite build fehlgeschlagen ($code)" }
   } finally { Pop-Location }
@@ -77,6 +84,9 @@ if (-not $SkipUi) {
 $srv = Join-Path $Build "server"
 Mirror (Join-Path $Root "apps\server") (Join-Path $srv "apps\server") @("node_modules", "tests", ".turbo") @("*.bak-helium", "*.test.ts")
 Mirror (Join-Path $Root "packages\shared") (Join-Path $srv "packages\shared") @("node_modules", "tests") @("*.bak-helium", "*.test.ts")
+# Der Server importiert diese Workspace-Pakete per relativem Pfad; ohne sie startet das Bundle nicht.
+Mirror (Join-Path $Root "packages\contracts") (Join-Path $srv "packages\contracts") @("node_modules", "tests") @("*.bak-helium", "*.test.ts")
+Mirror (Join-Path $Root "packages\connect-mcp") (Join-Path $srv "packages\connect-mcp") @("node_modules", "tests") @("*.bak-helium", "*.test.ts")
 Mirror (Join-Path $Root "apps\examples\fintech") (Join-Path $srv "apps\examples\fintech") @("node_modules") @("*.bak-helium")
 Copy-Item (Join-Path $Root "tsconfig.base.json") $srv -Force
 Copy-Item (Join-Path $Root "bun.lock") $srv -Force

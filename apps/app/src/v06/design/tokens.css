@@ -1,0 +1,222 @@
+/**
+ * CONNECT PREMIUM DESIGN SYSTEM v06 (Agent A26)
+ * Aesthetic: Precision-engineered, calm, Grok Bot / Linear style.
+ * 
+ * First Principles:
+ * 1. Consistent 4/8-px spacing raster.
+ * 2. Quiet, readable typographic hierarchy.
+ * 3. Layered elevations via surfaces rather than heavy drop-shadows.
+ * 4. Hairline translucent borders (1px) for razor-sharp definition.
+ * 5. Uniform corner radii across components.
+ * 6. Subtle, micro-motion (150-200ms) with ease-out curves.
+ * 7. Authentic dark-mode palette (obsidian/zinc base, not muddy gray).
+ * 8. Zero mixed styles or arbitrary magic numbers.
+ */
+
+/* ==========================================================================
+   1. DARK PALETTE (Default / Dark Mode)
+   ========================================================================== */
+:root,
+.dark,
+[data-theme="dark"],
+.p-theme-dark {
+  /* Surfaces & Backgrounds */
+  --p-bg: #09090b;
+  --p-bg-subtle: #0d0d11;
+  --p-surface-1: #121216;
+  --p-surface-2: #18181e;
+  --p-surface-3: #22222a;
+  --p-surface-hover: #1f1f26;
+  --p-surface-active: #272732;
+  --p-surface-glass: rgba(18, 18, 22, 0.75);
+
+  /* Lines & Hairline Borders */
+  --p-border: rgba(255, 255, 255, 0.08);
+  --p-border-subtle: rgba(255, 255, 255, 0.04);
+  --p-border-strong: rgba(255, 255, 255, 0.16);
+  --p-border-focus: rgba(56, 189, 248, 0.65);
+  --p-border-hover: rgba(255, 255, 255, 0.12);
+
+  /* Text & Foreground Hierarchy */
+  --p-text-1: #ededef;
+  --p-text-2: #a1a1aa;
+  --p-text-3: #71717a;
+  --p-text-dim: #52525b;
+  --p-text-on-accent: #09090b;
+
+  /* Accent (Luminous Sky / Electric Cyan) */
+  --p-accent: #38bdf8;
+  --p-accent-hover: #0ea5e9;
+  --p-accent-active: #0284c7;
+  --p-accent-subtle: rgba(56, 189, 248, 0.12);
+  --p-accent-glow: 0 0 24px rgba(56, 189, 248, 0.22);
+
+  /* Semantic Feedback */
+  --p-danger: #f87171;
+  --p-danger-hover: #ef4444;
+  --p-danger-subtle: rgba(248, 113, 113, 0.12);
+
+  --p-success: #34d399;
+  --p-success-hover: #10b981;
+  --p-success-subtle: rgba(52, 211, 153, 0.12);
+
+  --p-warning: #fbbf24;
+  --p-warning-hover: #f59e0b;
+  --p-warning-subtle: rgba(251, 191, 36, 0.12);
+
+  /* Elevation Shadows (Ambient, deep, unobtrusive) */
+  --p-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --p-shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.55);
+  --p-shadow-lg: 0 12px 36px -4px rgba(0, 0, 0, 0.72);
+  --p-shadow-inner: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+
+  color-scheme: dark;
+}
+
+/* ==========================================================================
+   2. LIGHT PALETTE (Secondary / Light Mode)
+   ========================================================================== */
+:root:not(.dark),
+.light,
+[data-theme="light"],
+.p-theme-light {
+  /* Surfaces & Backgrounds */
+  --p-bg: #f9fafb;
+  --p-bg-subtle: #f3f4f6;
+  --p-surface-1: #f3f4f6;
+  --p-surface-2: #ffffff;
+  --p-surface-3: #f8fafc;
+  --p-surface-hover: #eef2f6;
+  --p-surface-active: #e2e8f0;
+  --p-surface-glass: rgba(255, 255, 255, 0.85);
+
+  /* Lines & Hairline Borders */
+  --p-border: rgba(0, 0, 0, 0.08);
+  --p-border-subtle: rgba(0, 0, 0, 0.04);
+  --p-border-strong: rgba(0, 0, 0, 0.16);
+  --p-border-focus: rgba(2, 132, 199, 0.65);
+  --p-border-hover: rgba(0, 0, 0, 0.12);
+
+  /* Text & Foreground Hierarchy */
+  --p-text-1: #0f172a;
+  --p-text-2: #475569;
+  --p-text-3: #94a3b8;
+  --p-text-dim: #cbd5e1;
+  --p-text-on-accent: #ffffff;
+
+  /* Accent (Deep Sky) */
+  --p-accent: #0284c7;
+  --p-accent-hover: #0369a1;
+  --p-accent-active: #075985;
+  --p-accent-subtle: rgba(2, 132, 199, 0.10);
+  --p-accent-glow: 0 0 20px rgba(2, 132, 199, 0.18);
+
+  /* Semantic Feedback */
+  --p-danger: #ef4444;
+  --p-danger-hover: #dc2626;
+  --p-danger-subtle: rgba(239, 68, 68, 0.10);
+
+  --p-success: #10b981;
+  --p-success-hover: #059669;
+  --p-success-subtle: rgba(16, 185, 129, 0.10);
+
+  --p-warning: #f59e0b;
+  --p-warning-hover: #d97706;
+  --p-warning-subtle: rgba(245, 158, 11, 0.10);
+
+  /* Elevation Shadows */
+  --p-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --p-shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  --p-shadow-lg: 0 12px 30px -4px rgba(0, 0, 0, 0.12);
+  --p-shadow-inner: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+
+  color-scheme: light;
+}
+
+/* ==========================================================================
+   3. STRUCTURAL TOKENS (Shared across themes)
+   ========================================================================== */
+:root {
+  /* Corner Radii */
+  --p-radius-xs: 4px;
+  --p-radius-sm: 6px;
+  --p-radius-md: 10px;
+  --p-radius-lg: 14px;
+  --p-radius-xl: 18px;
+  --p-radius-full: 9999px;
+
+  /* 4/8-Raster Spacing */
+  --p-space-1: 0.25rem;   /* 4px */
+  --p-space-2: 0.5rem;    /* 8px */
+  --p-space-3: 0.75rem;   /* 12px */
+  --p-space-4: 1rem;      /* 16px */
+  --p-space-5: 1.25rem;   /* 20px */
+  --p-space-6: 1.5rem;    /* 24px */
+  --p-space-8: 2rem;      /* 32px */
+  --p-space-10: 2.5rem;   /* 40px */
+  --p-space-12: 3rem;     /* 48px */
+
+  /* Typography Scale */
+  --p-font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --p-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --p-fs-2xs: 0.6875rem; /* 11px */
+  --p-fs-xs: 0.75rem;     /* 12px */
+  --p-fs-sm: 0.8125rem;   /* 13px */
+  --p-fs-base: 0.875rem;  /* 14px */
+  --p-fs-md: 0.9375rem;   /* 15px */
+  --p-fs-lg: 1.0625rem;   /* 17px */
+  --p-fs-xl: 1.25rem;     /* 20px */
+  --p-fs-2xl: 1.5rem;     /* 24px */
+
+  /* Line Heights */
+  --p-lh-tight: 1.2;
+  --p-lh-snug: 1.35;
+  --p-lh-normal: 1.5;
+  --p-lh-relaxed: 1.625;
+
+  /* Durations & Easing Curves */
+  --p-duration-fast: 120ms;
+  --p-duration-base: 180ms;
+  --p-duration-slow: 260ms;
+  --p-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --p-transition-fast: 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  --p-transition-base: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  --p-transition-slow: 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ==========================================================================
+   4. ACCESSIBILITY: REDUCED MOTION OVERRIDE
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  *,
+  *::before,
+  *::after {
+    --p-duration-fast: 0ms !important;
+    --p-duration-base: 0ms !important;
+    --p-duration-slow: 0ms !important;
+    --p-transition-fast: none !important;
+    --p-transition-base: none !important;
+    --p-transition-slow: none !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ==========================================================================
+   5. REUSABLE UTILITY CLASSES
+   ========================================================================== */
+.p-focus-ring {
+  outline: none;
+}
+.p-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--p-bg), 0 0 0 4px var(--p-accent);
+}
+
+.p-glass {
+  background-color: var(--p-surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}

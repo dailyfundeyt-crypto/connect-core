@@ -12,6 +12,7 @@
  * testen wir hier NICHT den vollen Live-Run (das wäre ein smoke-test der
  * TUI). Stufe 4.7 prüft das, wenn der User es manuell will.
  */
+export {};
 
 const BASE = "http://127.0.0.1:3001";
 
@@ -70,7 +71,7 @@ async function main() {
     const path = `${process.env.USERPROFILE}/.config/manicode/credentials.json`;
     const file = Bun.file(path);
     if (!(await file.exists())) throw new Error(`Credentials nicht gefunden: ${path}`);
-    const json = (await file.json()) as { default?: { tokenStore?: string } };
+    const json = (await file.json()) as { default?: { tokenStore?: string; name?: string } };
     if (!json.default?.tokenStore) throw new Error("Kein tokenStore in credentials.json");
     return `Eingeloggt: ${json.default.name ?? "?"} (tokenStore=${json.default.tokenStore})`;
   });

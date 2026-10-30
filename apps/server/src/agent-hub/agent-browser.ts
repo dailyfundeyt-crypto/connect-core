@@ -31,11 +31,14 @@ import type { Database } from "../db/client";
 import { agentBrowserTabs } from "../db/schema";
 import {
   cdpCall,
+  cdpGlideCursor,
   cdpNavigate,
   cdpPortFor,
   cdpScreenshot,
   cdpViewport,
   ensureAgentChromeRunning,
+  getAgentBrowserStatus,
+  resetAgentChromeLaunchAttempts,
   waitForCdp,
 } from "./agent-cdp";
 
@@ -50,7 +53,23 @@ function profilesRoot(): string {
 }
 
 /** Pfad zum Profil eines bestimmten Agent. Wird beim ersten `open` erzeugt. */
-function profileDirFor(agentId: string): string {
+export function profileDirFor(agentId: string, customDir?: string): string {
+  if (customDir && customDir.trim()) {
+    const cleanCustom = customDir.trim();
+    const normalized = cleanCustom.toLowerCase().replace(/\\/g, "/");
+    const stefanHeliumUserData = (
+      process.env.LOCALAPPDATA
+        ? join(process.env.LOCALAPPDATA, "imput", "Helium", "User Data")
+        : "c:/users/kunc gmbh/appdata/local/imput/helium/user data"
+    )
+      .toLowerCase()
+      .replace(/\\/g, "/");
+    if (normalized === stefanHeliumUserData || normalized.startsWith(stefanHeliumUserData + "/")) {
+      throw new Error("SICHERHEITSABBRUCH: Stefans eigenes Helium-Profil darf NIE verwendet werden!");
+    }
+    mkdirSync(cleanCustom, { recursive: true });
+    return cleanCustom;
+  }
   const safe = agentId.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "agent";
   const dir = join(profilesRoot(), safe);
   mkdirSync(dir, { recursive: true });
@@ -146,8 +165,11 @@ function writeProfileMarker(profileDir: string, tabId: string): void {
 export async function openBrowserTab(
   database: Database | undefined,
   agentId: string,
+  customProfileDir?: string,
 ): Promise<BrowserTabRow> {
-  const profileDir = profileDirFor(agentId);
+  const profileDir = profileDirFor(agentId, customProfileDir);
+  // Kein Auto-Reset mehr: nach 3 Fehlschlaegen bleibt der Start gestoppt,
+  // bis POST /browser/retry (resetAgentBrowserLaunch) aufgerufen wird.
   // Existiert schon ein offener Tab für diesen Agent? → wiederverwenden
   for (const [tabId, session] of activeSessions.entries()) {
     if (session.agentId === agentId) {
@@ -351,8 +373,9 @@ export async function performBrowserAction(
         returnByValue: true,
       },
     );
-    if (!locate.ok || !locate.result?.result?.value) {
-      const err = (locate.result?.result?.value as { error?: string } | undefined)?.error;
+    const locateValue = (locate.result?.result as Record<string, any> | undefined)?.value;
+    if (!locate.ok || !locateValue) {
+      const err = (locateValue as { error?: string } | undefined)?.error;
       return {
         ok: false,
         url: session.currentUrl,
@@ -361,7 +384,8 @@ export async function performBrowserAction(
         error: locate.error ?? err ?? "Click fehlgeschlagen.",
       };
     }
-    const point = (locate.result.result.value as { x: number; y: number });
+    const point = locateValue as { x: number; y: number };
+    await cdpGlideCursor(port, point.x, point.y, true, 240);
     const down = await cdpCall(
       port,
       "Input.dispatchMouseEvent",
@@ -374,6 +398,22 @@ export async function performBrowserAction(
     );
     result = { ok: down.ok && up.ok, error: down.ok ? up.error : down.error };
   } else if (action.kind === "type") {
+    if (action.selector && action.selector.trim()) {
+      const locate = await cdpCall(
+        port,
+        "Runtime.evaluate",
+        {
+          expression: `(() => { const el = document.querySelector(${JSON.stringify(action.selector.trim())}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width/2, y: r.top + r.height/2 }; })()`,
+          returnByValue: true,
+        },
+      );
+      const point = (locate.result?.result as Record<string, any> | undefined)?.value as { x: number; y: number } | undefined;
+      if (point) {
+        await cdpGlideCursor(port, point.x, point.y, true, 220);
+        await cdpCall(port, "Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1, buttons: 1 });
+        await cdpCall(port, "Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1, buttons: 0 });
+      }
+    }
     if (action.submit) {
       // Erst tippen, dann Enter drücken
       const type = await cdpCall(port, "Input.insertText", { text: action.text });
@@ -461,7 +501,8 @@ export async function performBrowserAction(
         returnByValue: true,
       },
     );
-    const value = info.result?.result?.value as string | undefined;
+    const infoValue = (info.result?.result as Record<string, any> | undefined)?.value;
+    const value = typeof infoValue === "string" ? infoValue : undefined;
     if (typeof value === "string") {
       const parsed = JSON.parse(value) as { url: string; title: string };
       session.currentUrl = parsed.url;
@@ -544,4 +585,17 @@ export function listProfiles(): Array<{
         lastOpenedAt: string | null;
       } => entry !== null,
     );
+}
+
+/** Swarmfix: einheitlicher Browser-Status eines Agenten (statt Fehler-Spam). */
+export function getBrowserStatusFor(agentId: string) {
+  return getAgentBrowserStatus(profileDirFor(agentId));
+}
+
+/** Swarmfix: manueller Retry — setzt den gestoppten Startzähler zurück und versucht genau einmal. */
+export async function retryBrowserLaunch(agentId: string) {
+  const profileDir = profileDirFor(agentId);
+  resetAgentChromeLaunchAttempts(profileDir, true); // loopfix: manueller Retry setzt auch den Schutzschalter zurueck
+  const launch = await ensureAgentChromeRunning(profileDir);
+  return { launch, status: getAgentBrowserStatus(profileDir) };
 }

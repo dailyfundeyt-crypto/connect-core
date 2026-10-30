@@ -27,6 +27,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
+import type { AgentProfile } from "@/lib/agents/queries";
 import { relativeTime } from "@/lib/relative-time";
 import {
   deleteRoutineMutationOptions,
@@ -355,4 +356,14 @@ export function RoutinesList({
       </Dialog>
     </PageSection>
   );
+}
+
+/** The Routines register of the agent dialog: this Bot's routines, inside a dialog. */
+export function AgentRoutinesRegister({
+  agentId,
+}: {
+  agentId: string;
+  profile: AgentProfile;
+}) {
+  return <RoutinesList agentId={agentId} embedded />;
 }

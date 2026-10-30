@@ -39,6 +39,11 @@ export type BrainStatus =
 
 export type BrainFileInfo = { path: string; size: number; mtime: string };
 export type BrainLogEntry = { date: string; time: string; agent: string; action: string; files: string[]; note: string };
+export type BrainFileRule = {
+  path: string;
+  read?: boolean;
+  write?: boolean;
+};
 export type BrainAgentEntry = {
   slug: string;
   name?: string;
@@ -46,6 +51,7 @@ export type BrainAgentEntry = {
   connectAgentId?: string;
   read: BrainAreaId[];
   write: BrainAreaId[];
+  files?: BrainFileRule[];
   note?: string;
 };
 export type BrainActivity = {
@@ -133,6 +139,56 @@ export function brainBacklinksQueryOptions(path: string) {
       brainGet<{ available: boolean; backlinks: { path: string; context: string }[] }>(
         `/api/brain/backlinks?path=${encodeURIComponent(path)}`,
         { available: false, backlinks: [] },
+      ),
+  });
+}
+
+export type BrainRenamePreview = {
+  available: boolean;
+  path: string;
+  linkCount: number;
+  files: string[];
+  filesCount: number;
+};
+
+export type BrainRenameResult = {
+  oldPath: string;
+  newPath: string;
+  oldTitle: string;
+  newTitle: string;
+  renamed: boolean;
+  backups: string[];
+  updatedLinks: number;
+  filesWithLinks: string[];
+};
+
+export type BrainRenameInput = {
+  path: string;
+  newTitle: string;
+  renameFile: boolean;
+};
+
+/**
+ * Benennt Titel und/oder Datei einer Brain-Notiz um – derselbe Endpunkt, den der
+ * Umbenennen-Dialog nutzt. Hier zentral, weil der Editor den Aufruf auch inline ausführt.
+ */
+export async function renameBrainNote(input: BrainRenameInput): Promise<BrainRenameResult> {
+  return client<BrainRenameResult>("/api/brain/notes/rename", {
+    unwrap: true,
+    method: "POST",
+    body: input,
+    fallback: "Notiz konnte nicht umbenannt werden",
+  });
+}
+
+export function brainRenamePreviewQueryOptions(path: string) {
+  return queryOptions({
+    queryKey: [...brainKeys.all, "rename-preview", path] as const,
+    enabled: path.length > 0,
+    queryFn: () =>
+      brainGet<BrainRenamePreview>(
+        `/api/brain/notes/preview?path=${encodeURIComponent(path)}`,
+        { available: false, path, linkCount: 0, files: [], filesCount: 0 },
       ),
   });
 }
@@ -480,13 +536,47 @@ export function saveBrainScopesMutationOptions(queryClient: QueryClient) {
       connectAgentId?: string;
       read: BrainAreaId[];
       write: BrainAreaId[];
+      files?: BrainFileRule[];
     }) =>
       client<{ available: boolean }>(
         `/api/brain/agents/${encodeURIComponent(input.slug)}`,
-        {unwrap: true, 
+        {
+          unwrap: true,
           method: "PUT",
           body: input,
           fallback: "Rechte konnten nicht gespeichert werden",
+        },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+    },
+  };
+}
+
+export function brainAgentMapQueryOptions(slug: string) {
+  return {
+    queryKey: [...brainKeys.all, "agent-map", slug] as const,
+    queryFn: async () =>
+      client<{ available: boolean; slug: string; mapPath: string; content: string; generated?: boolean }>(
+        `/api/brain/agents/${encodeURIComponent(slug)}/map`,
+        {
+          unwrap: true,
+          fallback: "Map-Datei konnte nicht geladen werden",
+        },
+      ),
+    enabled: Boolean(slug),
+  };
+}
+
+export function regenerateAgentMapMutationOptions(queryClient: QueryClient, slug: string) {
+  return {
+    mutationFn: async () =>
+      client<{ available: boolean; slug: string; mapPath: string; content: string; written: boolean }>(
+        `/api/brain/agents/${encodeURIComponent(slug)}/map`,
+        {
+          unwrap: true,
+          method: "POST",
+          fallback: "Map-Datei konnte nicht neu generiert werden",
         },
       ),
     onSuccess: () => {
@@ -499,10 +589,10 @@ export function saveBrainScopesMutationOptions(queryClient: QueryClient) {
 export function connectAgentSlug(name: string) {
   const base = name
     .toLowerCase()
-    .replace(/Ã¤/g, "ae")
-    .replace(/Ã¶/g, "oe")
-    .replace(/Ã¼/g, "ue")
-    .replace(/ÃŸ/g, "ss")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);

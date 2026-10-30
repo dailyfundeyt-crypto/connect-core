@@ -13,11 +13,16 @@ export class BrainDenied extends Error {}
 
 /** Die genaueste Datei-/Ordner-Regel eines Agenten fuer einen Pfad (Ordner enden auf "/"). */
 export function fileRule(entry: BrainAgentEntry, path: string): BrainFileRule | undefined {
-  const p = path.toLowerCase();
+  const p = path.toLowerCase().replace(/\\/g, "/");
+  const pNoVault = p.startsWith("vault/") ? p.slice(6) : p;
   let best: BrainFileRule | undefined;
   for (const rule of entry.files ?? []) {
-    const rp = rule.path.toLowerCase();
-    const hit = rp.endsWith("/") ? p.startsWith(rp) : p === rp;
+    const raw = rule.path.toLowerCase().replace(/\\/g, "/");
+    const rp = raw;
+    const rpNoVault = raw.startsWith("vault/") ? raw.slice(6) : raw;
+    const hit =
+      (rp.endsWith("/") ? p.startsWith(rp) : p === rp) ||
+      (rpNoVault.endsWith("/") ? pNoVault.startsWith(rpNoVault) : pNoVault === rpNoVault);
     if (hit && (!best || rp.length > best.path.length)) best = rule;
   }
   return best;
@@ -155,6 +160,7 @@ export function assertAllowed(
   if (rule && typeof rule.write === "boolean") {
     if (!rule.write) throw new BrainDenied(`Kein Schreibzugriff auf "${path}" fuer ${entry.slug} (Datei-Regel).`);
     if (op === "create" && exists) throw new BrainDenied(`"${path}" gibt es schon. Ueberschreiben ist nicht erlaubt - nutze brain_append.`);
+    if (op === "append" && !exists) throw new BrainDenied(`"${path}" gibt es nicht. Neue Dateien mit brain_write anlegen.`);
     return (area ?? "Shared") as BrainArea;
   }
   if (!area || !has(entry.write, area)) throw new BrainDenied(`Kein Schreibzugriff auf ${label} fuer ${entry.slug}.`);

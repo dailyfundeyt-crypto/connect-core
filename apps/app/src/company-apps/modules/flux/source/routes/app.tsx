@@ -2,6 +2,7 @@ import { Outlet, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { LandingPage } from '@flux/components/landing/landing-page'
 import { useAuth } from '@flux/lib/supabase/auth'
+import { isFluxEmbedded } from '@flux/lib/connect-bridge'
 
 export const Route = createFileRoute('/app')({
   component: AppLayout,
@@ -10,7 +11,7 @@ export const Route = createFileRoute('/app')({
 function isDemo(): boolean {
   if (typeof window === 'undefined') return false
   // Company apps use Connect authentication and their own storage namespace.
-  if (window.location.pathname.startsWith('/company/')) return true
+  if (isFluxEmbedded() || window.location.pathname.startsWith('/company/')) return true
   return localStorage.getItem('flux_demo') === '1'
 }
 

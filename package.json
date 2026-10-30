@@ -11,6 +11,7 @@
     "apps/landing",
     "apps/supervisor",
     "packages/shared",
+    "packages/contracts",
     "packages/agents/*"
   ],
   "scripts": {

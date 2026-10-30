@@ -6,12 +6,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { resolveChannelAgents, soloAgentOf } from "@/lib/agents/agent-conversation";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { AgentProfile } from "@/components/agents/agent-profile";
 import { AgentBrowserMenu } from "@/components/agents/agent-browser-menu";
+import { AgentDialog } from "@/components/agents/agent-dialog";
 import { ComputerViewPanel } from "@/components/agents/computer-view-panel";
 import { hasUnseenActivity } from "@/components/app-sidebar/app-sidebar";
 import { ChannelAvatar } from "@/components/channels/avatar";
@@ -19,8 +18,8 @@ import { ChannelChat } from "@/components/channels/channel-chat";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { MobileBackOrSidebarToggle } from "@/components/mobile/mobile-shell";
-import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import { Button } from "@/components/ui/button";
+import { resolveChannelAgents, soloAgentOf } from "@/lib/agents/agent-conversation";
 import { subscribeOpenAgentWatch } from "@/lib/agents/shell-dispatch";
 import { markChannelReadMutationOptions } from "@/lib/channels/mutations";
 import {
@@ -29,6 +28,7 @@ import {
   channelQueryOptions,
 } from "@/lib/channels/queries";
 import { onComputerActivity } from "@/lib/copilot/computer-activity";
+import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 
 const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
@@ -148,20 +148,17 @@ function RouteComponent() {
   };
 
   return (
+    <>
     <DetailPanel
       onClose={() => show(null)}
-      open={(isSettingsOpen || isWatching) && agentId !== undefined}
+      open={isWatching && agentId !== undefined}
       detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
-      title={
-        mobileShell ? (isWatching ? "Computer" : "Agent-Einstellungen") : undefined
-      }
+      title={mobileShell && isWatching ? "Computer" : undefined}
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action.
           <ComputerViewPanel agentId={agentId} key="watch" name={channel?.data?.name} />
-        ) : (
-          <AgentProfile agentId={agentId} key="profile" />
-        )
+        ) : null
       }
     >
       <div className="flex flex-col">
@@ -238,6 +235,18 @@ function RouteComponent() {
         hasError={Boolean(channel.error)}
       />
     </DetailPanel>
+    {/*
+     * The same dialog the agent route mounts. A channel used to draw a second detail hull here —
+     * a card stack with its own Manage button — so a Bot could be inspected in two different
+     * places depending on the link that opened it. This branch only shows for channels whose
+     * transcript is not supported yet, and it now leads to the one hull too.
+     */}
+    <AgentDialog
+      agentId={agentId ?? null}
+      onClose={() => void show(null)}
+      open={isSettingsOpen && agentId !== undefined}
+    />
+    </>
   );
 }
 
@@ -254,6 +263,7 @@ function ChannelBody({
   isPending: boolean;
   hasError: boolean;
 }) {
+  const navigate = useNavigate();
   // Nothing while the channel loads: a placeholder inside a local round-trip is a flicker.
   if (isPending) return null;
   if (hasError || !channel) {
@@ -279,6 +289,13 @@ function ChannelBody({
     <ChannelChat
       channel={channel}
       key={channel.id}
+      onConfigureCloud={() =>
+        void navigate({
+          to: "/agent/$agentId",
+          params: { agentId: runtimeAgentId },
+          search: { settings: true, section: "cloud" },
+        })
+      }
       runtimeAgentId={runtimeAgentId}
     />
   );

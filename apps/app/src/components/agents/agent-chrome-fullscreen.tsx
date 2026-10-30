@@ -18,6 +18,9 @@ import {
   type AgentChromeTab,
 } from "@/components/agents/agent-chrome-live";
 import { ChannelAvatar } from "@/components/channels/avatar";
+import { ControlToggle } from "@/components/control-toggle";
+import { getFlag } from "@/contracts/v06/flags";
+import { LiveControlToggle } from "@/v06/live-preview/liveControlToggle";
 import { ensureAgentBrowserStarted } from "@/lib/agents/agent-browser";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +72,7 @@ export function AgentChromeFullscreen({
   const [tabs, setTabs] = useState<AgentChromeTab[]>([]);
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null);
   const [control, setControl] = useState(false);
+  const liveToggleOnly = getFlag("liveToggleOnly");
   const [address, setAddress] = useState("");
   const [addressFocused, setAddressFocused] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,8 +82,12 @@ export function AgentChromeFullscreen({
   const selectedTabRef = useRef<string | null>(null);
   const actionQueue = useRef<Promise<void>>(Promise.resolve());
 
-  const { src, error: frameError, pageUrl } = useAgentChromeFrame(agentId, {
-    intervalMs: 850,
+  const [cursorPos, setCursorPos] = useState<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const lastMoveTime = useRef(0);
+  const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { src, error: frameError, pageUrl, refresh } = useAgentChromeFrame(agentId, {
+    intervalMs: control ? 350 : 850,
     targetId: selectedTabId,
     onUnavailable: () => void ensureAgentBrowserStarted(agentId),
   });
@@ -91,7 +99,7 @@ export function AgentChromeFullscreen({
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = async () => {
+    const refreshTabs = async () => {
       const result = await listAgentChromeTabs(agentId);
       if (cancelled) return;
       if (result.ok) {
@@ -102,9 +110,9 @@ export function AgentChromeFullscreen({
             : result.tabs[0]?.id ?? null,
         );
       }
-      timer = setTimeout(refresh, 1800);
+      timer = setTimeout(refreshTabs, 1800);
     };
-    void refresh();
+    void refreshTabs();
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
@@ -127,7 +135,10 @@ export function AgentChromeFullscreen({
       if (!controlRef.current || selectedTabRef.current !== targetId) return;
       const result = await controlAgentChrome(agentId, targetId, action);
       if (!result.ok) setError(result.error ?? "Browser-Eingabe fehlgeschlagen.");
-      else setError(null);
+      else {
+        setError(null);
+        if (action.action !== "move") refresh();
+      }
     });
     return actionQueue.current;
   };
@@ -145,6 +156,40 @@ export function AgentChromeFullscreen({
     const y = (clientY - top) / height;
     if (x < 0 || x > 1 || y < 0 || y > 1) return null;
     return { x, y };
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!control || !selectedTabId) return;
+    const point = imagePoint(event.clientX, event.clientY);
+    if (!point) {
+      setCursorPos(null);
+      return;
+    }
+    const vpRect = viewportRef.current?.getBoundingClientRect();
+    if (vpRect) {
+      setCursorPos({
+        clientX: event.clientX - vpRect.left,
+        clientY: event.clientY - vpRect.top,
+        x: point.x,
+        y: point.y,
+      });
+    }
+
+    const now = Date.now();
+    if (now - lastMoveTime.current > 50) {
+      lastMoveTime.current = now;
+      if (selectedTabRef.current) {
+        void controlAgentChrome(agentId, selectedTabRef.current, { action: "move", ...point });
+      }
+    } else if (!moveTimer.current) {
+      moveTimer.current = setTimeout(() => {
+        moveTimer.current = null;
+        lastMoveTime.current = Date.now();
+        if (controlRef.current && selectedTabRef.current) {
+          void controlAgentChrome(agentId, selectedTabRef.current, { action: "move", ...point });
+        }
+      }, 50);
+    }
   };
 
   const forwardKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -208,7 +253,12 @@ export function AgentChromeFullscreen({
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative flex h-full w-full max-w-[1480px] flex-col overflow-hidden rounded-[24px] border border-white/10 bg-[#0b0b0c] shadow-[0_40px_120px_-20px_rgba(0,0,0,0.85)] animate-in zoom-in-[0.98] slide-in-from-bottom-2 duration-200 sm:rounded-[28px]">
+      <div className={cn(
+        "relative flex h-full w-full max-w-[1480px] flex-col overflow-hidden rounded-[24px] border shadow-[0_40px_120px_-20px_rgba(0,0,0,0.85)] animate-in zoom-in-[0.98] slide-in-from-bottom-2 duration-200 sm:rounded-[28px]",
+        getFlag("designV2")
+          ? "border-[var(--p-border)] bg-[var(--p-surface-1,#121318)]"
+          : "border-white/10 bg-[#0b0b0c]"
+      )}>
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(70%_100%_at_50%_0%,rgba(251,146,60,0.08),transparent_70%)]" />
         <div className="relative flex justify-center pt-2">
           <span className="h-1 w-10 rounded-full bg-white/15" />
@@ -236,32 +286,40 @@ export function AgentChromeFullscreen({
             </div>
           </div>
 
-          <div aria-label="Modus" className="hidden h-9 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.04] p-1 text-xs sm:flex" role="group">
-            <button
-              aria-pressed={!control}
-              className={cn(
-                "flex h-7 items-center gap-1.5 rounded-full px-3 font-medium transition",
-                !control ? "bg-white/[0.12] text-white shadow-sm" : "text-white/50 hover:text-white/80",
-              )}
-              onClick={() => setControlMode(false)}
-              type="button"
-            >
-              <IconEye className="size-3.5" />
-              Zuschauen
-            </button>
-            <button
-              aria-pressed={control}
-              className={cn(
-                "flex h-7 items-center gap-1.5 rounded-full px-3 font-medium transition",
-                control ? "bg-emerald-400/15 text-emerald-200 shadow-sm" : "text-white/50 hover:text-white/80",
-              )}
-              onClick={() => setControlMode(true)}
-              type="button"
-            >
-              <IconHandClick className="size-3.5" />
-              Steuern
-            </button>
-          </div>
+          {liveToggleOnly ? (
+            <LiveControlToggle
+              control={control}
+              releaseControl={() => setControlMode(false)}
+              takeControl={() => setControlMode(true)}
+            />
+          ) : (
+            <div aria-label="Modus" className="hidden h-9 shrink-0 items-center rounded-full border border-white/10 bg-white/[0.04] p-1 text-xs sm:flex" role="group">
+              <button
+                aria-pressed={!control}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-full px-3 font-medium transition",
+                  !control ? "bg-white/[0.12] text-white shadow-sm" : "text-white/50 hover:text-white/80",
+                )}
+                onClick={() => setControlMode(false)}
+                type="button"
+              >
+                <IconEye className="size-3.5" />
+                Zuschauen
+              </button>
+              <button
+                aria-pressed={control}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-full px-3 font-medium transition",
+                  control ? "bg-emerald-400/15 text-emerald-200 shadow-sm" : "text-white/50 hover:text-white/80",
+                )}
+                onClick={() => setControlMode(true)}
+                type="button"
+              >
+                <IconHandClick className="size-3.5" />
+                Steuern
+              </button>
+            </div>
+          )}
 
           <button aria-label="Browser-Vollbild schließen" className={roundGhost} onClick={onClose} title="Schließen" type="button">
             <IconChevronDown className="size-5 sm:hidden" />
@@ -304,7 +362,7 @@ export function AgentChromeFullscreen({
             navigate();
           }}
         >
-          <button aria-label="Seite neu laden" className={roundGhost} disabled={!control || !selectedTabId} onClick={() => void send({ action: "reload" })} title={control ? "Seite neu laden" : "Steuerung übernehmen, um den Browser zu bedienen"} type="button">
+          <button aria-label="Seite neu laden" className={roundGhost} disabled={!control || !selectedTabId} onClick={() => void send({ action: "reload" })} title={control ? "Seite neu laden" : "Steuerung im Toggle aktivieren, um den Browser zu bedienen"} type="button">
             <IconRefresh className="size-4" />
           </button>
           <div
@@ -346,48 +404,64 @@ export function AgentChromeFullscreen({
               <IconArrowUpRight className="size-4" />
             </button>
           </div>
-          <button
-            aria-label={control ? "Steuerung stoppen" : "Steuerung übernehmen"}
-            className={cn(
-              "flex h-10 shrink-0 items-center gap-2 rounded-full px-3.5 text-xs font-semibold transition active:scale-[0.97] sm:px-4",
-              control
-                ? "border border-white/15 bg-white/[0.08] text-white hover:bg-white/[0.12]"
-                : "bg-gradient-to-r from-orange-400 to-pink-500 text-white shadow-[0_10px_30px_-10px_rgba(244,114,182,0.7)] hover:brightness-110",
-            )}
-            onClick={toggleControl}
-            type="button"
-          >
-            {control ? <span className="size-1.5 rounded-full bg-emerald-400" /> : <IconHandClick className="size-4" />}
-            <span className="hidden sm:inline">{control ? "Steuerung stoppen" : "Steuerung übernehmen"}</span>
-            <span className="sm:hidden">{control ? "Stoppen" : "Steuern"}</span>
-          </button>
+          {!liveToggleOnly && (
+            <ControlToggle
+              active={control}
+              onToggle={setControlMode}
+              storageKey="connect.agent-control.fullscreen"
+            />
+          )}
         </form>
 
         <div
           className={cn(
-            "relative mx-2 mb-2 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[18px] border bg-[#060607] outline-none transition-colors sm:mx-3 sm:mb-3 sm:rounded-[20px]",
-            control ? "cursor-crosshair border-emerald-400/25" : "cursor-default border-white/[0.06]",
+            "relative mx-2 mb-2 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[18px] border bg-[#060607] outline-none transition-all duration-300 sm:mx-3 sm:mb-3 sm:rounded-[20px]",
+            control
+              ? "cursor-none border-cyan-400/70 shadow-[0_0_40px_rgba(6,182,212,0.3)] ring-2 ring-cyan-400/40"
+              : "cursor-default border-white/[0.06]",
           )}
           onClick={(event) => {
             if (!control) return;
             const point = imagePoint(event.clientX, event.clientY);
-            if (point) void send({ action: "click", ...point });
+            if (point) {
+              void send({ action: "click", ...point });
+              setTimeout(refresh, 100);
+            }
           }}
           onContextMenu={(event) => {
             if (!control) return;
             event.preventDefault();
             const point = imagePoint(event.clientX, event.clientY);
-            if (point) void send({ action: "click", ...point, button: "right" });
+            if (point) {
+              void send({ action: "click", ...point, button: "right" });
+              setTimeout(refresh, 100);
+            }
           }}
-          onKeyDown={forwardKey}
+          onDoubleClick={(event) => {
+            if (!control) return;
+            const point = imagePoint(event.clientX, event.clientY);
+            if (point) {
+              void send({ action: "click", ...point, clickCount: 2 });
+              setTimeout(refresh, 100);
+            }
+          }}
+          onKeyDown={(event) => {
+            forwardKey(event);
+            setTimeout(refresh, 100);
+          }}
           onPointerDown={() => {
             if (control) viewportRef.current?.focus();
           }}
+          onPointerMove={handlePointerMove}
+          onPointerLeave={() => setCursorPos(null)}
           onWheel={(event) => {
             if (!control) return;
             event.preventDefault();
             const point = imagePoint(event.clientX, event.clientY);
-            if (point) void send({ action: "scroll", ...point, deltaX: event.deltaX, deltaY: event.deltaY });
+            if (point) {
+              void send({ action: "scroll", ...point, deltaX: event.deltaX, deltaY: event.deltaY });
+              setTimeout(refresh, 120);
+            }
           }}
           ref={viewportRef}
           style={{ touchAction: control ? "none" : "auto" }}
@@ -404,11 +478,33 @@ export function AgentChromeFullscreen({
               <p className="text-xs text-white/45">{frameError ?? "Sobald ein Tab geöffnet ist, erscheint er hier."}</p>
             </div>
           )}
+          {control && cursorPos ? (
+            <div
+              className="pointer-events-none absolute z-30 transition-transform duration-75"
+              style={{
+                left: `${cursorPos.clientX}px`,
+                top: `${cursorPos.clientY}px`,
+                transform: "translate(-2px, -2px)",
+              }}
+            >
+              <div className="relative flex items-center gap-1.5">
+                <svg
+                  className="size-5 drop-shadow-[0_2px_10px_rgba(6,182,212,0.9)] fill-cyan-400 stroke-[#070b14] stroke-[1.5]"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M4 4l7 17 2.5-6.5L20 12z" />
+                </svg>
+                <span className="rounded-full border border-cyan-400/40 bg-cyan-950/90 px-2 py-0.5 text-[10px] font-semibold text-cyan-200 shadow-[0_2px_12px_rgba(6,182,212,0.4)] backdrop-blur-md">
+                  Du steuerst
+                </span>
+              </div>
+            </div>
+          ) : null}
           {error ? <div className="absolute left-1/2 top-3 max-w-[min(90%,640px)] -translate-x-1/2 rounded-full border border-red-300/20 bg-red-950/70 px-4 py-1.5 text-xs text-red-100 shadow-lg backdrop-blur-md">{error}</div> : null}
           <div className="pointer-events-none absolute bottom-3 left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-[11px] text-white/60 shadow-lg backdrop-blur-md">
-            {control ? <IconHandClick className="size-3.5 shrink-0 text-emerald-300/80" /> : <IconEye className="size-3.5 shrink-0 text-white/45" />}
+            {control ? <IconHandClick className="size-3.5 shrink-0 text-cyan-300" /> : <IconEye className="size-3.5 shrink-0 text-white/45" />}
             <span className="truncate">
-              {control ? "Klicken, scrollen und tippen wird an den ausgewählten Tab gesendet." : "Live-Ansicht · Über „Steuerung übernehmen“ den Tab bedienen."}
+              {control ? "Klicken, scrollen, bewegen und tippen steuert den Browser direkt." : "Live-Ansicht · Über den Toggle Steuerung aktivieren."}
             </span>
           </div>
         </div>

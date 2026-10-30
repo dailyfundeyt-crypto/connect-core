@@ -1,5 +1,6 @@
 import { IconChevronDown } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import { T3CliSelector } from "@/components/agents/t3-cli-selector";
 import {
   Select,
   SelectContent,
@@ -15,6 +16,7 @@ import {
   subscribeAgentModels,
   type AgentModelId,
 } from "@/lib/agents/agent-models";
+import { getT3Flag } from "@/lib/t3/contracts";
 import { cn } from "@/lib/utils";
 
 /**
@@ -44,6 +46,20 @@ export function AgentModelPicker({
     refresh();
     return subscribeAgentModels(refresh);
   }, [agentId]);
+
+  /*
+   * DER CLI-TAUSCH (A23) — an EXAKT DERSELBEN STELLE, im selben Look.
+   *
+   * Hinter `connect.t3.cliSwap` tauscht die Auswahl in diesem Trigger durch die T3-CLI-Auswahl
+   * (Status-Punkte, T3-/Legacy-Gruppen). Der Trigger selbst bleibt derselbe: runder 8-px-Trigger,
+   * `h-8`, `text-[11px]`, Chevron, `align="end"` — genau die Vorlage aus A01/A23. Flag aus = das
+   * alte Modell-Dropdown, unangetastet (die alte Komponente und ihr Katalog bleiben im Code).
+   */
+  if (getT3Flag("cliSwap")) {
+    return (
+      <T3CliSelector agentId={agentId} className={className} size={size} />
+    );
+  }
 
   if (options.length === 0) return null;
 

@@ -7,8 +7,8 @@
 -- Neue Tabelle: Agent-App-Instanzen (Slots mit E-Mail/Profil-Name)
 -- Ein Agent kann mehrere Instanzen einer App haben (z.B. 3x Codex mit verschiedenen Accounts)
 CREATE TABLE IF NOT EXISTS agent_app_instances (
-    id           uuid        NOT NULL DEFAULT gen_random_uuid(),
-    agent_id     uuid        NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    id           text        NOT NULL DEFAULT gen_random_uuid()::text,
+    agent_id     text        NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
     app_id       text        NOT NULL, -- "codex" | "ottermind" | "manus" | "figma" | "cursor" | "perplexity" | ...
     slot         integer     NOT NULL DEFAULT 1,
     name         text        NOT NULL DEFAULT '',

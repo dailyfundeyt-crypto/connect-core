@@ -435,6 +435,14 @@ export const auditEventTypes = [
    * withholds; the offered credential never does.
    */
   "routines.dispatch_refused",
+  /*
+   * Eine Freigabe in der Muse-Inbox wurde entschieden — Ja oder Nein.
+   *
+   * Die Zeile nennt, wer, wann, welche Freigabe und wie entschieden wurde. Sie nennt nie
+   * einen Schlüssel und nie den Inhalt der Notiz: das Trail ist ein Nachweis der Handlung,
+   * kein Mitschnitt.
+   */
+  "cloud_agent.approval_decided",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

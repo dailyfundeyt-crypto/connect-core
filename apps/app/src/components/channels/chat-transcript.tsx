@@ -22,6 +22,8 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { BotAvatar } from "@/components/bot-avatar";
+import { deriveAgentAvatar } from "@/components/app-sidebar/agent-grid/derive-avatar";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   Dialog,
@@ -46,12 +48,16 @@ import {
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
 import { attachmentUrl } from "@/lib/channels/attachments";
+import { useActiveBotId } from "@/lib/copilot/active-bot";
 import { readFiring } from "@/lib/channels/routine-firing";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { readToolName } from "@/lib/plugins/tool-name";
 import { asText, forDisplay, REFUSAL_MARKER } from "@/lib/plugins/tool-result";
+import { getT3Flag } from "@/lib/t3/contracts";
 import { cn } from "@/lib/utils";
+import { CliSourceBadge } from "@/v06/unified-cli/CliSourceBadge";
+import type { UnifiedMessageLike } from "@/v06/unified-cli/unifiedCli";
 import {
   attachmentModality,
   type SentAttachment,
@@ -59,6 +65,7 @@ import {
   type VisibleChatItem,
 } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
+import { CloudMessageStatusLine } from "./cloud-agent-chat";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine } from "./tool-line";
 
@@ -67,6 +74,14 @@ type ChatTranscriptProps = {
   /** Comma-separated `/` command names, used to tell a skill chip from a leading slash. */
   commandNames?: string;
   messages: ReadonlyArray<Readonly<Message>>;
+  /**
+   * The Bot's name, shown beside the mascot in the chat head.
+   *
+   * The mascot itself is drawn for the ACTIVE Bot (siehe `useActiveBotId`) — der Chat-Kopf gehört
+   * dem Bot, den diese Unterhaltung führt, und der wird über den Active-Bot-Kontext gesetzt, nicht
+   * über eine Property von hier.
+   */
+  agentName?: string;
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -88,6 +103,8 @@ type ChatTranscriptProps = {
   header?: (info: { hiddenCount: number; showMore: () => void }) => ReactNode;
   /** oneconv: draw only the newest N rows at first (display only, nothing is removed). */
   initialVisible?: number;
+  /** Persisted terminal rows from the same channel conversation. */
+  cliMessages?: readonly UnifiedMessageLike[];
 };
 
 /** One shared empty array, so a screen without a queue does not hand down a new one per render. */
@@ -559,11 +576,13 @@ const TranscriptMessage = memo(function TranscriptMessage({
   commandNames = "",
   delay,
   role,
+  source = "chat",
   text,
 }: {
   commandNames?: string;
   delay: number;
   role: "user" | "assistant";
+  source?: "chat" | "cli";
   text: string;
 }) {
   const isUser = role === "user";
@@ -598,10 +617,22 @@ const TranscriptMessage = memo(function TranscriptMessage({
           */}
           <Bubble
             align={align}
-            variant={isUser ? "muted" : "ghost"}
-            className={isUser ? undefined : "w-full"}
+            variant={isUser ? "accent" : "ghost"}
+            className={isUser ? "max-w-[85%]" : "w-full"}
           >
-            <BubbleContent className={isUser ? undefined : "w-full"}>
+            <BubbleContent
+              className={
+                isUser
+                  ? "rounded-[18px] px-4 py-3 text-[15px] leading-[1.6]"
+                  : "w-full text-[15px] leading-[1.72] text-foreground/90"
+              }
+            >
+              {source === "cli" ? (
+                <span className="mb-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <CliSourceBadge source="cli" />
+                  CLI
+                </span>
+              ) : null}
               {isUser ? (
                 // A person's own message is shown exactly as they typed it. Rendering it as markdown
                 // would silently reformat what they said, and an asterisk in a sentence is not
@@ -1426,17 +1457,62 @@ function useSmoothSendScroll(
   }, [newestUserMessageId, reducedMotion, viewport]);
 }
 
+/**
+ * DER MASKOTTCHEN-KOPF (A29).
+ *
+ * Hinter `connect.avatar.mascot` steht im Chat-Kopf das Maskottchen statt des bisherigen Bot-Bildes.
+ * Flag aus: nichts — der Kopf bleibt exakt wie vorher, Pixel für Pixel.
+ *
+ * Form und Farbe kommen aus `deriveAgentAvatar` (A28): stabil aus der Agent-ID abgeleitet, ohne
+ * Netzwerk und ohne Flackern beim Laden. Der serverseitig gespeicherte Avatar (A31) ist die
+ * spätere Stufe — bis er für alle Agenten in einem Aufruf liefert (Wunsch an A31), ist die
+ * abgeleitete Form die ehrliche Antwort.
+ */
+function MascotHead({
+  agentId,
+  agentName,
+}: {
+  agentId: string;
+  agentName?: string;
+}) {
+  if (!getT3Flag("mascot")) return null;
+  const { shape, color } = deriveAgentAvatar(agentId);
+  return (
+    <div
+      className="mx-auto flex w-full max-w-2xl items-center gap-2 px-4 pt-4 pb-1"
+      data-testid="chat-mascot-head"
+    >
+      <BotAvatar color={color} name={agentName} shape={shape} size={28} />
+      {agentName ? (
+        <span className="min-w-0 truncate text-sm font-medium tracking-tight">
+          {agentName}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function ChatTranscript({
   busy = false,
   commandNames = "",
   messages,
+  agentName,
   onRemoveQueued,
   queued = EMPTY_QUEUE,
   restoring = false,
   stopped,
   header,
   initialVisible,
+  cliMessages = [],
 }: ChatTranscriptProps) {
+  /*
+   * DER BOT, DIESER CHAT FÜHRT.
+   *
+   * Der Active-Bot-Kontext wird von der Fläche gesetzt, die diesen Chat zeichnet (`channel-chat.tsx`
+   * ruft `useActiveBot(runtimeAgentId)`). Er ist damit die eine Quelle der Wahrheit für „welcher
+   * Bot" — auch für das Maskottchen im Kopf.
+   */
+  const activeBotId = useActiveBotId();
   /*
    * NOT MEMOISED, AND THAT IS DELIBERATE. `useMemo` keyed on `messages` looks obviously right and
    * silently broke the transcript: the agent hands back the SAME array and mutates it, so the
@@ -1447,8 +1523,7 @@ export function ChatTranscript({
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
    * which is where the 25x came from. This runs per render and is not worth guarding.
    */
-  const allItems = toVisibleChatItems(messages);
-  /* oneconv: very long conversations draw their newest rows; "Frühere Nachrichten anzeigen" brings the rest back. */
+  const allItems = toVisibleChatItems(messages);  /* oneconv: very long conversations draw their newest rows; "Frühere Nachrichten anzeigen" brings the rest back. */
   const [visibleLimit, setVisibleLimit] = useState(initialVisible ?? Number.POSITIVE_INFINITY);
   const hiddenCount = Number.isFinite(visibleLimit) ? Math.max(0, allItems.length - visibleLimit) : 0;
   const items = hiddenCount > 0 ? allItems.slice(hiddenCount) : allItems;
@@ -1520,6 +1595,7 @@ export function ChatTranscript({
     <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
       <MessageScroller>
         <MessageScrollerViewport ref={viewportRef}>
+          <MascotHead agentId={activeBotId} agentName={agentName} />
           <MessageScrollerContent
             aria-busy={busy}
             className="mx-auto w-full max-w-2xl px-4 py-6"
@@ -1631,6 +1707,9 @@ export function ChatTranscript({
                     role={item.role}
                     text={item.text}
                   />
+                  {item.role === "user" ? (
+                    <CloudMessageStatusLine messageId={item.id} />
+                  ) : null}
                 </MessageScrollerItem>
               ) : item.kind === "attachments" ? (
                 <MessageScrollerItem
@@ -1650,6 +1729,18 @@ export function ChatTranscript({
                 assertNever(item)
               ),
             )}
+            {cliMessages
+              .filter((message) => message.source === "cli")
+              .map((message) => (
+                <MessageScrollerItem key={`cli-${message.id}`} messageId={`cli-${message.id}`}>
+                  <TranscriptMessage
+                    delay={delays.delayFor(`cli-${message.id}`, items.length, items.length + cliMessages.length)}
+                    role={message.role === "user" ? "user" : "assistant"}
+                    source="cli"
+                    text={message.content}
+                  />
+                </MessageScrollerItem>
+              ))}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton />

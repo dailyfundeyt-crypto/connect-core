@@ -18,6 +18,43 @@ import type {
   AgentProfile,
   CreateAgentInput,
 } from "./profile-types";
+import { loadCodexRegister } from "../agent-hub/codex-accounts";
+import {
+  DEFAULT_SKILLS_CATALOG,
+  normalizeAgentSkills,
+  type AgentSkill,
+} from "./agent-skills";
+import {
+  normalizeAgentWebsites,
+  syncAgentWebsitesToWorkspace,
+  type AgentWebsite,
+} from "./agent-websites";
+import {
+  normalizeAgentSubagents,
+  syncAgentSubagentsToWorkspace,
+  DEFAULT_SUBAGENTS,
+  type AgentSubagent,
+} from "./agent-subagents";
+import {
+  readAgentCliMcpConfig,
+  writeAgentCliMcpConfig,
+  writeRawAgentCliMcpConfig,
+  syncAllAgentCliMcpConfigs,
+  subscribeAgentCliMcpChanges,
+  SUPPORTED_CLIS,
+  type AgentCliMcpServer,
+  type SupportedCli,
+} from "./agent-cli-mcp";
+import {
+  getBrowserUseStatus,
+  browserUseOpen,
+  browserUseClick,
+  browserUseType,
+  browserUseScreenshot,
+  browserUseRunTask,
+  type BrowserUseServiceStatus,
+  type BrowserUseActionResult,
+} from "./agent-browser-use";
 
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
@@ -30,7 +67,132 @@ type AgentInputObject = {
   visibility?: unknown;
   endpoint?: unknown;
   auth?: unknown;
+  headline?: unknown;
+  role?: unknown;
+  description?: unknown;
+  chosenCli?: unknown;
+  accountEmail?: unknown;
+  skills?: unknown;
+  sparkPermissions?: unknown;
+  browserProfile?: unknown;
+  websiteList?: unknown;
+  subagents?: unknown;
+  mcpList?: unknown;
+  /**
+   * Phase B Schritt 7 (Helium Bugfix):
+   * Engine-Felder müssen vom Parser akzeptiert werden, sonst gehen sie stillschweigend
+   * verloren und `engine.kind` fällt immer auf den Default "antigravity" zurück.
+   *
+   * - `cliEngine` für CLI-Engines (antigravity/codex/claude).
+   * - `freebuffEngine` für die Stufe-4 Freebuff-Engine.
+   * - `manusEngine` für die Stufe-3 Manus-Cloud-Engine.
+   * - `browserUseEngine` für den Stufe-3 browser-use Sidecar.
+   *
+   * `browserProfile` (oben) wird sowohl als String (Profilname) als auch als Objekt
+   * (`{ kind: "browser_profile", startUrl, profileName, allowWrite }`) akzeptiert.
+   */
+  cliEngine?: unknown;
+  freebuffEngine?: unknown;
+  manusEngine?: unknown;
+  browserUseEngine?: unknown;
 };
+
+/**
+ * Helium-Bugfix: Parser für die Engine-Unterobjekte.
+ *
+ * Vorher: `parseAgentInput` warf `cliEngine`/`freebuffEngine`/... weg, weil es nur die
+ * Wurzel-Felder kannte. `profile-store.create` würde sie korrekt in `configuration.cli`
+ * bzw. `configuration.freebuff` ablegen — bekam aber nie etwas, weil der Parser die
+ * Objekte verschluckte. Folge: `engineOf()` lieferte immer `null` für nicht-antigravity,
+ * das `Seitenfenster beim Bot` zeigte unabhängig von der Modellwahl immer "Antigravity".
+ *
+ * Diese Parser validieren Shape + Wertebereich, lehnen alles andere mit HTTP 400 ab,
+ * und liefern im Erfolgsfall den gleichen Typ, den `agentInputFrom()` auf der Client-Seite
+ * ausspuckt. Damit `profile-store.create` 1:1 speichern kann.
+ *
+ * `null` / `undefined` lassen sich durchreichen, ohne die Engine zu setzen.
+ */
+type CliEngineKind = "antigravity" | "codex" | "claude" | "freebuff";
+const CLI_ENGINE_KINDS = new Set<CliEngineKind>(["antigravity", "codex", "claude", "freebuff"]);
+
+type ParsedCliEngine = { kind: CliEngineKind; model: string; allowWrite: boolean };
+type ParsedFreebuff = { kind: "freebuff"; model: string; allowWrite: boolean };
+type ParsedManus = { kind: "manus"; model: string; profileName?: string };
+type ParsedBrowserUse = { kind: "browser_use"; startUrl?: string; allowWrite: boolean };
+
+function parseCliEngine(value: unknown):
+  | { ok: true; value: ParsedCliEngine | undefined }
+  | { ok: false; error: string } {
+  if (value === null || value === undefined) return { ok: true, value: undefined };
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { ok: false, error: "cliEngine must be an object." };
+  }
+  const obj = value as Record<string, unknown>;
+  const kind = obj.kind;
+  if (typeof kind !== "string" || !CLI_ENGINE_KINDS.has(kind as CliEngineKind)) {
+    return { ok: false, error: `cliEngine.kind must be one of antigravity, codex, claude, freebuff — got ${JSON.stringify(kind)}.` };
+  }
+  const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
+  const allowWrite = obj.allowWrite === true;
+  return { ok: true, value: { kind: kind as CliEngineKind, model, allowWrite } };
+}
+
+function parseFreebuffEngine(value: unknown):
+  | { ok: true; value: ParsedFreebuff | undefined }
+  | { ok: false; error: string } {
+  if (value === null || value === undefined) return { ok: true, value: undefined };
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { ok: false, error: "freebuffEngine must be an object." };
+  }
+  const obj = value as Record<string, unknown>;
+  if (obj.kind !== "freebuff") {
+    return { ok: false, error: `freebuffEngine.kind must be "freebuff" — got ${JSON.stringify(obj.kind)}.` };
+  }
+  const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
+  const allowWrite = obj.allowWrite === true;
+  return { ok: true, value: { kind: "freebuff", model, allowWrite } };
+}
+
+function parseManusEngine(value: unknown):
+  | { ok: true; value: ParsedManus | undefined }
+  | { ok: false; error: string } {
+  if (value === null || value === undefined) return { ok: true, value: undefined };
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { ok: false, error: "manusEngine must be an object." };
+  }
+  const obj = value as Record<string, unknown>;
+  if (obj.kind !== "manus") {
+    return { ok: false, error: `manusEngine.kind must be "manus" — got ${JSON.stringify(obj.kind)}.` };
+  }
+  const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
+  const profileName = typeof obj.profileName === "string" && obj.profileName.trim()
+    ? obj.profileName.trim()
+    : undefined;
+  return profileName
+    ? { ok: true, value: { kind: "manus", model, profileName } }
+    : { ok: true, value: { kind: "manus", model } };
+}
+
+function parseBrowserUseEngine(value: unknown):
+  | { ok: true; value: ParsedBrowserUse | undefined }
+  | { ok: false; error: string } {
+  if (value === null || value === undefined) return { ok: true, value: undefined };
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { ok: false, error: "browserUseEngine must be an object." };
+  }
+  const obj = value as Record<string, unknown>;
+  if (obj.kind !== "browser_use") {
+    return { ok: false, error: `browserUseEngine.kind must be "browser_use" — got ${JSON.stringify(obj.kind)}.` };
+  }
+  const rawUrl = typeof obj.startUrl === "string" ? obj.startUrl.trim() : "";
+  if (rawUrl && !/^https?:\/\//.test(rawUrl)) {
+    return { ok: false, error: "browserUseEngine.startUrl must start with http:// or https://." };
+  }
+  const allowWrite = obj.allowWrite === true;
+  return rawUrl
+    ? { ok: true, value: { kind: "browser_use", startUrl: rawUrl, allowWrite } }
+    : { ok: true, value: { kind: "browser_use", allowWrite } };
+}
 
 /**
  * Parse and validate what a user typed into the agent form.
@@ -132,9 +294,112 @@ export function parseAgentInput(
     }
   }
 
+  const headline =
+    typeof input.headline === "string"
+      ? input.headline.trim()
+      : input.headline === null
+        ? null
+        : undefined;
+  const role =
+    typeof input.role === "string"
+      ? input.role.trim()
+      : input.role === null
+        ? null
+        : undefined;
+  const description =
+    typeof input.description === "string"
+      ? input.description.trim()
+      : input.description === null
+        ? null
+        : undefined;
+  const chosenCli =
+    typeof input.chosenCli === "string"
+      ? input.chosenCli.trim()
+      : undefined;
+  const accountEmail =
+    typeof input.accountEmail === "string"
+      ? input.accountEmail.trim()
+      : input.accountEmail === null
+        ? null
+        : undefined;
+  const skills = Array.isArray(input.skills) ? normalizeAgentSkills(input.skills) : undefined;
+  const sparkPermissions =
+    typeof input.sparkPermissions === "object" && input.sparkPermissions !== null
+      ? (input.sparkPermissions as Record<string, unknown>)
+      : undefined;
+  /*
+   * `browserProfile` darf entweder ein Profilname-String ODER das Engine-Objekt
+   * (`{ kind: "browser_profile", startUrl, profileName, allowWrite }`) sein.
+   * `agentInputFrom` sendet das Objekt. Vorher akzeptierte der Parser nur String-Pfad,
+   * wodurch das Objekt stillschweigend verworfen wurde — Helium-Bugfix.
+   */
+  let browserProfile:
+    | string
+    | { kind: "browser_profile"; startUrl: string; profileName: string; allowWrite: boolean }
+    | undefined;
+  if (typeof input.browserProfile === "string") {
+    browserProfile = input.browserProfile.trim();
+  } else if (
+    typeof input.browserProfile === "object" &&
+    input.browserProfile !== null &&
+    !Array.isArray(input.browserProfile)
+  ) {
+    const obj = input.browserProfile as Record<string, unknown>;
+    if (obj.kind === "browser_profile") {
+      const rawUrl = typeof obj.startUrl === "string" ? obj.startUrl.trim() : "";
+      if (rawUrl && !/^https?:\/\//.test(rawUrl)) {
+        return { ok: false, error: "browserProfile.startUrl must start with http:// or https://." };
+      }
+      const profileName = typeof obj.profileName === "string" ? obj.profileName.trim() : "";
+      browserProfile = {
+        kind: "browser_profile",
+        startUrl: rawUrl,
+        profileName,
+        allowWrite: obj.allowWrite === true,
+      };
+    }
+  }
+  const websiteList = Array.isArray(input.websiteList) ? normalizeAgentWebsites(input.websiteList) : undefined;
+  const subagents = Array.isArray(input.subagents) ? normalizeAgentSubagents(input.subagents) : undefined;
+  const mcpList = Array.isArray(input.mcpList) ? input.mcpList : undefined;
+
+  // Helium-Bugfix: Engine-Unterobjekte parsen und validieren, bevor sie in der
+  // Datenbank landen. `profile-store.create` nimmt sie aus `CreateAgentInput` und
+  // legt sie in `configuration.cli` (bzw. `configuration.freebuff` etc.) ab.
+  const cliParsed = parseCliEngine(input.cliEngine);
+  if (!cliParsed.ok) return { ok: false, error: cliParsed.error };
+  const freebuffParsed = parseFreebuffEngine(input.freebuffEngine);
+  if (!freebuffParsed.ok) return { ok: false, error: freebuffParsed.error };
+  const manusParsed = parseManusEngine(input.manusEngine);
+  if (!manusParsed.ok) return { ok: false, error: manusParsed.error };
+  const browserUseParsed = parseBrowserUseEngine(input.browserUseEngine);
+  if (!browserUseParsed.ok) return { ok: false, error: browserUseParsed.error };
+
   return {
     ok: true,
-    value: { name, title, roleDescription, visibility, endpoint, auth },
+    value: {
+      name,
+      title,
+      roleDescription,
+      visibility,
+      endpoint,
+      auth,
+      ...(headline !== undefined ? { headline } : {}),
+      ...(role !== undefined ? { role } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(chosenCli !== undefined ? { chosenCli } : {}),
+      ...(accountEmail !== undefined ? { accountEmail } : {}),
+      ...(skills !== undefined ? { skills } : {}),
+      ...(sparkPermissions !== undefined ? { sparkPermissions } : {}),
+      ...(browserProfile !== undefined ? { browserProfile } : {}),
+      ...(websiteList !== undefined ? { websiteList } : {}),
+      ...(subagents !== undefined ? { subagents } : {}),
+      ...(mcpList !== undefined ? { mcpList } : {}),
+      ...(cliParsed.value ? { cliEngine: cliParsed.value } : {}),
+      ...(freebuffParsed.value ? { freebuffEngine: freebuffParsed.value } : {}),
+      ...(manusParsed.value ? { manusEngine: manusParsed.value } : {}),
+      ...(browserUseParsed.value ? { browserUseEngine: browserUseParsed.value } : {}),
+    },
   };
 }
 
@@ -562,7 +827,72 @@ export function createAgentRoutes(
         ...(parsed.value.endpoint ? { endpoint: parsed.value.endpoint } : {}),
         ...(parsed.value.auth ? { keyReplaced: true } : {}),
       });
-      return context.json({ agent: dto(context.var.actor, agent) });
+
+      let warning: string | undefined;
+      if (parsed.value.accountEmail && typeof parsed.value.accountEmail === "string") {
+        const cleanEmail = parsed.value.accountEmail.trim().toLowerCase();
+        const manifest = loadCodexRegister();
+        const existsInRegister = manifest.availableEmails.some(
+          (a) => a.email.toLowerCase() === cleanEmail,
+        );
+        if (!existsInRegister) {
+          warning = `E-Mail "${parsed.value.accountEmail}" wurde nicht im Instanz-Register (000_Codex Start) gefunden. Ein eigener separater Bot-Config-Ordner wird angelegt.`;
+        }
+      }
+
+      return context.json({
+        agent: dto(context.var.actor, agent),
+        ...(warning ? { warning } : {}),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  routes.post("/:agentId/chosen-cli", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => ({}))) as { cli?: string; chosenCli?: string };
+    const requested = (body.chosenCli || body.cli || "").toLowerCase().trim();
+    const allowed = new Set(["antigravity", "codex", "claude", "freebuff", "hermes"]);
+    if (!requested || !allowed.has(requested)) {
+      return context.json(
+        { error: `cli muss einer von ${Array.from(allowed).join(", ")} sein.` },
+        400,
+      );
+    }
+    try {
+      const existing = await store.get(context.var.actor, agentId);
+      if (!existing) return context.json({ error: "Agent not found." }, 404);
+      const agent = store.setChosenCli
+        ? await store.setChosenCli(context.var.actor, agentId, requested)
+        : await store.update(context.var.actor, agentId, {
+            name: existing.name,
+            title: existing.title,
+            roleDescription: existing.roleDescription,
+            visibility: "private",
+            chosenCli: requested,
+          });
+      await record(context, "bot.updated", agent.id, { chosenCli: requested });
+      try {
+        const { agentHub } = await import("../agent-hub/service");
+        const { writeAgentSettings } = await import("../agent-hub/db");
+        const { syncAgentCliMcpConfigs } = await import("../agent-hub/agent-cli-mcp-sync");
+        const hub = agentHub();
+        if (hub?.deps?.database) {
+          await writeAgentSettings(hub.deps.database, agentId, {
+            model: {
+              provider: `${requested}-cli`,
+              model: "auto",
+              credentialId: null,
+              keyHint: null,
+            },
+          }).catch(() => {});
+          await syncAgentCliMcpConfigs(hub.deps.database, agentId).catch(() => {});
+        }
+      } catch {
+        // best-effort sync
+      }
+      return context.json({ ok: true, chosenCli: requested, agent: dto(context.var.actor, agent) });
     } catch (error) {
       return mapStoreError(context, error);
     }
@@ -674,6 +1004,1020 @@ export function createAgentRoutes(
     }
   });
 
+  /* ---------- Skills API (Phase C Schritt 10) ---------- */
+
+  /** Ruft die Skills des Agenten ab (inkl. Standard-Katalog). */
+  routes.get("/:agentId/skills", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      const skills = normalizeAgentSkills(agent.skills);
+      return context.json({ skills, catalog: DEFAULT_SKILLS_CATALOG });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Aktualisiert die komplette Skills-Liste des Agenten. */
+  routes.put("/:agentId/skills", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        skills?: unknown[];
+      };
+      if (!Array.isArray(body.skills)) {
+        return context.json({ error: "skills must be an array" }, 400);
+      }
+      const normalized = normalizeAgentSkills(body.skills);
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        skills: normalized,
+      });
+      await record(context, "bot.updated", agentId, {
+        activeCount: normalized.filter((s) => s.enabled).length,
+      });
+      return context.json({
+        skills: normalizeAgentSkills(updated.skills),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Schaltet einen Skill an oder aus. */
+  routes.post("/:agentId/skills/toggle", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        skillId?: string;
+        enabled?: boolean;
+      };
+      if (!body.skillId || typeof body.skillId !== "string") {
+        return context.json({ error: "skillId is required" }, 400);
+      }
+      const skillId = body.skillId.trim().toLowerCase();
+      const current = normalizeAgentSkills(agent.skills);
+      let found = false;
+      const nextSkills = current.map((s) => {
+        if (s.id.toLowerCase() === skillId) {
+          found = true;
+          return {
+            ...s,
+            enabled: body.enabled !== undefined ? Boolean(body.enabled) : !s.enabled,
+          };
+        }
+        return s;
+      });
+      if (!found) {
+        const catMatch = DEFAULT_SKILLS_CATALOG.find((c) => c.id.toLowerCase() === skillId);
+        if (catMatch) {
+          nextSkills.push({
+            ...catMatch,
+            enabled: body.enabled !== undefined ? Boolean(body.enabled) : true,
+          });
+        }
+      }
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        skills: nextSkills,
+      });
+      return context.json({
+        skills: normalizeAgentSkills(updated.skills),
+        skillId,
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Fügt einen neuen Skill zum Agenten hinzu. */
+  routes.post("/:agentId/skills/add", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        name?: string;
+        description?: string;
+        prompt?: string;
+        enabled?: boolean;
+      };
+      if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
+        return context.json({ error: "Skill name is required" }, 400);
+      }
+      const cleanName = body.name.trim();
+      const skillId = cleanName.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 50) || `skill-${Date.now()}`;
+      const newSkill: AgentSkill = {
+        id: skillId,
+        name: cleanName,
+        description: typeof body.description === "string" ? body.description.trim() : "",
+        prompt: typeof body.prompt === "string" ? body.prompt.trim() : undefined,
+        enabled: body.enabled !== false,
+        source: "custom",
+        createdAt: new Date().toISOString(),
+      };
+      const current = normalizeAgentSkills(agent.skills);
+      const nextSkills = current.filter((s) => s.id !== skillId);
+      nextSkills.push(newSkill);
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        skills: nextSkills,
+      });
+      return context.json(
+        {
+          skills: normalizeAgentSkills(updated.skills),
+          added: newSkill,
+          agent: dto(context.var.actor, updated),
+        },
+        201,
+      );
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 13: Listet die Webseiten des Agenten. */
+  routes.get("/:agentId/websites", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      const websites = normalizeAgentWebsites(agent.websiteList);
+      return context.json({ websites });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 13: Aktualisiert die komplette Webseiten-Liste des Agenten. */
+  routes.put("/:agentId/websites", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        websites?: unknown[];
+      };
+      if (!Array.isArray(body.websites)) {
+        return context.json({ error: "websites must be an array" }, 400);
+      }
+      const normalized = normalizeAgentWebsites(body.websites);
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        websiteList: normalized,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentWebsitesToWorkspace(agentId, normalized, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      await record(context, "bot.updated", agentId, {
+        activeWebsitesCount: normalized.filter((w) => w.enabled).length,
+      });
+      return context.json({
+        websites: normalizeAgentWebsites(updated.websiteList),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 13: Fügt eine Webseite zur Liste des Agenten hinzu. */
+  routes.post("/:agentId/websites/add", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        url?: string;
+        purpose?: string;
+        wofuer?: string;
+        enabled?: boolean;
+      };
+      if (!body.url || typeof body.url !== "string" || !body.url.trim()) {
+        return context.json({ error: "URL ist erforderlich" }, 400);
+      }
+      const cleanUrl = body.url.trim();
+      const cleanPurpose = (body.purpose || body.wofuer || "Recherche & Kontext").trim();
+      const current = normalizeAgentWebsites(agent.websiteList);
+      const next = [
+        ...current.filter((w) => w.url.toLowerCase() !== cleanUrl.toLowerCase()),
+        {
+          id: `web-${Date.now()}-${encodeURIComponent(cleanUrl.slice(0, 15)).replace(/[^a-z0-9]/gi, "").toLowerCase()}`,
+          url: cleanUrl,
+          purpose: cleanPurpose,
+          enabled: body.enabled !== false,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        websiteList: next,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentWebsitesToWorkspace(agentId, next, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json(
+        {
+          websites: normalizeAgentWebsites(updated.websiteList),
+          agent: dto(context.var.actor, updated),
+        },
+        201,
+      );
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 13: Schaltet eine Webseite an oder aus. */
+  routes.post("/:agentId/websites/toggle", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        websiteId?: string;
+        url?: string;
+        enabled?: boolean;
+      };
+      const current = normalizeAgentWebsites(agent.websiteList);
+      let found = false;
+      const next = current.map((w) => {
+        if (
+          (body.websiteId && w.id === body.websiteId) ||
+          (body.url && w.url.toLowerCase() === body.url.trim().toLowerCase())
+        ) {
+          found = true;
+          return {
+            ...w,
+            enabled: body.enabled !== undefined ? Boolean(body.enabled) : !w.enabled,
+          };
+        }
+        return w;
+      });
+      if (!found) {
+        return context.json({ error: "Webseite nicht gefunden" }, 404);
+      }
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        websiteList: next,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentWebsitesToWorkspace(agentId, next, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json({
+        websites: normalizeAgentWebsites(updated.websiteList),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 13: Löscht eine Webseite aus der Liste des Agenten. */
+  routes.delete("/:agentId/websites/:websiteId", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const websiteId = context.req.param("websiteId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const current = normalizeAgentWebsites(agent.websiteList);
+      const next = current.filter((w) => w.id !== websiteId && w.url !== websiteId);
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        websiteList: next,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentWebsitesToWorkspace(agentId, next, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json({
+        websites: normalizeAgentWebsites(updated.websiteList),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 14: Listet die Subagenten (Online-KIs) des Agenten. */
+  routes.get("/:agentId/subagents", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      const subagents = normalizeAgentSubagents(agent.subagents);
+      return context.json({ subagents });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 14: Aktualisiert die komplette Subagenten-Liste des Agenten. */
+  routes.put("/:agentId/subagents", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        subagents?: unknown[];
+      };
+      if (!Array.isArray(body.subagents)) {
+        return context.json({ error: "subagents must be an array" }, 400);
+      }
+      const normalized = normalizeAgentSubagents(body.subagents);
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        subagents: normalized,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentSubagentsToWorkspace(agentId, normalized, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      await record(context, "bot.updated", agentId, {
+        activeSubagentsCount: normalized.filter((s) => s.enabled).length,
+      });
+      return context.json({
+        subagents: normalizeAgentSubagents(updated.subagents),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 14: Fügt einen Subagenten (Online-KI) zur Liste des Agenten hinzu. */
+  routes.post("/:agentId/subagents/add", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        name?: string;
+        url?: string;
+        link?: string;
+        description?: string;
+        beschreibung?: string;
+        purpose?: string;
+        enabled?: boolean;
+      };
+      const rawName = (body.name || "").trim();
+      let rawUrl = (body.url || body.link || "").trim();
+      if (!rawName && !rawUrl) {
+        return context.json({ error: "Name oder Link ist erforderlich" }, 400);
+      }
+      if (rawUrl && !/^https?:\/\//i.test(rawUrl)) {
+        rawUrl = `https://${rawUrl}`;
+      }
+      const cleanName = rawName || rawUrl.replace(/^https?:\/\//, "").split("/")[0];
+      const cleanDesc = (body.description || body.beschreibung || body.purpose || "Online-KI").trim();
+      const current = normalizeAgentSubagents(agent.subagents);
+      const next = [
+        ...current.filter((s) => s.name.toLowerCase() !== cleanName.toLowerCase()),
+        {
+          id: `subagent-${Date.now()}-${encodeURIComponent(cleanName.slice(0, 15)).replace(/[^a-z0-9]/gi, "").toLowerCase()}`,
+          name: cleanName,
+          url: rawUrl || "https://example.com",
+          description: cleanDesc,
+          enabled: body.enabled !== false,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        subagents: next,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentSubagentsToWorkspace(agentId, next, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json(
+        {
+          subagents: normalizeAgentSubagents(updated.subagents),
+          agent: dto(context.var.actor, updated),
+        },
+        201,
+      );
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 14: Editiert einen existierenden Subagenten (Online-KI). */
+  routes.post("/:agentId/subagents/edit", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        id?: string;
+        name?: string;
+        url?: string;
+        description?: string;
+        enabled?: boolean;
+      };
+      if (!body.id && !body.name) {
+        return context.json({ error: "id oder name ist erforderlich" }, 400);
+      }
+      const current = normalizeAgentSubagents(agent.subagents);
+      let found = false;
+      const next = current.map((s) => {
+        if ((body.id && s.id === body.id) || (body.name && s.name.toLowerCase() === body.name.trim().toLowerCase())) {
+          found = true;
+          let cleanUrl = typeof body.url === "string" ? body.url.trim() : s.url;
+          if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+            cleanUrl = `https://${cleanUrl}`;
+          }
+          return {
+            ...s,
+            name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : s.name,
+            url: cleanUrl || s.url,
+            description: typeof body.description === "string" ? body.description.trim() : s.description,
+            enabled: body.enabled !== undefined ? Boolean(body.enabled) : s.enabled,
+          };
+        }
+        return s;
+      });
+      if (!found) {
+        return context.json({ error: "Subagent nicht gefunden" }, 404);
+      }
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        subagents: next,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentSubagentsToWorkspace(agentId, next, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json({
+        subagents: normalizeAgentSubagents(updated.subagents),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 14: Schaltet einen Subagenten an oder aus. */
+  routes.post("/:agentId/subagents/toggle", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const body = (await context.req.json().catch(() => ({}))) as {
+        subagentId?: string;
+        id?: string;
+        name?: string;
+        enabled?: boolean;
+      };
+      const current = normalizeAgentSubagents(agent.subagents);
+      let found = false;
+      const targetId = body.subagentId || body.id;
+      const next = current.map((s) => {
+        if (
+          (targetId && s.id === targetId) ||
+          (body.name && s.name.toLowerCase() === body.name.trim().toLowerCase())
+        ) {
+          found = true;
+          return {
+            ...s,
+            enabled: body.enabled !== undefined ? Boolean(body.enabled) : !s.enabled,
+          };
+        }
+        return s;
+      });
+      if (!found) {
+        return context.json({ error: "Subagent nicht gefunden" }, 404);
+      }
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        subagents: next,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentSubagentsToWorkspace(agentId, next, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json({
+        subagents: normalizeAgentSubagents(updated.subagents),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 14: Löscht einen Subagenten aus der Liste des Agenten. */
+  routes.delete("/:agentId/subagents/:subagentId", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const subagentId = context.req.param("subagentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const current = normalizeAgentSubagents(agent.subagents);
+      const next = current.filter((s) => s.id !== subagentId && s.name.toLowerCase() !== subagentId.toLowerCase());
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        subagents: next,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentSubagentsToWorkspace(agentId, next, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json({
+        subagents: normalizeAgentSubagents(updated.subagents),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** Phase C Schritt 14: Setzt die Subagenten auf die Startwerte zurück (Manus, Perplexity, Ottermind, Lovable). */
+  routes.post("/:agentId/subagents/reset-defaults", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) throw new AgentNotFoundError(agentId);
+      if (!canManageAgent(context.var.actor, agent)) {
+        throw new AgentNotManageableError(agentId);
+      }
+      const defaults = DEFAULT_SUBAGENTS.map((item) => ({ ...item }));
+      const updated = await store.update(context.var.actor, agentId, {
+        name: agent.name,
+        title: agent.title,
+        roleDescription: agent.roleDescription,
+        visibility: agent.visibility,
+        subagents: defaults,
+      });
+
+      // Synchronisiere physisch in den Workspace des Agenten
+      try {
+        const { getAgentWorkspaceDir } = await import("../agent-hub/agent-terminal-manager");
+        const { getAgentCliConfigDirs } = await import("../agent-hub/codex-accounts");
+        const workspaceDir = getAgentWorkspaceDir(agentId);
+        const paths = getAgentCliConfigDirs(agentId, agent.accountEmail ?? undefined);
+        syncAgentSubagentsToWorkspace(agentId, defaults, workspaceDir, paths.antigravityHome);
+      } catch {
+        // Best-effort
+      }
+
+      return context.json({
+        subagents: normalizeAgentSubagents(updated.subagents),
+        agent: dto(context.var.actor, updated),
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  // =========================================================================
+  // Phase C Schritt 15: Echte MCP-Server pro CLI
+  // =========================================================================
+
+  // 1. MCP-Konfiguration der jeweiligen CLI aus deren Config-Datei im Agenten-Konto lesen
+  routes.get("/:agentId/cli-mcp", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const cliParam = context.req.query("cli");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) return context.json({ error: "Agent not found." }, 404);
+
+      const targetCli = (cliParam as SupportedCli) || (agent.chosenCli as SupportedCli) || "antigravity";
+      const configInfo = readAgentCliMcpConfig(agentId, targetCli, agent.accountEmail);
+
+      return context.json({
+        ...configInfo,
+        chosenCli: agent.chosenCli ?? "antigravity",
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  // 2. Server hinzufügen oder bearbeiten - schreibt sofort zurück in die CLI-Config
+  routes.post("/:agentId/cli-mcp/server", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) return context.json({ error: "Agent not found." }, 404);
+
+      const body = (await context.req.json().catch(() => ({}))) as {
+        cli?: string;
+        server?: Partial<AgentCliMcpServer>;
+      };
+
+      if (!body.server || !body.server.id) {
+        return context.json({ error: "Server mit gültiger ID erforderlich." }, 400);
+      }
+
+      const targetCli = (body.cli as SupportedCli) || (agent.chosenCli as SupportedCli) || "antigravity";
+      const current = readAgentCliMcpConfig(agentId, targetCli, agent.accountEmail);
+
+      const newServer: AgentCliMcpServer = {
+        id: String(body.server.id).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-"),
+        name: String(body.server.name || body.server.id).trim(),
+        type: body.server.type === "stdio" ? "stdio" : body.server.type === "sse" ? "sse" : "http",
+        url: body.server.url ? String(body.server.url).trim() : undefined,
+        command: body.server.command ? String(body.server.command).trim() : undefined,
+        args: Array.isArray(body.server.args) ? body.server.args.map(String) : undefined,
+        env: body.server.env && typeof body.server.env === "object" ? (body.server.env as Record<string, string>) : undefined,
+        description: body.server.description ? String(body.server.description).trim() : undefined,
+        enabled: body.server.enabled !== false,
+      };
+
+      const updatedServers = [
+        ...current.servers.filter((s) => s.id !== newServer.id),
+        newServer,
+      ];
+
+      const updatedConfig = writeAgentCliMcpConfig(
+        agentId,
+        targetCli,
+        updatedServers,
+        agent.accountEmail,
+      );
+
+      // Aktualisiere mcpList in der Datenbank
+      try {
+        await store.update(context.var.actor, agentId, {
+          name: agent.name,
+          title: agent.title,
+          roleDescription: agent.roleDescription,
+          visibility: agent.visibility,
+          mcpList: updatedServers.filter((s) => s.enabled).map((s) => s.id),
+        });
+      } catch {}
+
+      return context.json({
+        ok: true,
+        cli: targetCli,
+        server: newServer,
+        config: updatedConfig,
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  // 3. Server umschalten (an / aus)
+  routes.post("/:agentId/cli-mcp/toggle", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) return context.json({ error: "Agent not found." }, 404);
+
+      const body = (await context.req.json().catch(() => ({}))) as {
+        cli?: string;
+        serverId?: string;
+        enabled?: boolean;
+      };
+
+      if (!body.serverId) {
+        return context.json({ error: "serverId erforderlich" }, 400);
+      }
+
+      const targetCli = (body.cli as SupportedCli) || (agent.chosenCli as SupportedCli) || "antigravity";
+      const current = readAgentCliMcpConfig(agentId, targetCli, agent.accountEmail);
+
+      const targetId = body.serverId.toLowerCase();
+      const updatedServers = current.servers.map((s) =>
+        s.id.toLowerCase() === targetId
+          ? { ...s, enabled: body.enabled !== undefined ? body.enabled : !s.enabled }
+          : s,
+      );
+
+      const updatedConfig = writeAgentCliMcpConfig(
+        agentId,
+        targetCli,
+        updatedServers,
+        agent.accountEmail,
+      );
+
+      try {
+        await store.update(context.var.actor, agentId, {
+          name: agent.name,
+          title: agent.title,
+          roleDescription: agent.roleDescription,
+          visibility: agent.visibility,
+          mcpList: updatedServers.filter((s) => s.enabled).map((s) => s.id),
+        });
+      } catch {}
+
+      return context.json({
+        ok: true,
+        cli: targetCli,
+        config: updatedConfig,
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  // 4. Server löschen
+  routes.delete("/:agentId/cli-mcp/server/:serverId", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const serverId = context.req.param("serverId");
+    const cliParam = context.req.query("cli");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) return context.json({ error: "Agent not found." }, 404);
+
+      const targetCli = (cliParam as SupportedCli) || (agent.chosenCli as SupportedCli) || "antigravity";
+      const current = readAgentCliMcpConfig(agentId, targetCli, agent.accountEmail);
+
+      const targetId = serverId.toLowerCase();
+      const updatedServers = current.servers.filter(
+        (s) => s.id.toLowerCase() !== targetId,
+      );
+
+      const updatedConfig = writeAgentCliMcpConfig(
+        agentId,
+        targetCli,
+        updatedServers,
+        agent.accountEmail,
+      );
+
+      try {
+        await store.update(context.var.actor, agentId, {
+          name: agent.name,
+          title: agent.title,
+          roleDescription: agent.roleDescription,
+          visibility: agent.visibility,
+          mcpList: updatedServers.filter((s) => s.enabled).map((s) => s.id),
+        });
+      } catch {}
+
+      return context.json({
+        ok: true,
+        cli: targetCli,
+        deletedId: serverId,
+        config: updatedConfig,
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  // 5. Rohen Config-Inhalt 1:1 zurückschreiben
+  routes.put("/:agentId/cli-mcp/raw", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) return context.json({ error: "Agent not found." }, 404);
+
+      const body = (await context.req.json().catch(() => ({}))) as {
+        cli?: string;
+        rawContent?: string;
+      };
+
+      if (typeof body.rawContent !== "string") {
+        return context.json({ error: "rawContent muss ein String sein" }, 400);
+      }
+
+      const targetCli = (body.cli as SupportedCli) || (agent.chosenCli as SupportedCli) || "antigravity";
+      const updatedConfig = writeRawAgentCliMcpConfig(
+        agentId,
+        targetCli,
+        body.rawContent,
+        agent.accountEmail,
+      );
+
+      return context.json({
+        ok: true,
+        cli: targetCli,
+        config: updatedConfig,
+      });
+    } catch (error: any) {
+      return context.json({ error: error.message || "Fehler beim Speichern der Raw-Config" }, 400);
+    }
+  });
+
+  // 6. In alle CLIs spiegeln
+  routes.post("/:agentId/cli-mcp/sync-all", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const agent = await store.get(context.var.actor, agentId);
+      if (!agent) return context.json({ error: "Agent not found." }, 404);
+
+      const cliParam = context.req.query("cli") || agent.chosenCli || "antigravity";
+      const sourceConfig = readAgentCliMcpConfig(agentId, cliParam as SupportedCli, agent.accountEmail);
+
+      const syncResult = syncAllAgentCliMcpConfigs(
+        agentId,
+        sourceConfig.servers,
+        agent.accountEmail,
+      );
+
+      return context.json({
+        ok: true,
+        sourceCli: cliParam,
+        ...syncResult,
+      });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  // 7. Dateiüberwachung (SSE Stream) für Live-Aktualisierung
+  routes.get("/:agentId/cli-mcp/watch", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const agent = await store.get(context.var.actor, agentId);
+    if (!agent) return context.json({ error: "Agent not found." }, 404);
+
+    let unsubscribe: (() => void) | null = null;
+    let heartbeatTimer: any = null;
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        const send = (data: string) => {
+          try {
+            controller.enqueue(encoder.encode(data));
+          } catch {}
+        };
+
+        send(`event: connected\ndata: ${JSON.stringify({ status: "watching", agentId, timestamp: new Date().toISOString() })}\n\n`);
+
+        unsubscribe = subscribeAgentCliMcpChanges(
+          agentId,
+          (evt) => {
+            send(`event: mcp_change\ndata: ${JSON.stringify(evt)}\n\n`);
+          },
+          agent.accountEmail,
+        );
+
+        heartbeatTimer = setInterval(() => {
+          send(`: heartbeat ${Date.now()}\n\n`);
+        }, 15000);
+      },
+      cancel() {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        if (unsubscribe) unsubscribe();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
+    });
+  });
+
   /**
    * Which Bots this Bot may hand work to.
    *
@@ -713,6 +2057,157 @@ export function createAgentRoutes(
     }
   });
 
+  /* ========================================================================= */
+  /* Phase E Schritt 18: Browser-use als Dienst anbinden                      */
+  /* ========================================================================= */
+
+  /** Status des Browser-Use Dienstes und des Helium-Profils für den Agenten */
+  routes.get("/:agentId/browser-use/status", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    try {
+      const status = await getBrowserUseStatus(agentId);
+      return context.json({ ok: true, status });
+    } catch (error) {
+      return context.json({ ok: false, error: (error as Error).message }, 500);
+    }
+  });
+
+  /** Öffnen (Navigation) im eigenen Helium-Profil des Agenten */
+  routes.post("/:agentId/browser-use/open", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => null)) as { url?: string } | null;
+    const url = body?.url?.trim() || "about:blank";
+    try {
+      const result = await browserUseOpen(agentId, url);
+      return context.json(result, result.ok ? 200 : 500);
+    } catch (error) {
+      return context.json({ ok: false, agentId, action: "open", error: (error as Error).message }, 500);
+    }
+  });
+
+  /** Klicken (Selektor oder x,y) im eigenen Helium-Profil des Agenten */
+  routes.post("/:agentId/browser-use/click", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => null)) as {
+      selector?: string;
+      x?: number;
+      y?: number;
+    } | null;
+    try {
+      const result = await browserUseClick(agentId, {
+        selector: body?.selector,
+        x: body?.x,
+        y: body?.y,
+      });
+      return context.json(result, result.ok ? 200 : 500);
+    } catch (error) {
+      return context.json({ ok: false, agentId, action: "click", error: (error as Error).message }, 500);
+    }
+  });
+
+  /** Tippen (Text, Tasten oder Submit) im eigenen Helium-Profil des Agenten */
+  routes.post("/:agentId/browser-use/type", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => null)) as {
+      text?: string;
+      key?: string;
+      submit?: boolean;
+    } | null;
+    try {
+      const result = await browserUseType(agentId, {
+        text: body?.text,
+        key: body?.key,
+        submit: body?.submit,
+      });
+      return context.json(result, result.ok ? 200 : 500);
+    } catch (error) {
+      return context.json({ ok: false, agentId, action: "type", error: (error as Error).message }, 500);
+    }
+  });
+
+  /** Screenshot des aktuellen Tabs im eigenen Helium-Profil des Agenten */
+  routes.get("/:agentId/browser-use/screenshot", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const rawBinary = context.req.query("format") === "binary";
+    try {
+      const result = await browserUseScreenshot(agentId);
+      if (!result.ok || !result.bytes) {
+        return context.json({ ok: false, error: result.error || "Screenshot fehlgeschlagen" }, 500);
+      }
+      if (rawBinary) {
+        return new Response(result.bytes as unknown as BodyInit, {
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "no-store",
+            "X-Connect-Page-Url": encodeURI(result.url ?? ""),
+          },
+        });
+      }
+      return context.json(result);
+    } catch (error) {
+      return context.json({ ok: false, error: (error as Error).message }, 500);
+    }
+  });
+
+  /** Universelle Browser-Aktion (open, click, type, screenshot) */
+  routes.post("/:agentId/browser-use/action", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => null)) as {
+      action: "open" | "click" | "type" | "screenshot";
+      url?: string;
+      selector?: string;
+      x?: number;
+      y?: number;
+      text?: string;
+      key?: string;
+      submit?: boolean;
+    } | null;
+    if (!body || !body.action) {
+      return context.json({ ok: false, error: "Aktion fehlt" }, 400);
+    }
+    try {
+      let result: BrowserUseActionResult;
+      if (body.action === "open") {
+        result = await browserUseOpen(agentId, body.url || "about:blank");
+      } else if (body.action === "click") {
+        result = await browserUseClick(agentId, { selector: body.selector, x: body.x, y: body.y });
+      } else if (body.action === "type") {
+        result = await browserUseType(agentId, { text: body.text, key: body.key, submit: body.submit });
+      } else if (body.action === "screenshot") {
+        const shot = await browserUseScreenshot(agentId);
+        result = {
+          ok: shot.ok,
+          agentId,
+          action: "screenshot",
+          url: shot.url,
+          screenshot: shot.screenshot,
+          error: shot.error,
+        };
+      } else {
+        return context.json({ ok: false, error: `Unbekannte Aktion: ${body.action}` }, 400);
+      }
+      return context.json(result, result.ok ? 200 : 500);
+    } catch (error) {
+      return context.json({ ok: false, error: (error as Error).message }, 500);
+    }
+  });
+
+  /** Autonome Browser-Use Aufgabe ausführen */
+  routes.post("/:agentId/browser-use/task", requireUser, async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => null)) as { task?: string } | null;
+    const task = body?.task?.trim();
+    if (!task) {
+      return context.json({ ok: false, error: "Task-Beschreibung fehlt" }, 400);
+    }
+    try {
+      const result = await browserUseRunTask(agentId, task);
+      return context.json(result, result.ok ? 200 : 500);
+    } catch (error) {
+      return context.json({ ok: false, error: (error as Error).message }, 500);
+    }
+  });
+
   return routes;
 }
 
@@ -749,6 +2244,18 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
     // another user's coworker, so a roster that split "mine" on it would file other people's work
     // under yours, and only for administrators, who are the least likely to notice.
     mine: agent.ownerUserId === actor.id,
+    engine: agent.engine,
+    headline: agent.headline ?? null,
+    role: agent.role ?? null,
+    description: agent.description ?? null,
+    chosenCli: agent.chosenCli ?? "antigravity",
+    accountEmail: agent.accountEmail ?? null,
+    skills: normalizeAgentSkills(agent.skills),
+    sparkPermissions: agent.sparkPermissions ?? {},
+    browserProfile: agent.browserProfile ?? null,
+    websiteList: normalizeAgentWebsites(agent.websiteList),
+    subagents: normalizeAgentSubagents(agent.subagents),
+    mcpList: agent.mcpList ?? [],
   };
 }
 

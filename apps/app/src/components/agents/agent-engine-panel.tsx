@@ -22,6 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentQueryOptions } from "@/lib/agents/queries";
 import { updateAgentMutationOptions } from "@/lib/agents/mutations";
+import { setAgentCliDefault, type CliTarget } from "@/lib/agents/agent-cli";
 import type { AgentProfile } from "@/lib/agents/queries";
 
 type EngineKind = "none" | "cli" | "browser_profile" | "manus" | "browser_use" | "freebuff";
@@ -35,6 +36,7 @@ function deriveKind(profile: AgentProfile): EngineKind {
 }
 
 type EnginePatch = {
+  chosenCli?: string;
   cliEngine?: { kind: CliKind; model: string; allowWrite: boolean };
   browserProfile?: { kind: "browser_profile"; startUrl: string; profileName: string; allowWrite: boolean };
   freebuffEngine?: { kind: "freebuff"; model: string; allowWrite: boolean };
@@ -59,6 +61,7 @@ function buildEnginePatch(
   if (kind === "none") return {};
   if (kind === "cli") {
     return {
+      chosenCli: cliKind,
       cliEngine: {
         kind: cliKind,
         model: cliModel || "auto",
@@ -78,6 +81,7 @@ function buildEnginePatch(
   }
   if (kind === "freebuff") {
     return {
+      chosenCli: "freebuff",
       freebuffEngine: {
         kind: "freebuff" as const,
         model: freebuffModel || "auto",
@@ -164,8 +168,12 @@ export function AgentEnginePanel({ agentId }: { agentId: string }) {
           title: profile.title,
           roleDescription: profile.roleDescription,
           visibility: "private",
+          ...(patch.chosenCli ? { chosenCli: patch.chosenCli } : {}),
         },
       });
+      if (patch.chosenCli) {
+        setAgentCliDefault(agentId, patch.chosenCli as CliTarget);
+      }
       setLastSaved("ok");
       setTimeout(() => setLastSaved(null), 2000);
     } catch {

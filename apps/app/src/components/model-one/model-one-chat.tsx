@@ -29,8 +29,7 @@ export function ModelOneChat() {
     try {
       const response = await tryClient("/api/model-one/chat", {
         method: "POST",
-        body: JSON.stringify({ prompt: text, agentId: "model-one" }),
-        headers: { "Content-Type": "application/json" },
+        body: { prompt: text, agentId: "model-one" },
       });
       if (!response.ok || !response.body) {
         const message = `Server-Fehler: ${response.status}`;

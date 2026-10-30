@@ -91,6 +91,80 @@ function folderList(raw: string | undefined): string[] {
 }
 
 export const CATALOG: CatalogEntry[] = [
+  // --- Eigene MCPs zuschaltbar (Phase C Schritt 16) ---
+  {
+    key: "flux",
+    title: "Flux",
+    description: "E-Commerce & Warenverwaltung: Produkte, Lagerbestand, Bestellungen und Lieferprozesse verwalten.",
+    icon: "shopping-bag",
+    transport: "http",
+    fields: [],
+    build: () => ({
+      transport: "http",
+      url: `http://localhost:${process.env.PORT || process.env.SERVER_PORT || "3101"}/api/connect-mcp/flux/jsonrpc`,
+    }),
+  },
+  {
+    key: "spark",
+    title: "Spark",
+    description: "Wissensdatenbank, Obsidian-Brain & Memory: Notizen, Dokumente und Recherchen verwalten.",
+    icon: "brain",
+    transport: "http",
+    fields: [],
+    build: () => ({
+      transport: "http",
+      url: `http://localhost:${process.env.PORT || process.env.SERVER_PORT || "3101"}/api/connect-mcp/spark/jsonrpc`,
+    }),
+  },
+  {
+    key: "hyper",
+    title: "Hyper",
+    description: "Trading, Marktdaten & Crypto: Live-Kurse, Portfolio-Überwachung und Paper-Trading.",
+    icon: "chart-candlestick",
+    transport: "http",
+    fields: [],
+    build: () => ({
+      transport: "http",
+      url: `http://localhost:${process.env.PORT || process.env.SERVER_PORT || "3101"}/api/connect-mcp/hyper/jsonrpc`,
+    }),
+  },
+  {
+    key: "analyse",
+    title: "Analyse",
+    description: "Social Automatisierung & Analytics: Trendscouting, Post-Entwürfe, Planer und Engagement-Metriken.",
+    icon: "chart-bar",
+    transport: "http",
+    fields: [],
+    build: () => ({
+      transport: "http",
+      url: `http://localhost:${process.env.PORT || process.env.SERVER_PORT || "3101"}/api/connect-mcp/analyse/jsonrpc`,
+    }),
+  },
+  {
+    key: "connect-mcp",
+    title: "Connect-MCP",
+    description: "Globaler Connect-MCP-Server: Alle Agenten, Swarm-Orchestrierung und Steuerungs-Tools.",
+    icon: "network",
+    transport: "http",
+    fields: [],
+    build: () => ({
+      transport: "http",
+      url: `http://localhost:${process.env.PORT || process.env.SERVER_PORT || "3101"}/api/connect-mcp/jsonrpc`,
+    }),
+  },
+  {
+    key: "connect-browser",
+    title: "Connect-Browser",
+    description: "Helium Browser-Automatisierung pro Agent: Webseiten öffnen, navigieren, klicken, Screenshots.",
+    icon: "world",
+    transport: "http",
+    fields: [],
+    build: () => ({
+      transport: "http",
+      url: `http://localhost:${process.env.PORT || process.env.SERVER_PORT || "3101"}/api/connect-mcp/browser/jsonrpc`,
+    }),
+  },
+  // --- Weitere MCP-Server ---
   {
     key: "browser",
     title: "Mein Browser",

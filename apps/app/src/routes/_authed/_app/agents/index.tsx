@@ -9,10 +9,18 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { z } from "zod";
-import { AgentCard } from "@/components/agents/agent-card";
-import { AgentDialog } from "@/components/agents/agent-dialog";
-import { CreateAgentDialog } from "@/components/agents/create-agent-dialog";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { AgentCard } from "@/components/agents/agent-card";
+import { isSectionId } from "@/components/agents/agent-dialog";
+import { BotListTransferDialog } from "@/components/agents/bot-list-transfer-dialog";
+import { CreateAgentDialog } from "@/components/agents/create-agent-dialog";
+import { AssignCompanyButton } from "@/components/companies/assign-company-button";
+import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
+import { StaggerItem } from "@/components/layout/stagger";
+import {
+  LivePriceChip,
+  LivePriceDisclaimer,
+} from "@/components/marketplace/live-price-chip";
 import {
   MarketplaceSearch,
   RedeemCodeBar,
@@ -21,13 +29,6 @@ import {
   SellBotPanel,
   SellCompanyPanel,
 } from "@/components/marketplace/sell-panels";
-import {
-  LivePriceChip,
-  LivePriceDisclaimer,
-} from "@/components/marketplace/live-price-chip";
-import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
-import { StaggerItem } from "@/components/layout/stagger";
-import { AssignCompanyButton } from "@/components/companies/assign-company-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,25 +39,24 @@ import {
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  agentListQueryOptions,
   type AgentProfile,
+  agentListQueryOptions,
 } from "@/lib/agents/queries";
-import { BotListTransferDialog } from "@/components/agents/bot-list-transfer-dialog";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useStartChannel } from "@/lib/channels/start";
+import type { ConnectCompany } from "@/lib/companies/catalog";
 import {
   listCompanies,
   resolveCompanyId,
   subscribeCompanies,
 } from "@/lib/companies/store";
-import type { ConnectCompany } from "@/lib/companies/catalog";
 import {
   ensureMarketplaceSeed,
   listListings,
   listOwned,
+  type MarketplaceListing,
   searchListings,
   subscribeMarketplace,
-  type MarketplaceListing,
 } from "@/lib/marketplace/store";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +64,8 @@ const agentsSearchSchema = z.object({
   new: z.boolean().optional(),
   agent: z.string().optional(),
   tab: z.enum(["mine", "search", "companies"]).optional(),
-  section: z.enum(["general", "browser", "voice", "keys", "access", "brain", "model", "mcp", "handoff", "routines", "manage"]).optional(),
+  /** Register of the detail shell an old link asked for; checked against the shell's own list. */
+  section: z.string().optional(),
   browserTab: z.string().optional(),
 });
 
@@ -217,9 +218,23 @@ function MarketplaceScreen() {
 
   const loading = loadingAgents || (channels.isPending && !channels.data);
   const showCreate = isCreating === true;
-  const showProfile = !showCreate && selectedAgentId !== undefined;
   const [showTransfer, setShowTransfer] = useState(false);
   const close = () => navigate({ search: { tab } });
+
+  /*
+   * Old links: `?agent=<id>` used to open a dialog here. The Bot now lives on its own route, and a
+   * bookmark or marketplace link that still carries the parameter is forwarded there — section
+   * included, so a link to a specific register keeps landing on that register.
+   */
+  useEffect(() => {
+    if (!selectedAgentId) return;
+    void navigate({
+      params: { agentId: selectedAgentId },
+      replace: true,
+      search: isSectionId(sectionParam) ? { section: sectionParam } : {},
+      to: "/agent/$agentId",
+    });
+  }, [navigate, sectionParam, selectedAgentId]);
 
   const setTabNav = (next: Tab) => {
     setTab(next);
@@ -336,7 +351,7 @@ function MarketplaceScreen() {
               variant="ghost"
             >
               <IconPlus />
-              New agent
+              Neuer Agent
             </Button>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -417,7 +432,8 @@ function MarketplaceScreen() {
                           <Button
                             onClick={() =>
                               void navigate({
-                                search: { agent: asset.targetId, tab: "mine" },
+                                params: { agentId: asset.targetId },
+                                to: "/agent/$agentId",
                               })
                             }
                             size="sm"
@@ -507,16 +523,11 @@ function MarketplaceScreen() {
         activeCompanyId={activeCompanyId}
         onClose={close}
         onCreated={(agentId) =>
-          navigate({ search: { agent: agentId, tab: "mine" } })
+          void navigate({ params: { agentId }, to: "/agent/$agentId" })
         }
         open={showCreate}
       />
-      <AgentDialog
-        agentId={selectedAgentId ?? null}
-        initialSection={sectionParam}
-        onClose={close}
-        open={showProfile}
-      />
+
 
       {/*
        * Bot-Liste JSON-Transfer — mounted on the route so any tab can open it without re-mounting
@@ -582,9 +593,9 @@ function AgentSection({
            */}
           <div className="flex flex-col gap-1.5">
             <Link
-              search={{ agent: agent.id, tab: "mine" }}
               className="block"
-              to="/agents"
+              params={{ agentId: agent.id }}
+              to="/agent/$agentId"
             >
               <AgentCard agent={agent} />
             </Link>

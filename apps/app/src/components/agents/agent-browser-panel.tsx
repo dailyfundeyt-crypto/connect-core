@@ -57,6 +57,7 @@ function useMcpBrowserFrame(
 
   useEffect(() => {
     if (!active) return;
+    failures.current = 0;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
@@ -88,7 +89,11 @@ function useMcpBrowserFrame(
         if (!cancelled) setError("Vorschau nicht erreichbar.");
         failures.current += 1;
       }
-      if (!cancelled) timer = setTimeout(tick, SCREENSHOT_REFRESH_MS);
+      if (!cancelled) {
+        // Nach 3 Fehlversuchen Intervall auf 30s drosseln statt Meldungsflut
+        const delay = failures.current >= 3 ? 30_000 : SCREENSHOT_REFRESH_MS;
+        timer = setTimeout(tick, delay);
+      }
     };
     void tick();
     return () => {

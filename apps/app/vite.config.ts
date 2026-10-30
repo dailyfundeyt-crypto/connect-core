@@ -193,6 +193,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@connect/contracts": path.resolve(__dirname, "../../packages/contracts/src"),
+      "@contracts": path.resolve(__dirname, "../../packages/contracts/src"),
       "@flux": path.resolve(__dirname, "./src/company-apps/modules/flux/source"),
       // dailyfun (Firmenprofil) – 1:1 aus https://github.com/dailyfundeyt-crypto/dailyfun,
       // alle "@/..." Imports in dailyfun-Dateien zeigen auf die kopierte Codebasis,

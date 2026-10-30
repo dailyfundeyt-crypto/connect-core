@@ -10,7 +10,7 @@ describe("theme preference", () => {
   test("only the stored dark value enables dark theme", () => {
     expect(parseStoredDarkTheme("dark")).toBe(true);
     expect(parseStoredDarkTheme("light")).toBe(false);
-    expect(parseStoredDarkTheme(null)).toBe(false);
+    expect(parseStoredDarkTheme(null)).toBe(true); // Swarm v3: Default ist Dark Mode
   });
 
   test("persists and applies the selected theme", () => {

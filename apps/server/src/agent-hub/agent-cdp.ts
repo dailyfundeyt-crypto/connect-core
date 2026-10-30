@@ -17,17 +17,21 @@
  * `WebSocketDebuggerUrl` ist die URL, die Chrome uns gibt.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  canonicalCdpPort,
+  ensureProfileBrowser,
+  normalizeProfileDir,
+  openUrlInProfileTab,
+  resetLaunchGuard,
+} from "./browser-launch-guard";
 
 /** Deterministic CDP port per profile: CONNECT_CHROME_CDP_PORT (default 9333) + 0..199. */
+// loopfix: EIN Port fuer alle Aufrufer (Slash-normalisiert, identisch zu connect/routes.ts).
+// Vorher ohne Normalisierung => anderer Port als die Vorschau => Endlos-Neustarts.
 export function cdpPortFor(profileDir: string): number {
-  const basePort = Number(process.env.CONNECT_CHROME_CDP_PORT) || 9333;
-  let h = 2166136261;
-  for (const ch of profileDir.toLowerCase()) {
-    h ^= ch.charCodeAt(0);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return basePort + (h % 200);
+  return canonicalCdpPort(profileDir);
 }
 
 export type CdpResult = {
@@ -152,10 +156,135 @@ export async function cdpCall(
   });
 }
 
+export const VISUAL_AGENT_SCRIPT = `(() => {
+  var style = document.getElementById('__agent_visual_styles__');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = '__agent_visual_styles__';
+    style.textContent = '@keyframes __agent_glow_pulse__ { 0% { box-shadow: inset 0 0 18px rgba(0, 242, 254, 0.35), inset 0 0 4px rgba(0, 242, 254, 0.5); border-color: rgba(0, 242, 254, 0.65); } 100% { box-shadow: inset 0 0 32px rgba(0, 242, 254, 0.6), inset 0 0 8px rgba(0, 242, 254, 0.9); border-color: rgba(0, 242, 254, 0.95); } } @keyframes __agent_dot_pulse__ { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.3); opacity: 1; filter: drop-shadow(0 0 6px #00f2fe); } }';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  var glow = document.getElementById('__agent_active_glow__');
+  if (!glow) {
+    glow = document.createElement('div');
+    glow.id = '__agent_active_glow__';
+    glow.style.cssText = 'position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; pointer-events: none !important; z-index: 2147483645 !important; box-sizing: border-box !important; border: 3px solid rgba(0, 242, 254, 0.8) !important; box-shadow: inset 0 0 24px rgba(0, 242, 254, 0.45), inset 0 0 6px rgba(0, 242, 254, 0.7) !important; animation: __agent_glow_pulse__ 2.2s ease-in-out infinite alternate !important; transition: opacity 0.35s ease-in-out !important; opacity: 1 !important;';
+    document.documentElement.appendChild(glow);
+  }
+
+  var pill = document.getElementById('__agent_status_pill__');
+  if (!pill) {
+    pill = document.createElement('div');
+    pill.id = '__agent_status_pill__';
+    pill.style.cssText = 'position: fixed !important; top: 14px !important; right: 20px !important; background: rgba(8, 20, 38, 0.92) !important; border: 1.5px solid rgba(0, 242, 254, 0.75) !important; box-shadow: 0 4px 18px rgba(0, 242, 254, 0.4) !important; backdrop-filter: blur(8px) !important; color: #00f2fe !important; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important; font-size: 11px !important; font-weight: 700 !important; letter-spacing: 0.6px !important; padding: 5px 12px !important; border-radius: 9999px !important; display: flex !important; align-items: center !important; gap: 7px !important; pointer-events: none !important; z-index: 2147483646 !important; user-select: none !important; transition: opacity 0.3s ease !important; opacity: 1 !important;';
+    pill.innerHTML = '<span style="width: 7px; height: 7px; border-radius: 50%; background: #00f2fe; box-shadow: 0 0 8px #00f2fe; display: inline-block; animation: __agent_dot_pulse__ 1.5s ease-in-out infinite;"></span><span>AGENT ACTIVE</span>';
+    document.documentElement.appendChild(pill);
+  }
+
+  var cursor = document.getElementById('__agent_cursor__');
+  if (!cursor) {
+    cursor = document.createElement('div');
+    cursor.id = '__agent_cursor__';
+    cursor.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; width: 28px !important; height: 28px !important; pointer-events: none !important; z-index: 2147483647 !important; display: block !important; will-change: transform !important;';
+    cursor.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" style="filter: drop-shadow(0 2px 5px rgba(0,0,0,0.65)) drop-shadow(0 0 6px rgba(0,242,254,0.75));"><path d="M4 2 L19 12 L11 13.5 L8 21 L4 2 Z" fill="#00f2fe" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/></svg>';
+    document.documentElement.appendChild(cursor);
+  }
+
+  if (!window.__agentCursorPos) {
+    window.__agentCursorPos = { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
+  }
+  cursor.style.transform = "translate(" + window.__agentCursorPos.x + "px, " + window.__agentCursorPos.y + "px)";
+
+  window.__updateCursor = function(x, y) {
+    if (!cursor) return;
+    window.__agentCursorPos = { x: x, y: y };
+    cursor.style.transform = "translate(" + x + "px, " + y + "px)";
+  };
+
+  window.__clickRipple = function(x, y) {
+    var rip = document.createElement('div');
+    rip.style.cssText = 'position: fixed; left: ' + x + 'px; top: ' + y + 'px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid #00f2fe; box-shadow: 0 0 14px #00f2fe, inset 0 0 6px #00f2fe; pointer-events: none; z-index: 2147483646; transform: translate(-50%, -50%); transition: all 0.42s cubic-bezier(0.1, 0.8, 0.3, 1); opacity: 1;';
+    document.documentElement.appendChild(rip);
+    requestAnimationFrame(function() {
+      rip.style.width = '48px';
+      rip.style.height = '48px';
+      rip.style.opacity = '0';
+    });
+    setTimeout(function() { rip.remove(); }, 450);
+  };
+
+  window.__glideCursor = function(targetX, targetY, durationMs, doRipple) {
+    durationMs = durationMs || 280;
+    return new Promise(function(resolve) {
+      var startX = window.__agentCursorPos ? window.__agentCursorPos.x : window.innerWidth / 2;
+      var startY = window.__agentCursorPos ? window.__agentCursorPos.y : window.innerHeight / 2;
+      var startTime = performance.now();
+
+      function frame(now) {
+        var elapsed = now - startTime;
+        var progress = Math.min(elapsed / durationMs, 1);
+        var ease = 1 - Math.pow(1 - progress, 3);
+        var curX = startX + (targetX - startX) * ease;
+        var curY = startY + (targetY - startY) * ease;
+        window.__updateCursor(curX, curY);
+
+        if (progress < 1) {
+          requestAnimationFrame(frame);
+        } else {
+          window.__updateCursor(targetX, targetY);
+          if (doRipple) window.__clickRipple(targetX, targetY);
+          resolve({ x: targetX, y: targetY });
+        }
+      }
+      requestAnimationFrame(frame);
+    });
+  };
+})();`;
+
+export async function injectAgentVisuals(
+  port: number,
+  targetId?: string,
+): Promise<boolean> {
+  try {
+    void cdpCall(port, "Page.addScriptToEvaluateOnNewDocument", {
+      source: VISUAL_AGENT_SCRIPT,
+    }, targetId).catch(() => undefined);
+
+    const res = await cdpCall(port, "Runtime.evaluate", {
+      expression: VISUAL_AGENT_SCRIPT,
+    }, targetId);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function cdpGlideCursor(
+  port: number,
+  targetX: number,
+  targetY: number,
+  doRipple = true,
+  durationMs = 240,
+  targetId?: string,
+): Promise<void> {
+  try {
+    await injectAgentVisuals(port, targetId);
+    await cdpCall(port, "Runtime.evaluate", {
+      expression: `if (window.__glideCursor) window.__glideCursor(${targetX}, ${targetY}, ${durationMs}, ${doRipple ? "true" : "false"});`,
+    }, targetId);
+    await new Promise((r) => setTimeout(r, durationMs));
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function cdpScreenshot(
   port: number,
   targetId?: string,
 ): Promise<CdpShot> {
+  // Ensure visual elements (cyan cursor, glowing blue border) are in the DOM before screenshot
+  void injectAgentVisuals(port, targetId).catch(() => undefined);
   const res = await cdpCall(port, "Page.captureScreenshot", { format: "jpeg", quality: 60 }, targetId);
   if (!res.ok || !res.result) return { ok: false, error: res.error ?? "CDP-Fehler" };
   const data = typeof res.result.data === "string" ? res.result.data : "";
@@ -176,7 +305,7 @@ export async function cdpScreenshot(
  * `agent-browser.ts` geteilt — beide brauchen einen Browser pro
  * Agent-Profil.
  */
-export type ChromeLaunch = { ok: true; binary: string } | { ok: false; detail: string };
+export type ChromeLaunch = { ok: true; binary: string; port?: number } | { ok: false; detail: string };
 
 const CHROME_BIN_CANDIDATES: string[] = [
   process.env.CONNECT_CHROME_BIN?.trim(),
@@ -208,18 +337,59 @@ async function chromeBinaryExists(binary: string): Promise<boolean> {
   }
 }
 
+/**
+ * loopfix: Einziger erlaubter Start eines Agent-Browsers. Laeuft das Profil schon, wird
+ * die vorhandene Instanz (echter Debug-Port) benutzt und die URL per CDP im vorhandenen
+ * Tab geoeffnet – nie ein neues Fenster. Rate-Limit + Schutzschalter: browser-launch-guard.ts.
+ */
 export async function launchAgentChrome(
   url: string,
   profileDir: string,
 ): Promise<ChromeLaunch> {
+  const res = await ensureProfileBrowser(profileDir, {
+    label: "Agent-Browser",
+    spawn: (port) => spawnAgentChromeRaw(url, profileDir, port),
+  });
+  if (!res.ok) return { ok: false, detail: res.error };
+  if (res.reused && url && url !== "about:blank") {
+    const opened = await openUrlInProfileTab(res.port, url, profileDir);
+    if (!opened.ok) return { ok: false, detail: opened.error ?? "Navigation fehlgeschlagen" };
+  }
+  return { ok: true, binary: res.reused ? "running" : "helium", port: res.port };
+}
+
+/** Roh-Start OHNE Schutz – nur ueber ensureProfileBrowser aufrufen. */
+async function spawnAgentChromeRaw(
+  url: string,
+  profileDir: string,
+  port: number,
+): Promise<ChromeLaunch> {
+  const normalized = profileDir.toLowerCase().replace(/\\/g, "/");
+  const stefanHeliumUserData = (
+    process.env.LOCALAPPDATA
+      ? join(process.env.LOCALAPPDATA, "imput", "Helium", "User Data")
+      : "c:/users/kunc gmbh/appdata/local/imput/helium/user data"
+  )
+    .toLowerCase()
+    .replace(/\\/g, "/");
+
+  if (normalized === stefanHeliumUserData || normalized.startsWith(stefanHeliumUserData + "/")) {
+    console.error("[agent-cdp] SICHERHEITSBLOCK: Stefans eigenes Helium-Profil darf NIE berührt werden!", profileDir);
+    return {
+      ok: false,
+      detail: "SICHERHEITSABBRUCH: Stefans eigenes Helium-Profil darf NIE verwendet werden!",
+    };
+  }
+
   const args = [
     `--user-data-dir=${profileDir}`,
     "--no-first-run",
+    "--hide-crash-restore-bubble", // loopfix: kein "Seiten wiederherstellen?" (koennte alte Fenster zurueckholen)
     "--no-default-browser-check",
-    `--remote-debugging-port=${cdpPortFor(profileDir)}`,
+    `--remote-debugging-port=${port}`,
     "--remote-debugging-address=127.0.0.1",
-    "--new-window",
-    url,
+    // loopfix: kein --new-window – die URL oeffnet im ersten Fenster der neuen Instanz.
+    url || "about:blank",
   ];
   const errors: string[] = [];
   for (const binary of CHROME_BIN_CANDIDATES) {
@@ -228,32 +398,17 @@ export async function launchAgentChrome(
       continue;
     }
     if (process.platform === "win32") {
-      // Wir starten den Browser via `cmd.exe /c start "" "..."` statt
-      // PowerShell-Start-Process, weil das PowerShell-Pendant Args mit
-      // Leerzeichen falsch splittet (z.B. `--user-data-dir="C:\Users\…"`
-      // wird zu `--user-data-dir="C:\Users\…"` mit allem NACH dem ersten
-      // Leerzeichen als zweitem Argument). `cmd /c start` nimmt die
-      // Argumente als einen String, den wir selbst korrekt quoten.
-      const cmdQuoted = args
-        .map((a) => (a.includes(" ") || a.includes('"') ? `"${a.replace(/"/g, '\\"')}"` : a))
-        .join(" ");
-      const cmdLine = `start "" "${binary}" ${cmdQuoted}`;
       try {
-        const proc = Bun.spawn(
-          ["cmd.exe", "/d", "/c", cmdLine],
-          {
-            stdout: "ignore",
-            stderr: "pipe",
-            stdin: "ignore",
-            windowsHide: false,
-          } as Parameters<typeof Bun.spawn>[1],
-        );
-        void proc.exited.catch(() => undefined);
-        // Wir warten kurz, falls cmd.exe sofort einen Fehler meldet; sonst
-        // ist der Browser detached und läuft eigenständig.
-        await new Promise((r) => setTimeout(r, 200));
+        const proc = Bun.spawn([binary, ...args], {
+          stdout: "ignore",
+          stderr: "ignore",
+          stdin: "ignore",
+        });
+        proc.unref();
         return { ok: true, binary };
       } catch (err) {
+        // loopfix: KEIN sichtbarer "cmd.exe /c start"-Fallback mehr (das war ein sichtbares
+        // Konsolenfenster und ein zweiter, ungeschuetzter Startweg).
         errors.push(`${binary}: ${err instanceof Error ? err.message : String(err)}`);
       }
       continue;
@@ -328,7 +483,11 @@ export async function cdpNavigate(
   if (!["http:", "https:"].includes(parsed.protocol) && parsed.href !== "about:blank") {
     return { ok: false, error: "Nur Webadressen mit http oder https sind erlaubt." };
   }
-  return cdpCall(port, "Page.navigate", { url: parsed.href }, targetId);
+  const navRes = await cdpCall(port, "Page.navigate", { url: parsed.href }, targetId);
+  if (navRes.ok) {
+    void injectAgentVisuals(port, targetId);
+  }
+  return navRes;
 }
 
 /** Liefert `Page.getLayoutMetrics` in einer handlichen Form. */
@@ -347,30 +506,160 @@ export async function cdpViewport(
   };
 }
 
+type ProfileLaunchTracker = {
+  failures: number;
+  lastAttemptAt: number;
+  lastError?: string;
+  /** true = nach MAX_LAUNCH_RETRIES Fehlschlägen dauerhaft gestoppt, bis jemand `retry` drückt. */
+  stopped?: boolean;
+};
+
+export type AgentBrowserStatus = "ok" | "starting" | "failing" | "stopped";
+export type AgentBrowserStatusInfo = {
+  status: AgentBrowserStatus;
+  failures: number;
+  maxRetries: number;
+  error: string | null;
+  lastAttemptAt: string | null;
+};
+
+const MAX_LAUNCH_RETRIES = 3;
+
+/**
+ * Persistenter Startstatus pro Profil-Verzeichnis. Liegt unter
+ * %LOCALAPPDATA%/ConnectAgents/browser-launch-status.json, damit ein gestoppter
+ * Browser nach einem Server-Neustart NICHT wieder in eine Fehlerschleife läuft.
+ */
+function statusStorePath(): string {
+  const base = process.env.LOCALAPPDATA ?? join(process.env.HOME ?? ".", ".local", "share");
+  const dir = join(base, "ConnectAgents");
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch {
+    /* ignore */
+  }
+  return join(dir, "browser-launch-status.json");
+}
+
+function loadTrackers(): Map<string, ProfileLaunchTracker> {
+  try {
+    const raw = JSON.parse(readFileSync(statusStorePath(), "utf8")) as Record<string, ProfileLaunchTracker>;
+    return new Map(Object.entries(raw));
+  } catch {
+    return new Map();
+  }
+}
+
+const profileLaunchTrackers = loadTrackers();
+
+type StatusListener = (profileDir: string, info: AgentBrowserStatusInfo) => void;
+const statusListeners = new Set<StatusListener>();
+/** Registriert einen Listener (z. B. DB-Update der agents.browser_status-Spalte). */
+export function onAgentBrowserStatus(listener: StatusListener): () => void {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
+}
+
+function persistTrackers(profileDir: string): void {
+  try {
+    writeFileSync(statusStorePath(), JSON.stringify(Object.fromEntries(profileLaunchTrackers), null, 2), "utf8");
+  } catch (error) {
+    console.warn(`[agent-cdp] Browser-Status konnte nicht gespeichert werden: ${String(error)}`);
+  }
+  const info = getAgentBrowserStatus(profileDir);
+  for (const listener of statusListeners) {
+    try {
+      listener(profileDir, info);
+    } catch {
+      /* Listener-Fehler nie nach oben durchreichen */
+    }
+  }
+}
+
+/** Manueller Retry (oder Profil repariert): Zähler + Stop zurücksetzen. */
+/** loopfix: Der Schutzschalter (Guard) wird NUR beim manuellen „Erneut versuchen“ (includeGuard=true) zurückgesetzt. */
+export function resetAgentChromeLaunchAttempts(profileDir: string, includeGuard = false): void {
+  if (includeGuard) resetLaunchGuard(profileDir);
+  if (profileLaunchTrackers.delete(profileDir.toLowerCase())) persistTrackers(profileDir);
+}
+
+export function getAgentBrowserStatus(profileDir: string): AgentBrowserStatusInfo {
+  const tracker = profileLaunchTrackers.get(profileDir.toLowerCase());
+  if (!tracker) {
+    return { status: "ok", failures: 0, maxRetries: MAX_LAUNCH_RETRIES, error: null, lastAttemptAt: null };
+  }
+  return {
+    status: tracker.stopped || tracker.failures >= MAX_LAUNCH_RETRIES ? "stopped" : tracker.failures > 0 ? "failing" : "starting",
+    failures: tracker.failures,
+    maxRetries: MAX_LAUNCH_RETRIES,
+    error: tracker.lastError ?? null,
+    lastAttemptAt: tracker.lastAttemptAt ? new Date(tracker.lastAttemptAt).toISOString() : null,
+  };
+}
+
+export function getAgentChromeLaunchAttempts(profileDir: string): { failures: number; cooldownRemainingMs: number; stopped: boolean } {
+  const tracker = profileLaunchTrackers.get(profileDir.toLowerCase());
+  if (!tracker) return { failures: 0, cooldownRemainingMs: 0, stopped: false };
+  return { failures: tracker.failures, cooldownRemainingMs: 0, stopped: Boolean(tracker.stopped) };
+}
+
+const loggedStops = new Set<string>();
+
 /**
  * Stufe 1.2 Helper: Sorgt dafür, dass der Agent-Browser für dieses
  * Profil-Verzeichnis läuft. Wenn nicht, startet er einen.
- *
- * Blockt bis der CDP-Server antwortet — und schlägt sonst fehl.
+ * Nach MAX_LAUNCH_RETRIES Fehlschlägen wird DAUERHAFT gestoppt (auch über
+ * Server-Neustarts), bis `resetAgentChromeLaunchAttempts` (Retry-API) läuft.
  */
 export async function ensureAgentChromeRunning(
   profileDir: string,
   startUrl = "about:blank",
 ): Promise<ChromeLaunch> {
-  const port = cdpPortFor(profileDir);
-  // CDP schon da?
-  if (existsSync(profileDir) && (await waitForCdp(port, 600))) {
-    return { ok: true, binary: "running" };
+  const key = profileDir.toLowerCase();
+  let tracker = profileLaunchTrackers.get(key) ?? { failures: 0, lastAttemptAt: 0 };
+  // loopfix: gestoppter Zustand laeuft nach 10 Minuten ab (danach wieder genau 1 Versuch).
+  if (tracker.stopped && tracker.lastAttemptAt && Date.now() - tracker.lastAttemptAt > 10 * 60_000) {
+    profileLaunchTrackers.delete(key);
+    loggedStops.delete(key);
+    tracker = { failures: 0, lastAttemptAt: 0 };
   }
-  // Sonst starten
-  const launch = await launchAgentChrome(startUrl, profileDir);
-  if (!launch.ok) return launch;
-  const ready = await waitForCdp(port, 6000);
-  if (!ready) {
+
+  if (tracker.stopped || tracker.failures >= MAX_LAUNCH_RETRIES) {
+    if (!tracker.stopped) {
+      tracker.stopped = true;
+      profileLaunchTrackers.set(key, tracker);
+      persistTrackers(profileDir);
+    }
+    if (!loggedStops.has(key)) {
+      loggedStops.add(key);
+      console.warn(`[agent-cdp] Browser-Start für ${profileDir} gestoppt nach ${tracker.failures} Fehlschlägen: ${tracker.lastError ?? "?"}`);
+    }
     return {
       ok: false,
-      detail: `Browser gestartet, aber CDP antwortet nicht auf 127.0.0.1:${port}.`,
+      detail: `Browser-Start gestoppt nach ${tracker.failures}/${MAX_LAUNCH_RETRIES} Fehlschlägen (${tracker.lastError ?? "unbekannt"}). Profil prüfen und „Erneut versuchen“ klicken.`,
     };
   }
-  return launch;
+
+  // loopfix: Single-Instance + Rate-Limit + Schutzschalter (browser-launch-guard.ts).
+  const res = await ensureProfileBrowser(profileDir, {
+    label: "Agent-Browser",
+    spawn: (port) => spawnAgentChromeRaw(startUrl, profileDir, port),
+  });
+  if (res.ok) {
+    loggedStops.delete(key);
+    if (profileLaunchTrackers.delete(key)) persistTrackers(profileDir);
+    return { ok: true, binary: res.reused ? "running" : "helium", port: res.port };
+  }
+  tracker.lastAttemptAt = Date.now();
+  tracker.failures += 1;
+  tracker.lastError = res.error;
+  tracker.stopped = Boolean(res.tripped) || tracker.failures >= MAX_LAUNCH_RETRIES;
+  profileLaunchTrackers.set(key, tracker);
+  persistTrackers(profileDir);
+  return { ok: false, detail: res.error };
+}
+
+/** Normalisierter Schluessel (fuer Aufrufer, die den Guard direkt nutzen). */
+export function agentProfileKey(profileDir: string): string {
+  return normalizeProfileDir(profileDir);
 }

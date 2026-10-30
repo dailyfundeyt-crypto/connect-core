@@ -16,6 +16,14 @@ import {
 import { readdir, readFile, realpath, rename, stat, writeFile, appendFile, mkdir, copyFile, unlink } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import postgres from "postgres";
+
+function getFallbackSql() {
+  const dbUrl =
+    process.env.DATABASE_URL ||
+    (process.env.DATABASE_URL ?? "");
+  return postgres(dbUrl, { max: 1, idle_timeout: 3 });
+}
 
 export const BRAIN_AREAS = [
   "Kern",
@@ -761,6 +769,43 @@ export async function saveAgentScopes(
   const logLine = `- ${stamp} | connect-ui | scope | agents.json | ${input.slug}: lesen ${read.join(", ") || "-"}; schreiben ${write.join(", ") || "-"}\n`;
   await appendFile(path.join(root, "log.md"), logLine, "utf8");
   const commit = await gitCommit(root, ["agents.json", "log.md"], `[connect-ui] Rechte für ${input.slug} geändert`);
+
+  // 1. Sync Postgres agents.spark_permissions
+  if (next.connectAgentId) {
+    try {
+      const sql = getFallbackSql();
+      const sparkPerms = {
+        read,
+        write,
+        files: next.files ?? [],
+      };
+      await sql.unsafe(
+        "UPDATE agents SET spark_permissions = $1, updated_at = NOW() WHERE id = $2",
+        [JSON.stringify(sparkPerms), next.connectAgentId],
+      );
+    } catch (err) {
+      console.error("Postgres sync error in saveAgentScopes:", err);
+    }
+  }
+
+  // 2. Dedizierte Map-Datei des Agenten in Maps/${slug}.md erzeugen
+  try {
+    const { generateAndWriteAgentMap } = await import("./maps");
+    await generateAndWriteAgentMap(root, input.slug);
+  } catch {
+    // Best-effort Map-Generierung
+  }
+
+  // 3. Eigene Map-Datei in den Agent-Arbeitsordner syncen (%LOCALAPPDATA%\ConnectAgents\<agentId>\workspace\MAP.md)
+  if (next.connectAgentId) {
+    try {
+      const { syncAgentMapToWorkspace } = await import("../agent-hub/agent-terminal-manager");
+      await syncAgentMapToWorkspace(next.connectAgentId, next.slug);
+    } catch {
+      // Best-effort Workspace-Sync
+    }
+  }
+
   return { agent: next, commit };
 }
 
@@ -818,14 +863,45 @@ export async function appendLogLine(root: string, slug: string, action: string, 
 
 /** The agents.json entry pinned to a Connect agent id, or undefined (= no Brain access). */
 export async function entryForBot(root: string, botId: string) {
-  const file = await readAgents(root);
-  return file.agents.find((entry) => entry.connectAgentId === botId);
+  const access = await accessForBot(root, botId);
+  return access?.entry;
 }
 
 /** Entry plus the project list, for the per-project checks in policy.ts. */
 export async function accessForBot(root: string, botId: string) {
   const file = await readAgents(root);
-  const entry = file.agents.find((candidate) => candidate.connectAgentId === botId);
+  let entry = file.agents.find((candidate) => candidate.connectAgentId === botId);
+  if (!entry) {
+    try {
+      const sql = getFallbackSql();
+      const [row] = await sql.unsafe(
+        "SELECT id, name, spark_permissions FROM agents WHERE id = $1 LIMIT 1",
+        [botId],
+      );
+      if (row?.spark_permissions && typeof row.spark_permissions === "object") {
+        const sp = row.spark_permissions as Record<string, unknown>;
+        const read = cleanAreas(sp.read);
+        const write = cleanAreas(sp.write);
+        const files = cleanRules(sp.files);
+        if (read.length > 0 || write.length > 0 || files.length > 0) {
+          const baseSlug = ((row.name as string) || "agent")
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]/g, "-")
+            .slice(0, 48);
+          entry = {
+            slug: `connect-${baseSlug || "agent"}`,
+            name: (row.name as string) || "Agent",
+            connectAgentId: botId,
+            read,
+            write,
+            files,
+          };
+        }
+      }
+    } catch {
+      // ignore DB fallback errors
+    }
+  }
   return entry ? { entry, projects: file.projects } : undefined;
 }
 
@@ -879,19 +955,54 @@ export function vaultPathFor(brainRoot: string, env: NodeJS.ProcessEnv = process
   return vaultRootFor(brainRoot, env);
 }
 
+/** Where `brain-root.json` lives if present: fallback/migration source (read-only fallback). */
+function jsonFilePath(): string {
+  const local = process.env.LOCALAPPDATA;
+  const home = os.homedir();
+  const base =
+    local && local.trim().length > 0
+      ? path.join(local, "ConnectApp", "data")
+      : path.join(home, ".connect", "data");
+  return path.join(base, "brain-root.json");
+}
+
 /** Reads the two Brain keys without caring about anything else in the file. */
 function readEnvKeys(): [string | null, string | null] {
   let raw: string;
   try {
     raw = readFileSync(envFilePath(), "utf8");
   } catch {
-    return [null, null];
+    raw = "";
   }
   const found: Record<string, string> = {};
-  for (const line of raw.split(/\r?\n/)) {
-    const match = /^\s*(CONNECT_BRAIN_PATH|CONNECT_BRAIN_VAULT_PATH)\s*=\s*(.*)$/.exec(line);
-    if (match) found[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
+  if (raw) {
+    for (const line of raw.split(/\r?\n/)) {
+      const match = /^\s*(CONNECT_BRAIN_PATH|CONNECT_BRAIN_VAULT_PATH)\s*=\s*(.*)$/.exec(line);
+      if (match) found[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
+    }
   }
+
+  /*
+   * Fallback / Migrationsweg fuer Alt-Konfigurationen:
+   * Falls in connect.env noch kein Pfad hinterlegt ist, aber eine brain-root.json
+   * existiert, wird diese lesend als Fallback ausgewertet. Geschrieben wird
+   * weiterhin NIE in zwei Quellen parallel, sondern immer ausschliesslich in connect.env.
+   */
+  if (!found.CONNECT_BRAIN_PATH) {
+    try {
+      const jsonRaw = readFileSync(jsonFilePath(), "utf8");
+      const parsed = JSON.parse(jsonRaw) as { path?: unknown; brainPath?: unknown; vaultPath?: unknown };
+      const jBrain = typeof parsed.path === "string" ? parsed.path : typeof parsed.brainPath === "string" ? parsed.brainPath : null;
+      const jVault = typeof parsed.vaultPath === "string" ? parsed.vaultPath : null;
+      if (jBrain && jBrain.trim().length > 0) found.CONNECT_BRAIN_PATH = jBrain.trim();
+      if (jVault && jVault.trim().length > 0 && !found.CONNECT_BRAIN_VAULT_PATH) {
+        found.CONNECT_BRAIN_VAULT_PATH = jVault.trim();
+      }
+    } catch {
+      // brain-root.json existiert nicht oder ist ungueltig
+    }
+  }
+
   return [found.CONNECT_BRAIN_PATH ?? null, found.CONNECT_BRAIN_VAULT_PATH ?? null];
 }
 

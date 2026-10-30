@@ -87,6 +87,11 @@ export function AgentCard({
           <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
             {agent.roleDescription}
           </span>
+          {agent.accountEmail ? (
+            <span className="mt-0.5 block truncate text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
+              {agent.accountEmail}
+            </span>
+          ) : null}
         </span>
         <div className="flex shrink-0 items-center gap-1.5">
           <EngineBadge engine={agent.engine} />
@@ -126,6 +131,11 @@ export function AgentCard({
         <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
           {agent.roleDescription}
         </span>
+        {agent.accountEmail ? (
+          <span className="truncate text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
+            {agent.accountEmail}
+          </span>
+        ) : null}
       </div>
     </div>
   );

@@ -33,17 +33,16 @@ export function useAgentChromeFrame(
   const unavailableRef = useRef(onUnavailable);
   unavailableRef.current = onUnavailable;
 
+  const refreshRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    // When the server says the agent browser cannot run (no desktop binary),
-    // the loop must stop — otherwise the user gets spammed with the same
-    // "Profil nicht erreichbar" toast every 850 ms. The error stays visible
-    // until they change the runtime or close the panel.
     let aborted = false;
 
     const tick = async () => {
+      if (timer) clearTimeout(timer);
       try {
         const qs = new URLSearchParams({ agentId, profileKind, t: String(Date.now()) });
         if (targetId) qs.set("targetId", targetId);
@@ -73,10 +72,6 @@ export function useAgentChromeFrame(
             body?.error ?? `Vorschau nicht verfügbar (${res.status})`;
           setError(detail);
           failures.current += 1;
-          // Server explicitly told us the desktop launcher is missing — stop
-          // the polling loop so the user is not hit with the same toast.
-          // The error stays on screen until the user takes an action
-          // (manual start, runtime change, panel close).
           if (body?.needsDesktop) {
             aborted = true;
           }
@@ -86,12 +81,16 @@ export function useAgentChromeFrame(
         failures.current += 1;
       }
       if (!cancelled && failures.current >= 3 && !firedUnavailable.current) {
-        // Only once per mount — never loop-launching windows.
         firedUnavailable.current = true;
         unavailableRef.current?.();
       }
       if (!cancelled && !aborted) timer = setTimeout(tick, intervalMs);
     };
+
+    refreshRef.current = () => {
+      if (!cancelled) void tick();
+    };
+
     void tick();
     return () => {
       cancelled = true;
@@ -106,7 +105,7 @@ export function useAgentChromeFrame(
     [],
   );
 
-  return { src, error, pageUrl };
+  return { src, error, pageUrl, refresh: () => refreshRef.current() };
 }
 
 function safeDecode(value: string) {
@@ -140,6 +139,7 @@ export async function focusAgentChrome(
 export type AgentChromeTab = { id: string; title: string; url: string };
 export type AgentChromeControlAction =
   | { action: "click"; x: number; y: number; button?: "left" | "middle" | "right"; clickCount?: number }
+  | { action: "move"; x: number; y: number }
   | { action: "scroll"; x: number; y: number; deltaX: number; deltaY: number }
   | { action: "text"; text: string }
   | { action: "key"; key: string; code: string; modifiers: number }

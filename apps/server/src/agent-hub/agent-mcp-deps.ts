@@ -46,6 +46,11 @@ function buildLookup(store: AgentProfileStore | undefined): AgentProfileLookup {
       title: profile.title || null,
       model: profile.endpoint ? "remote" : "built-in",
       systemPrompt: profile.roleDescription,
+      accountEmail: profile.accountEmail || null,
+      browserProfile:
+        typeof profile.browserProfile === "string"
+          ? profile.browserProfile
+          : (profile.browserProfile?.profileName ?? null),
     };
   };
 }

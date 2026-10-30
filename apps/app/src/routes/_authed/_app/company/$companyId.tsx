@@ -10,10 +10,11 @@ import { CompanyProfileSocialSwitch } from "@/components/social/company-social-p
 import { MobileCompanyProfile } from "@/components/mobile/mobile-company-profile";
 import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
 import { CompanySiteStudio } from "@/components/companies/company-site-studio";
+import { T3AgentsArea } from "@/components/companies/t3-agents-area";
 import { CompanyStockTile } from "@/components/companies/company-stock-tile";
 import { Level3SiteStudio } from "@/components/companies/level3-site-studio";
 import { ProjectProfileX } from "@/components/companies/project-profile-x";
-import { CompanyAppWorkspace, getCompanyApp } from "@/company-apps/registry";
+import { CompanyAppWorkspace, getCompanyApp, openCompanyApp } from "@/company-apps/registry";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -46,8 +47,9 @@ const searchSchema = z.object({
    * 2 = Messages (HQ)
    * 3 = Browser (Lab)
    * 4 = Unternehmen (static site)
+   * 5 = Agents (T3 Code)
    */
-  level: z.coerce.number().int().min(1).max(4).catch(2).default(2),
+  level: z.coerce.number().int().min(1).max(5).catch(2).default(2),
   project: z.string().optional().catch(undefined),
   /**
    * Which note the Spark sidebar has open, as a `SparkNote.id`.
@@ -85,7 +87,7 @@ function CompanyWorkspace() {
   useEffect(() => subscribeLevel(() => setMode(getActiveLevel())), []);
 
   const level: CompanyLevel =
-    mode === 3 || mode === 4 || mode === 1 ? mode : 2;
+    mode === 1 || mode === 3 || mode === 4 || mode === 5 ? mode : 2;
 
   const agentsQuery = useQuery(agentListQueryOptions());
   const currentUserQuery = useQuery(currentUserQueryOptions());
@@ -116,6 +118,7 @@ function CompanyWorkspace() {
   useEffect(() => {
     if (mobileShell || level !== 4 || !companyApp) return;
     setActiveLevel(2);
+    openCompanyApp(companyApp.manifest.id);
     void navigate({ to: "/", replace: true });
   }, [mobileShell, level, companyApp, navigate]);
 
@@ -136,7 +139,8 @@ function CompanyWorkspace() {
     mobileShell &&
     !projectId &&
     (profile || level !== 2) &&
-    !(level === 4 && companyApp)
+    !(level === 4 && companyApp) &&
+    level !== 5
   ) {
     return <MobileCompanyProfile company={company} />;
   }
@@ -147,9 +151,14 @@ function CompanyWorkspace() {
 
   return (
     <>
-      {/* Lab + Unternehmen: no top toggle / URL chrome — full content. */}
-      {level === 3 || level === 4 ? null : <SidebarToggleBar />}
-      {level === 3 ? (
+      {/* Lab, Unternehmen, Agents: no top toggle / URL chrome — full content. */}
+      {level === 3 || level === 4 || level === 5 ? null : <SidebarToggleBar />}
+      {level === 5 ? (
+        <T3AgentsArea
+          companyId={company.id}
+          companyName={company.name}
+        />
+      ) : level === 3 ? (
         <Level3AgentFocus
           agentId={agentId}
           agents={companyAgents}

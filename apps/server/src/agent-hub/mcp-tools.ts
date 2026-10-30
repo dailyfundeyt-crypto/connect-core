@@ -238,6 +238,29 @@ export const agentMcpTools: AgentMcpTool[] = [
     },
   },
 
+  {
+    name: "browser_open_tab",
+    description:
+      "Öffnet eine Webseite in einem neuen Tab im isolierten Helium-Profil des Agenten (CDP/Playwright). " +
+      "Navigiert im eigenen Agent-Browser-Fenster des Bots.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Ziel-URL (http:// oder https://)" },
+      },
+      required: ["url"],
+    },
+    handler: async (ctx, args) => {
+      const url = readString(args, "url");
+      const { browserUseOpen } = await import("../agents/agent-browser-use");
+      const res = await browserUseOpen(ctx.agentId, url);
+      if (res.ok) {
+        return text(`Erfolgreich im Agent-Browser geöffnet: ${res.url} (${res.title || "Kein Titel"})`);
+      }
+      return error(`Fehler beim Öffnen im Agent-Browser: ${res.error || "Unbekannter Fehler"}`);
+    },
+  },
+
   /**
    * Antigravity-CLI als Sub-Runner.
    *

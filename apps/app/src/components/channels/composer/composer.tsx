@@ -40,6 +40,8 @@ import { newId } from "@/lib/new-id";
 import { cn } from "@/lib/utils";
 import { AgentBrowserModeSelect } from "@/components/agents/agent-browser-mode";
 import { AgentMcpButton } from "@/components/agent-hub/agent-mcp-button";
+import { T3CliSelector } from "@/components/agents/t3-cli-selector";
+import { getT3Flag } from "@/lib/t3/contracts";
 import { ComposerPlusMenu } from "@/components/channels/composer/composer-plus-menu";
 import { Button } from "../../ui/button";
 import {
@@ -334,6 +336,28 @@ const UNACCEPTED_DROP_REASON = {
     "was not attached: there is no conversation here yet. Send this " +
     "message first, then attach to the one it opens.",
 } as const;
+
+/**
+ * DIE CLI-AUSWAHL NEBEN DEM AGENTEN (A38).
+ *
+ * Hinter `connect.t3.cliSwap` tauscht die T3-CLI-Auswahl (A23) die bisherige Auswahl an EXAKT
+ * derselben Stelle im Composer — gleicher Trigger, gleicher Look, gleiche Höhe. Flag aus: die
+ * bisherige Auswahl, unangetastet.
+ *
+ * Bewusst EIGENE Komponente und nicht der Modell-Picker: der Modell-Picker (`agent-model-picker.tsx`)
+ * führt den Modell-Katalog, dieser hier den CLI-Katalog. Beide stehen an derselben Stelle, damit
+ * der Tausch die Position nicht verschiebt.
+ */
+function ComposerCliTarget({
+  agentId,
+  className,
+}: {
+  agentId: string;
+  className?: string;
+}) {
+  if (!getT3Flag("cliSwap")) return null;
+  return <T3CliSelector agentId={agentId} className={className} size="sm" />;
+}
 
 export function Composer({
   className,
@@ -1440,8 +1464,8 @@ export function Composer({
           aria-busy={isBusy}
           className={cn(
             floatingChrome
-              ? "flex min-h-14 w-full flex-col rounded-2xl border border-border bg-card px-3 py-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
-              : "flex min-h-14 flex-col rounded-2xl border border-border bg-card px-3 py-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+              ? "flex min-h-14 w-full flex-col rounded-[26px] border border-border/80 bg-card px-4 py-3 shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset] focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/25"
+              : "flex min-h-14 flex-col rounded-[26px] border border-border/80 bg-card px-4 py-3 shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset] focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/25",
             className,
           )}
           data-floating-composer={floatingChrome ? "" : undefined}
@@ -1467,7 +1491,7 @@ export function Composer({
                 onChange={handleChange}
                 onImagePaste={canAttach ? stagePastedImage : undefined}
                 onSubmit={submitDraft}
-                placeholder={voiceListening ? "Hört zu..." : "Ask anything"}
+                placeholder={voiceListening ? "Hört zu..." : "Nachricht schreiben · / für Skills"}
                 ref={promptAreaRef}
                 triggers={triggers}
                 value={value}
@@ -1482,6 +1506,7 @@ export function Composer({
                 ) : null}
                 {agentId ? (
                   <>
+                    <ComposerCliTarget agentId={agentId} />
                     <AgentBrowserModeSelect agentId={agentId} compact />
                     <AgentMcpButton agentId={agentId} />
                   </>
@@ -1572,7 +1597,7 @@ export function Composer({
                 onChange={handleChange}
                 onImagePaste={canAttach ? stagePastedImage : undefined}
                 onSubmit={submitDraft}
-                placeholder={voiceListening ? "Hört zu..." : "Ask anything"}
+                placeholder={voiceListening ? "Hört zu..." : "Nachricht schreiben · / für Skills"}
                 ref={promptAreaRef}
                 triggers={triggers}
                 value={value}
@@ -1592,6 +1617,7 @@ export function Composer({
                 <div className="flex shrink-0 items-center gap-1 self-end">
                   {agentId ? (
                     <>
+                      <ComposerCliTarget agentId={agentId} className="self-end" />
                       <AgentBrowserModeSelect
                         agentId={agentId}
                         className="self-end"
@@ -1618,6 +1644,7 @@ export function Composer({
                 </div>
               ) : agentId ? (
                 <>
+                  <ComposerCliTarget agentId={agentId} className="self-end" />
                   <AgentBrowserModeSelect
                     agentId={agentId}
                     className="self-end"
@@ -1668,7 +1695,7 @@ export function Composer({
       <form
         aria-busy={isBusy}
         className={cn(
-          "overflow-hidden rounded-2xl border border-border bg-card flex flex-col transition-all duration-200 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+          "overflow-hidden rounded-[26px] border border-border/80 bg-card flex flex-col transition-all duration-200 focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/25",
           isExpanded
             ? "h-[55vh] min-h-[380px] max-h-[720px] shadow-2xl ring-1 ring-border/50"
             : "",
@@ -1716,7 +1743,7 @@ export function Composer({
             onChange={handleChange}
             onImagePaste={canAttach ? stagePastedImage : undefined}
             onSubmit={submitDraft}
-            placeholder={voiceListening ? "Hört zu..." : "Ask anything"}
+            placeholder={voiceListening ? "Hört zu..." : "Nachricht schreiben · / für Skills"}
             ref={promptAreaRef}
             triggers={triggers}
             value={value}
@@ -1737,6 +1764,7 @@ export function Composer({
           <div className="flex items-center gap-2">
             {agentId ? (
               <>
+                <ComposerCliTarget agentId={agentId} />
                 <AgentBrowserModeSelect agentId={agentId} compact />
                 <AgentMcpButton agentId={agentId} />
               </>

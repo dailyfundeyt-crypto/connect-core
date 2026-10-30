@@ -59,14 +59,27 @@ function useBrainNotesSource() {
   return { files, loading, hint, bridgeMode: bridgeMode && !localFiles, pc };
 }
 
-export type FlatLabGroup = { id: string; title: string; depth: number; apps: LabApp[] };
+export type FlatLabGroup = {
+  id: string;
+  title: string;
+  /** Eigenname der Gruppe (bei Untergruppen ohne "Eltern > Kind"-Praefix). */
+  label: string;
+  depth: number;
+  apps: LabApp[];
+};
 
 export function flattenLabFolders(roots: LabFolderNode[]): FlatLabGroup[] {
   const out: FlatLabGroup[] = [];
   const walk = (nodes: LabFolderNode[], trail: string[]) => {
     for (const node of nodes) {
       const names = [...trail, node.label];
-      out.push({ id: node.id, title: names.join(" › "), depth: trail.length, apps: node.apps });
+      out.push({
+        id: node.id,
+        title: names.join(" › "),
+        label: node.label,
+        depth: trail.length,
+        apps: node.apps,
+      });
       if (node.children.length) walk(node.children, names);
     }
   };
@@ -493,11 +506,24 @@ function BridgeNoteReader({ path, files, onOpen }: { path: string; files: string
   }
   const { properties, body } = parseFrontmatter(answer.data.file.content);
   const crumbs = path.replace(/\.md$/i, "").split("/");
-  const titleProp = properties.find((p) => p.key === "title")?.values[0];
-  const firstLine = body.trimStart().split("\n")[0] ?? "";
-  const h1 = firstLine.startsWith("# ") ? firstLine.slice(2).trim() : null;
-  const title = h1 ?? titleProp ?? crumbs[crumbs.length - 1];
-  const rest = h1 ? body.trimStart().slice(firstLine.length) : body;
+  const titleProp = properties.find((p) => p.key === "title")?.values[0]?.trim();
+  const firstNonEmptyLine = body.split(/\r?\n/).find((line) => line.trim().length > 0) ?? "";
+  const h1Match = /^#[ \t]+(.+?)[ \t]*$/.exec(firstNonEmptyLine);
+
+  // Einheitliche Titelregel: Frontmatter title zuerst, sonst erste H1, sonst Dateiname.
+  let title: string;
+  let rest: string;
+  if (titleProp) {
+    title = titleProp;
+    rest = body;
+  } else if (h1Match) {
+    title = h1Match[1].trim();
+    const h1Index = body.indexOf(firstNonEmptyLine);
+    rest = (body.slice(0, h1Index) + body.slice(h1Index + firstNonEmptyLine.length)).replace(/^\r?\n/, "");
+  } else {
+    title = crumbs[crumbs.length - 1];
+    rest = body;
+  }
   return (
     <article className="brain-reader px-1 pt-2 pb-10" data-testid="mobile-markdown-bridge">
       <div className="mb-5 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">

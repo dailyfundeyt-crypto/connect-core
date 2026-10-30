@@ -236,6 +236,27 @@ export function CompanyAgentsNav({
     };
   }, [agentsQuery.data, company, projectTick, identityTick, orderTick]);
 
+  /**
+   * Letzte Nachricht pro Agent — kommt aus dem aktiven Segment (das
+   * jüngste live Segment dieses Agenten). Ein Agent ohne Gespräch zeigt
+   * "Neues Gespräch", damit klar ist, dass der Klick es anlegt.
+   */
+  const previewByAgent = useMemo(() => {
+    const list = channels.data ?? [];
+    const map = new Map<string, { lastMessage: string; lastMessageAt: string }>();
+    for (const agent of roster.ungrouped) {
+      const segments = segmentsFromRoster(list, agent.id);
+      const active = pickActiveSegment(segments);
+      if (active?.lastMessage && active.lastMessageAt) {
+        map.set(agent.id, {
+          lastMessage: active.lastMessage,
+          lastMessageAt: active.lastMessageAt,
+        });
+      }
+    }
+    return map;
+  }, [channels.data, roster.ungrouped]);
+
   const needle = query.trim().toLowerCase();
   const searchHits = searching
     ? roster.matches.filter(
@@ -353,27 +374,6 @@ export function CompanyAgentsNav({
       setMovingAgentId(null);
     }
   };
-
-  /**
-   * Letzte Nachricht pro Agent — kommt aus dem aktiven Segment (das
-   * jüngste live Segment dieses Agenten). Ein Agent ohne Gespräch zeigt
-   * "Neues Gespräch", damit klar ist, dass der Klick es anlegt.
-   */
-  const previewByAgent = useMemo(() => {
-    const list = channels.data ?? [];
-    const map = new Map<string, { lastMessage: string; lastMessageAt: string }>();
-    for (const agent of roster.ungrouped) {
-      const segments = segmentsFromRoster(list, agent.id);
-      const active = pickActiveSegment(segments);
-      if (active?.lastMessage && active.lastMessageAt) {
-        map.set(agent.id, {
-          lastMessage: active.lastMessage,
-          lastMessageAt: active.lastMessageAt,
-        });
-      }
-    }
-    return map;
-  }, [channels.data, roster.ungrouped]);
 
   /** Companies this bot could move to: every company except the one it is on now. */
   const moveTargets = (agentId: string) =>
@@ -557,6 +557,44 @@ export function CompanyAgentsNav({
 
   return (
     <div className="mb-2 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
+      {!searching && roster.ungrouped.length > 0 ? (
+        /* Avatar index above the rows: the rows carry content, this carries who exists. */
+        <div className="mb-2 grid grid-cols-3 gap-1 group-data-[collapsible=icon]:hidden">
+          {roster.ungrouped.map((agent) => {
+            const active = currentPath === `/agent/${agent.id}`;
+            return (
+              <button
+                className={cn(
+                  "flex min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 py-2 transition-colors hover:bg-sidebar-accent/70",
+                  active && "bg-sidebar-accent",
+                )}
+                key={agent.id}
+                onClick={() => void openAgent(agent)}
+                title={agent.title?.trim() ? `${agent.name} · ${agent.title.trim()}` : agent.name}
+                type="button"
+              >
+                <span className="relative">
+                  <AbstractAvatar
+                    agentId={agent.id}
+                    name={agent.name}
+                    seed={agent.avatarSeed}
+                    size={38}
+                  />
+                  {agentHasUnread(channels.data, agent.id) && !active ? (
+                    <span
+                      aria-label="Neue Nachricht"
+                      className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-sky-400 ring-2 ring-sidebar"
+                    />
+                  ) : null}
+                </span>
+                <span className="w-full truncate text-center text-[10px] leading-tight text-sidebar-foreground/70">
+                  {agent.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <SidebarGroupLabel className="mb-0.5 h-7 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45 group-data-[collapsible=icon]:sr-only">
         Agenten
       </SidebarGroupLabel>

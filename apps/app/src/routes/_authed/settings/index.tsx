@@ -1,4 +1,6 @@
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
+import { getFlag } from "@/contracts/v06/flags";
+import { SettingsShellV2 } from "@/v06/settings";
 import { FocusChainSettingsPanel } from "@/components/settings/focus-chain-settings";
 import { PhoneConnectPanel } from "@/components/settings/phone-connect-panel";
 import { useQuery } from "@tanstack/react-query";
@@ -27,8 +29,11 @@ import { DeploymentModePanel } from "@/components/settings/deployment-mode-panel
 import { DonatePanel } from "@/components/settings/donate-panel";
 import { DriveBackupPanel } from "@/components/settings/drive-backup-panel";
 import { BrowserGroupsPanel } from "@/components/settings/browser-groups-panel";
+import { SidebarToolsSettingsPanel } from "@/components/settings/sidebar-tools-settings";
 import { McpConnectorMappingPanel } from "@/components/settings/mcp-connector-mapping";
 import { McpSettingsPanel } from "@/components/settings/mcp-settings";
+import { EmailAgentsSettings } from "@/components/settings/email-agents/email-agents-settings";
+import { McpGrantsSettings } from "@/components/settings/email-agents/mcp-grants-settings";
 import { ConnectorGallery } from "@/components/agent-hub/connector-gallery";
 import { BrainSettingsPage } from "@/components/brain/brain-settings-page";
 import { ModelProviderSettingsPanel } from "@/components/settings/model-provider-settings";
@@ -39,9 +44,13 @@ import { ShortcutsPanel } from "@/components/settings/shortcuts-panel";
 import { StandingInstructions } from "@/components/settings/standing-instructions";
 import { SupabaseSyncCard } from "@/components/settings/supabase-sync-card";
 import { UbuntuMachinesPanel } from "@/components/settings/ubuntu-machines-settings";
+import { T3SettingsPanel } from "@/components/settings/t3";
+import { MachinesSettingsPanel } from "@/components/settings/machines";
+import { UsageT3View } from "@/components/usage-t3/UsageT3View";
 import { VoiceSettingsPanel } from "@/components/settings/voice-settings";
 import { CalendarSettingsPanel } from "@/components/calendar/calendar-settings-panel";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
+import { DesktopControlSettingsPanel } from "@/components/settings/desktop-control-settings";
 import {
   getLabPrefs,
   subscribeLabPrefs,
@@ -54,6 +63,7 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { useSignOut } from "@/lib/auth/use-sign-out";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
 import { IconChevronLeft } from "@tabler/icons-react";
+import { getT3Flag } from "@/lib/t3/contracts";
 
 // ─── Auto-save hook ──────────────────────────────────────────────────────────
 
@@ -194,6 +204,7 @@ const PANELS: Record<string, React.ComponentType | null> = {
   appearance: AppearanceSettings,
   // Konto & Sicherheit
   profile: CompanySettingsPanel,
+  companies: CompanySettingsPanel,
   security: null, // rendered inline below (session list)
   // Verbindungen
   "api-keys": ApiKeysSettingsPanel,
@@ -203,6 +214,9 @@ const PANELS: Record<string, React.ComponentType | null> = {
   "mein-helium": MeinHeliumPanel,
   "connector-mapping": McpConnectorMappingPanel,
   "mcp": McpSettingsInlinePanel,
+  // Lane 10 (Integration 2026-10-22)
+  "mcp-grants": McpGrantsSettings,
+  "email-agents": EmailAgentsSettings,
   "ubuntu-machines": UbuntuMachinesPanel,
   voice: VoiceSettingsPanel,
   calendar: CalendarSettingsPanel,
@@ -223,7 +237,22 @@ const PANELS: Record<string, React.ComponentType | null> = {
   terms: null, // rendered inline below (Nutzungsbedingungen)
   // Per-Company Tool-Verwaltung (Marketplace-Integration)
   "company-tools": CompanyAppsSettingsPanel,
+  // Sidebar-Tools an/aus (Schalter aus der Chat-Sidebar hierher verlegt, helium-sidebar)
+  "sidebar-tools": SidebarToolsSettingsPanel,
+  // Connect Desktop / Hitodama-Features Steuerung & Sicherheit
+  "desktop-control": DesktopControlSettingsPanel,
+  // T3-Backend (A25) — Flag `connect.t3.bridge`
+  t3: T3SettingsPanel,
+  // Cua-Maschinen (A26) — Flag `connect.t3.cuaMachines`
+  machines: MachinesSettingsPanel,
+  // Volle Nutzungsansicht (A24) — Flag `connect.t3.bridge`
+  "nutzung-limits": UsageT3View,
 };
+
+/**
+ * Flag to hide dead/mock legacy settings identified during the audit (Prompt 4.3).
+ */
+const SHOW_LEGACY_FIELDS = false;
 
 /**
  * The section ids rendered inline at the bottom of /settings.
@@ -259,7 +288,22 @@ const HASH_ALIASES: Record<string, string> = {
   backup: "sync-backup",
   sync: "sync-backup",
   background: "erweitert",
+  companies: "profile",
+  usage: "codex-usage",
+  timer: "fokus",
 };
+
+/**
+ * Die Alias-Auflösung, mit dem Flag-Gedanken.
+ *
+ * `#usage` ist der alte Einstieg in die Nutzungsansicht. Mit T3-Brücke zeigt der
+ * Menüpunkt die volle A24-Ansicht (Cost / Tokens / Limits) — der alte Hash führt
+ * dann dorthin, statt zur Codex-Nutzung. Ohne Brücke bleibt er beim Codex-Panel.
+ */
+function resolveSettingsHash(rawHash: string): string {
+  if (rawHash === "usage" && getT3Flag("bridge")) return "nutzung-limits";
+  return HASH_ALIASES[rawHash] ?? rawHash;
+}
 
 /**
  * Auf dem Handy zeigt ein Hash aus dem Inline-Stapel NUR seinen Abschnitt (eine eigene Seite),
@@ -284,6 +328,7 @@ const PHONE_TITLES: Record<string, string> = {
   voice: "Stimme",
   "sync-backup": "Sync & Backup",
   "browser-groups": "Browser-Gruppen",
+  "sidebar-tools": "Sidebar-Tools",
   "mein-helium": "Mein Helium",
   brain: "Brain",
   erweitert: "Erweitert",
@@ -295,7 +340,11 @@ const PHONE_TITLES: Record<string, string> = {
   appearance: "Darstellung",
   konto: "Konto",
   fokus: "Fokus",
+  "desktop-control": "Desktop-Steuerung & Sicherheit",
   "handy-verbinden": "Handy verbinden",
+  t3: "T3 Backend",
+  machines: "Maschinen & Sandboxes",
+  "nutzung-limits": "Nutzung & Limits",
   konnektoren: "Konnektoren",
   "helium-shell": "Helium-Shell",
   "connect-agenten": "Connect-Agenten",
@@ -586,6 +635,9 @@ export const Route = createFileRoute("/_authed/settings/")({
 });
 
 function RouteComponent() {
+  if (getFlag("settingsV2")) {
+    return <SettingsShellV2 />;
+  }
   const { savedAt, triggerSave } = useAutoSave();
   const [profile, setProfile] = useState(() => getLocalProfile());
   const [profileOpen, setProfileOpen] = useState(false);
@@ -626,7 +678,7 @@ function RouteComponent() {
   const rawHash = useRouterState({
     select: (s) => s.location.hash.replace(/^#/, ""),
   });
-  const hash = HASH_ALIASES[rawHash] ?? rawHash;
+  const hash = resolveSettingsHash(rawHash);
   const phoneSection = INLINE_SECTIONS.has(hash) ? (PHONE_SECTION_FOR[hash] ?? hash) : null;
   const phoneTitle = hash ? (PHONE_TITLES[phoneSection ?? hash] ?? "Einstellungen") : null;
 
@@ -717,55 +769,22 @@ function RouteComponent() {
             </p>
           </div>
         </div>
-        {/* Phone: tile grid. Desktop: the section list, with the search field above it. */}
-        <div className="md:hidden">
-          {!hash && <SettingsOverview />}
-        </div>
+        {/* Grok-Bot 7-Group Card Overview when no hash is selected */}
+        {!hash && <SettingsOverview />}
 
-        {/*
-         * The inline stack is a second, older settings UI — `konto`, `konnektoren`,
-         * `helium-shell`, `connect-agenten`, `benachrichtigungen`, `datenschutz`, `uber` — and
-         * `security`, `info`, `privacy`, `terms`, which PANELS leaves null for.
-         *
-         * It used to render unconditionally, so every visit to /settings stacked all of them under
-         * the overview cards while nothing anywhere linked to them. Two thousand pixels of settings
-         * with no way to reach them is what read as "they removed my options".
-         *
-         * It renders when the hash names one of them, and PanelOutlet renders the registered
-         * panels beside it, so a hash always lands on content. Nothing was deleted; the sections
-         * are just addressable now instead of permanently appended to the overview.
-         */}
-        {/*
-         * The section list — the page itself on desktop.
-         *
-         * On the phone a hash decides whether a single section appears, because a chip on a tile
-         * should feel like a page. On the desktop the list is always on: with no hash it shows
-         * every section, which is where a desktop user looks for them, and a hash then keeps the
-         * list standing so the sidebar highlight and the neighbouring sections stay where the
-         * reader left them.
-         *
-         * The two widths therefore need different conditions, and only CSS cannot express it: on
-         * the phone the list is shown exactly when a hash names one of its sections, and on the
-         * desktop it is shown whenever no registered panel is on screen. A hash that IS a panel
-         * hides it on both — a panel is its own screen, and hanging it below the full list is what
-         * used to bury it.
-         */}
-        {(!PANELS[hash] && (INLINE_SECTIONS.has(hash) || !hash)) ? (
+        {/* Focused inline section when hash is an inline section */}
+        {hash && !PANELS[hash] && INLINE_SECTIONS.has(hash) ? (
           <PhoneSectionContext.Provider value={phoneSection}>
           <div
-            className={cn(
-              "mx-auto flex w-full max-w-[560px] flex-col px-4 pb-16 pt-5 md:px-6 md:pt-8",
-              // Below md the tiles own the empty state; above it the list is the page.
-              !hash && "max-md:hidden",
-            )}
+            className="mx-auto flex w-full max-w-[560px] flex-col px-4 pb-16 pt-5 md:px-6 md:pt-8"
           >
             {/* Back (Handy: Kopfzeile oben übernimmt) */}
             <div className="mb-6 flex items-center max-md:hidden">
             <Button
               render={(props) => (
-                <Link {...props} to="/">
+                <Link {...props} to="/settings">
                   <IconArrowLeft className="mr-1 size-4" />
-                  Zurück
+                  Zur Übersicht
                 </Link>
               )}
               size="sm"
@@ -808,22 +827,24 @@ function RouteComponent() {
               </div>
             </Row>
 
-            <Row
-              description="Aktive Sitzungen anzeigen und beenden"
-              label="Anmelde-Sitzungen"
-            >
-              <Button
-                render={(props) => (
-                  <Link {...props} to="/settings" hash="security" />
-                )}
-                size="sm"
-                type="button"
-                variant="ghost"
-                className={GHOST_BUTTON}
+            {SHOW_LEGACY_FIELDS ? (
+              <Row
+                description="Aktive Sitzungen anzeigen und beenden"
+                label="Anmelde-Sitzungen"
               >
-                Anzeigen
-              </Button>
-            </Row>
+                <Button
+                  render={(props) => (
+                    <Link {...props} to="/settings" hash="security" />
+                  )}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  className={GHOST_BUTTON}
+                >
+                  Anzeigen
+                </Button>
+              </Row>
+            ) : null}
 
             <Row
               description="Sitzung beenden und zur Anmeldung"
@@ -836,20 +857,22 @@ function RouteComponent() {
           {/* ── 2. Konnektoren ── */}
           <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="konnektoren" label="Konnektoren">
-            <Row
-              description="IMAP/SMTP für E-Mail-basierte Kanäle"
-              label="E-Mail-Konten"
-            >
-              <Button
-                size="sm"
-                type="button"
-                variant="ghost"
-                className={GHOST_BUTTON}
+            {SHOW_LEGACY_FIELDS ? (
+              <Row
+                description="IMAP/SMTP für E-Mail-basierte Kanäle"
+                label="E-Mail-Konten"
               >
-                <IconPlus className="mr-1 size-3.5" />
-                Hinzufügen
-              </Button>
-            </Row>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  className={GHOST_BUTTON}
+                >
+                  <IconPlus className="mr-1 size-3.5" />
+                  Hinzufügen
+                </Button>
+              </Row>
+            ) : null}
 
             <Row description="Google Drive Backup" label="Cloud-Sync">
               <Button
@@ -865,29 +888,31 @@ function RouteComponent() {
               </Button>
             </Row>
 
-            <Row
-              description={heliumStatus === "ok" ? "Verbunden" : "Offline"}
-              label="Helium-Verbindung"
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "size-2 rounded-full",
-                    heliumStatus === "ok" ? "bg-emerald-500" : "bg-red-500",
-                  )}
-                />
-                <Button
-                  onClick={() => triggerSave()}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                  className={GHOST_BUTTON}
-                >
-                  <IconRefresh className="mr-1 size-3.5" />
-                  Retry
-                </Button>
-              </div>
-            </Row>
+            {SHOW_LEGACY_FIELDS ? (
+              <Row
+                description={heliumStatus === "ok" ? "Verbunden" : "Offline"}
+                label="Helium-Verbindung"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "size-2 rounded-full",
+                      heliumStatus === "ok" ? "bg-emerald-500" : "bg-red-500",
+                    )}
+                  />
+                  <Button
+                    onClick={() => triggerSave()}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    className={GHOST_BUTTON}
+                  >
+                    <IconRefresh className="mr-1 size-3.5" />
+                    Retry
+                  </Button>
+                </div>
+              </Row>
+            ) : null}
           </Section>
 
           {/* ── 3. Helium-Shell ── */}
@@ -960,35 +985,39 @@ function RouteComponent() {
           {/* ── 4. Connect-Agenten ── */}
           <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="connect-agenten" label="Connect-Agenten">
-            <Row
-              description="Agent für neue Chats"
-              label="Standard-Agent"
-            >
-              <Button
-                render={(props) => <Link {...props} to="/agents" />}
-                size="sm"
-                type="button"
-                variant="ghost"
-                className={GHOST_BUTTON}
-              >
-                Auswählen
-              </Button>
-            </Row>
+            {SHOW_LEGACY_FIELDS ? (
+              <>
+                <Row
+                  description="Agent für neue Chats"
+                  label="Standard-Agent"
+                >
+                  <Button
+                    render={(props) => <Link {...props} to="/agents" />}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    className={GHOST_BUTTON}
+                  >
+                    Auswählen
+                  </Button>
+                </Row>
 
-            <Row
-              description="Alle Agents verwalten"
-              label="Agent-Liste"
-            >
-              <Button
-                render={(props) => <Link {...props} to="/agents" />}
-                size="sm"
-                type="button"
-                variant="ghost"
-                className={GHOST_BUTTON}
-              >
-                Öffnen
-              </Button>
-            </Row>
+                <Row
+                  description="Alle Agents verwalten"
+                  label="Agent-Liste"
+                >
+                  <Button
+                    render={(props) => <Link {...props} to="/agents" />}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    className={GHOST_BUTTON}
+                  >
+                    Öffnen
+                  </Button>
+                </Row>
+              </>
+            ) : null}
 
             <Row
               description="Globale Keys für alle Agents"
@@ -1025,62 +1054,55 @@ function RouteComponent() {
             </Row>
           </Section>
 
-          {/* ── 5. Benachrichtigungen ── */}
-          <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
-          <Section id="benachrichtigungen" label="Benachrichtigungen">
-            <Row
-              description="Desktop-Benachrichtigungen"
-              label="Push-Benachrichtigungen"
-            >
-              <Switch
-                aria-label="Push"
-                checked={true}
-                onCheckedChange={() => {
-                  triggerSave();
-                }}
-              />
-            </Row>
-            <Row
-              description="Updates und Alerts per E-Mail"
-              label="E-Mail-Benachrichtigungen"
-            >
-              <Switch
-                aria-label="E-Mail"
-                checked={false}
-                onCheckedChange={() => {
-                  triggerSave();
-                }}
-              />
-            </Row>
-            <Row
-              description="Keine Benachrichtigungen von … bis"
-              label="Quiet Hours"
-            >
-              <Button
-                size="sm"
-                type="button"
-                variant="ghost"
-                className={GHOST_BUTTON}
-              >
-                Konfigurieren
-              </Button>
-            </Row>
-          </Section>
+          {/* ── 5. Benachrichtigungen (Legacy / Mock) ── */}
+          {SHOW_LEGACY_FIELDS ? (
+            <>
+              <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
+              <Section id="benachrichtigungen" label="Benachrichtigungen">
+                <Row
+                  description="Desktop-Benachrichtigungen"
+                  label="Push-Benachrichtigungen"
+                >
+                  <Switch
+                    aria-label="Push"
+                    checked={true}
+                    onCheckedChange={() => {
+                      triggerSave();
+                    }}
+                  />
+                </Row>
+                <Row
+                  description="Updates und Alerts per E-Mail"
+                  label="E-Mail-Benachrichtigungen"
+                >
+                  <Switch
+                    aria-label="E-Mail"
+                    checked={false}
+                    onCheckedChange={() => {
+                      triggerSave();
+                    }}
+                  />
+                </Row>
+                <Row
+                  description="Keine Benachrichtigungen von … bis"
+                  label="Quiet Hours"
+                >
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    className={GHOST_BUTTON}
+                  >
+                    Konfigurieren
+                  </Button>
+                </Row>
+              </Section>
+            </>
+          ) : null}
 
           {/* ── 6. Datenschutz ── */}
           <div className="mt-8 border-t border-white/[0.06] max-md:hidden" />
           <Section id="datenschutz" label="Datenschutz">
-            {/*
-             * This row used to offer an "Anzeigen" button pointing at a `storage` hash that no panel
-             * has ever claimed, so it scrolled nowhere. There is no storage screen to open, and a
-             * button that leads nowhere is worse than the fact it promised to show.
-             *
-             * The browser's own estimate answers the question the label asks — how much this device
-             * is holding — and it is the number that decides whether anything needs clearing. It is
-             * read on mount because the estimate is async, and it is only a hint in a non-persistent
-             * context, which is why it stays in the description's place rather than becoming a
-             * figure the user is expected to act on.
-             */}
             <LocalStorageUsage />
             <Row
               description="Anonyme Nutzungsstatistiken"
@@ -1092,20 +1114,22 @@ function RouteComponent() {
                 onCheckedChange={handleTelemetryToggle}
               />
             </Row>
-            <Row
-              description="Alle Daten als JSON herunterladen"
-              label="Daten exportieren"
-            >
-              <Button
-                size="sm"
-                type="button"
-                variant="ghost"
-                className={GHOST_BUTTON}
+            {SHOW_LEGACY_FIELDS ? (
+              <Row
+                description="Alle Daten als JSON herunterladen"
+                label="Daten exportieren"
               >
-                <IconDownload className="mr-1 size-3.5" />
-                Export
-              </Button>
-            </Row>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  className={GHOST_BUTTON}
+                >
+                  <IconDownload className="mr-1 size-3.5" />
+                  Export
+                </Button>
+              </Row>
+            ) : null}
             <ActionRow
               danger
               description="Alle lokalen Connect-Daten dauerhaft entfernen"
@@ -1148,20 +1172,22 @@ function RouteComponent() {
                 Öffnen
               </Button>
             </Row>
-            <Row
-              description="Problem melden oder Feature vorschlagen"
-              label="Feedback"
-            >
-              <Button
-                size="sm"
-                type="button"
-                variant="ghost"
-                className={GHOST_BUTTON}
+            {SHOW_LEGACY_FIELDS ? (
+              <Row
+                description="Problem melden oder Feature vorschlagen"
+                label="Feedback"
               >
-                <IconMail className="mr-1 size-3.5" />
-                Feedback
-              </Button>
-            </Row>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  className={GHOST_BUTTON}
+                >
+                  <IconMail className="mr-1 size-3.5" />
+                  Feedback
+                </Button>
+              </Row>
+            ) : null}
             <Row description="Wie Connect deine Daten verarbeitet" label="Datenschutzerklärung">
               <Button
                 render={(props) => <a {...props} href="/datenschutz" rel="noopener" target="_blank" />}

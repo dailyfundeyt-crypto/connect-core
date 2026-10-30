@@ -17,19 +17,24 @@ import {
   IconNews,
   IconPlus,
   IconPlugConnected,
+  IconCornerDownRight,
   IconSearch,
   IconStar,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, type DragEvent as ReactDragEvent } from "react";
+import type { LabFolderNode } from "@/lib/companies/level3-tools";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
@@ -57,14 +62,22 @@ import {
   getConnection,
   getLevel3Browser,
   labAppsByGroup,
+  labFolderTree,
   linkVaultNoteToGroup,
   LOVABLE_MCP_HINT,
   moveAppToGroup,
   removeAppFromGroups,
   removeCustomLabApp,
+  renameTabGroup,
   reorderAppsInGroup,
   reorderTabGroups,
+  reorderTabGroupWithinSiblings,
   resolveTabUrl,
+  moveTabGroupIntoGroup,
+  moveTabGroupAsSibling,
+  moveTabGroupToRoot,
+  moveTabGroupToRootEnd,
+  tabGroupDescendantIds,
   runLocalWebSearch,
   selectLabApp,
   setTabGroupOpen,
@@ -219,6 +232,13 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
   const [adding, setAdding] = useState(false);
   /** Own app / Split-Link being edited (Rechtsklick › Bearbeiten). */
   const [editingId, setEditingId] = useState<string | null>(null);
+  /**
+   * Group being renamed inline (Doppelklick auf den Ordnernamen oder
+   * Rechtsklick › Umbenennen). Ohne diesen Zustand gab es im Browser-Sidebar
+   * keinen Weg, einen Ordner umzubenennen -- nur im Einstellungs-Panel.
+   */
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [search, setSearch] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<{
@@ -251,11 +271,55 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
   }, [companyId]);
 
   const { groups, ungrouped } = labAppsByGroup(state);
+  const tree = labFolderTree(state);
+  /**
+   * Every group id minus the dragged folder and its entire subtree.
+   *
+   * `moveTabGroupIntoGroup` is what the store uses to refuse moves that would loop
+   * (a folder into itself, or into one of its own children) and the sidebar mirrors
+   * that here so a dragged folder has nowhere it can be dropped to commit the loop.
+   */
+  const getForbiddenParentIds = useCallback(
+    (draggedId: string) =>
+      new Set<string>([draggedId, ...tabGroupDescendantIds(state, draggedId)]),
+    [state],
+  );
 
   const createFolder = () => {
     const name = window.prompt("Name der Gruppe?");
     if (!name?.trim()) return;
     setState(createTabGroup(companyId, name.trim()));
+  };
+
+  /**
+   * Create a new folder as a child of `parentId`, or as a top-level folder when no parent is
+   * given. Picked from a context menu so the new subfolder lands inside the folder the user
+   * right-clicked on, instead of always appearing at the top of the sidebar.
+   */
+  const createSubFolder = (parentId: string | undefined) => {
+    const name = window.prompt("Name der Gruppe?");
+    if (!name?.trim()) return;
+    setState(createTabGroup(companyId, name.trim(), parentId));
+  };
+
+  /** Rename inline starten (Doppelklick auf den Namen oder Rechtsklick › Umbenennen). */
+  const startRename = (groupId: string, currentLabel: string) => {
+    setRenamingId(groupId);
+    setRenameDraft(currentLabel);
+  };
+
+  /**
+   * Rename übernehmen.
+   *
+   * Ein leerer Name wird verworfen (kein Ordner ohne Namen) und ein Name, der dem
+   * aktuellen entspricht, ändert nichts -- sonst würde der Ordner bei jedem
+   * Blur neu geschrieben und der Cursor aus dem Eingabefeld springen.
+   */
+  const commitRename = (groupId: string, currentLabel: string) => {
+    const next = renameDraft.trim();
+    setRenamingId(null);
+    if (!next || next === currentLabel) return;
+    setState(renameTabGroup(companyId, groupId, next));
   };
 
   return (
@@ -314,291 +378,32 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
           </ContextMenu>
         ) : (
           <ul className="flex flex-col gap-0.5 px-0.5">
-            {groups.map((group, groupIndex) => {
-              const open = !group.collapsed;
-              const folderDrop = dragOverId === `group:${group.id}`;
-              const isOverGroup = dragOverGroup?.id === group.id;
-              const isOverBefore = isOverGroup && dragOverGroup.position === "before";
-              const isOverAfter = isOverGroup && dragOverGroup.position === "after";
-              const visual = visualFor(group.id);
-              return (
-                <li
-                  key={group.id}
-                  className={cn(
-                    "relative transition-all",
-                    isOverBefore &&
-                      "before:absolute before:-top-[2px] before:left-1 before:right-1 before:h-[3px] before:rounded-full before:bg-sky-500 before:z-20",
-                    isOverAfter &&
-                      "after:absolute after:-bottom-[2px] after:left-1 after:right-1 after:h-[3px] after:rounded-full after:bg-sky-500 after:z-20",
-                  )}
-                >
-                  <ContextMenu>
-                    <ContextMenuTrigger
-                      className={cn(
-                        "group/folder flex w-full cursor-grab items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent active:cursor-grabbing",
-                        folderDrop && "bg-sidebar-accent ring-1 ring-sky-400/50",
-                      )}
-                      draggable
-                      onClick={() =>
-                        setState(
-                          setTabGroupOpen(companyId, group.id, !open),
-                        )
-                      }
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData(DND_LAB_GROUP, group.id);
-                        event.dataTransfer.effectAllowed = "move";
-                      }}
-                      onDragOver={(event) => {
-                        const types = [...event.dataTransfer.types];
-                        if (
-                          !types.includes(DND_LAB_GROUP) &&
-                          !types.includes(DND_LAB_APP) &&
-                          !types.includes(DND_VAULT_NOTE)
-                        ) {
-                          return;
-                        }
-                        event.preventDefault();
-                        if (types.includes(DND_LAB_GROUP)) {
-                          event.dataTransfer.dropEffect = "move";
-                          const rect = event.currentTarget.getBoundingClientRect();
-                          const isAfter = event.clientY > rect.top + rect.height / 2;
-                          setDragOverGroup({
-                            id: group.id,
-                            position: isAfter ? "after" : "before",
-                          });
-                          setDragOverId(null);
-                          return;
-                        }
-                        event.dataTransfer.dropEffect = types.includes(DND_VAULT_NOTE)
-                          ? "copy"
-                          : "move";
-                        setDragOverGroup(null);
-                        setDragOverId(`group:${group.id}`);
-                      }}
-                      onDragLeave={() => {
-                        setDragOverId((id) =>
-                          id === `group:${group.id}` ? null : id,
-                        );
-                        setDragOverGroup((prev) =>
-                          prev?.id === group.id ? null : prev,
-                        );
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        setDragOverId(null);
-                        const noteDataRaw = event.dataTransfer.getData(DND_VAULT_NOTE);
-                        if (noteDataRaw) {
-                          try {
-                            const { path, name } = JSON.parse(noteDataRaw);
-                            setState(linkVaultNoteToGroup(companyId, path, name, group.id));
-                          } catch {
-                            const cleanName = noteDataRaw.split("/").pop() ?? "Notiz";
-                            setState(linkVaultNoteToGroup(companyId, noteDataRaw, cleanName, group.id));
-                          }
-                          setState(setTabGroupOpen(companyId, group.id, true));
-                          setDragOverGroup(null);
-                          return;
-                        }
-                        const groupId = event.dataTransfer.getData(DND_LAB_GROUP);
-                        const appId = event.dataTransfer.getData(DND_LAB_APP);
-                        if (groupId) {
-                          const ids = groups.map((g) => g.id);
-                          const placeAfter =
-                            dragOverGroup?.id === group.id
-                              ? dragOverGroup.position === "after"
-                              : false;
-                          setState(
-                            reorderTabGroups(
-                              companyId,
-                              moveIdToSlot(ids, groupId, group.id, placeAfter),
-                            ),
-                          );
-                          setDragOverGroup(null);
-                          return;
-                        }
-                        if (appId) {
-                          setState(moveAppToGroup(companyId, appId, group.id));
-                          setState(
-                            setTabGroupOpen(companyId, group.id, true),
-                          );
-                        }
-                        setDragOverGroup(null);
-                      }}
-                    >
-                      <LabFolderIcon apps={group.apps} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium tracking-tight">
-                          {group.label}
-                        </span>
-                      </span>
-                      <span className="ml-1 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-sidebar-foreground/10 px-1.5 text-[10px] font-semibold tabular-nums text-sidebar-foreground/60">
-                        {group.apps.length}
-                      </span>
-                      <ChevronDownIcon open={open} className="ml-1" />
-                    </ContextMenuTrigger>
-                    <ContextMenuContent className="min-w-56 rounded-xl p-1.5">
-                      <ContextMenuItem
-                        className="gap-2 rounded-lg px-2.5 py-2"
-                        onClick={() =>
-                          setState(setTabGroupOpen(companyId, group.id, true))
-                        }
-                      >
-                        <IconFolder className="size-4" />
-                        Öffnen
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        className="gap-2 rounded-lg px-2.5 py-2"
-                        onClick={createFolder}
-                      >
-                        <IconFolderPlus className="size-4" />
-                        Neue Gruppe
-                      </ContextMenuItem>
-
-                      <ContextMenuSeparator />
-
-                      <ContextMenuItem
-                        className="gap-2 rounded-lg px-2.5 py-2"
-                        disabled={groupIndex === 0}
-                        onClick={() => {
-                          const ids = groups.map((g) => g.id);
-                          setState(
-                            reorderTabGroups(
-                              companyId,
-                              moveIdToStart(ids, group.id),
-                            ),
-                          );
-                        }}
-                      >
-                        <IconArrowBarUp className="size-4" />
-                        Nach ganz oben
-                      </ContextMenuItem>
-
-                      <ContextMenuItem
-                        className="gap-2 rounded-lg px-2.5 py-2"
-                        disabled={groupIndex === 0}
-                        onClick={() => {
-                          const ids = groups.map((g) => g.id);
-                          const prevGroup = groups[groupIndex - 1];
-                          if (prevGroup) {
-                            setState(
-                              reorderTabGroups(
-                                companyId,
-                                moveIdToSlot(
-                                  ids,
-                                  group.id,
-                                  prevGroup.id,
-                                  false,
-                                ),
-                              ),
-                            );
-                          }
-                        }}
-                      >
-                        <IconArrowUp className="size-4" />
-                        Eins nach oben
-                      </ContextMenuItem>
-
-                      <ContextMenuItem
-                        className="gap-2 rounded-lg px-2.5 py-2"
-                        disabled={groupIndex === groups.length - 1}
-                        onClick={() => {
-                          const ids = groups.map((g) => g.id);
-                          const nextGroup = groups[groupIndex + 1];
-                          if (nextGroup) {
-                            setState(
-                              reorderTabGroups(
-                                companyId,
-                                moveIdToSlot(
-                                  ids,
-                                  group.id,
-                                  nextGroup.id,
-                                  true,
-                                ),
-                              ),
-                            );
-                          }
-                        }}
-                      >
-                        <IconArrowDown className="size-4" />
-                        Eins nach unten
-                      </ContextMenuItem>
-
-                      <ContextMenuItem
-                        className="gap-2 rounded-lg px-2.5 py-2"
-                        disabled={groupIndex === groups.length - 1}
-                        onClick={() => {
-                          const ids = groups.map((g) => g.id);
-                          setState(
-                            reorderTabGroups(
-                              companyId,
-                              moveIdToEnd(ids, group.id),
-                            ),
-                          );
-                        }}
-                      >
-                        <IconArrowBarDown className="size-4" />
-                        Nach ganz unten
-                      </ContextMenuItem>
-
-                      <ContextMenuSeparator />
-
-                      <ContextMenuItem
-                        className="gap-2 rounded-lg px-2.5 py-2 text-destructive focus:text-destructive"
-                        onClick={() => {
-                          const msg =
-                            group.apps.length > 0
-                              ? `Gruppe „${group.label}" löschen? Die ${group.apps.length} App(s) werden ebenfalls entfernt.`
-                              : `Gruppe „${group.label}" löschen?`;
-                          if (window.confirm(msg)) {
-                            setState(setTabGroupOpen(companyId, group.id, false));
-                            setTimeout(() => {
-                              setState(deleteTabGroup(companyId, group.id));
-                            }, 0);
-                          }
-                        }}
-                      >
-                        <IconTrash className="size-4" />
-                        Gruppe löschen
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                    {/*
-                     * The apps inside this folder.
-                     *
-                     * This block was missing: the row folded the group and showed its
-                     * count and a chevron, the click wrote `collapsed` to the store
-                     * correctly, and then the loop moved straight on to the next
-                     * group. So every folder claimed to hold its apps -- "Tool Stack"
-                     * said 5 -- and clicking it changed nothing, because there was no
-                     * list to reveal. The apps were in the store and in `group.apps`
-                     * the whole time; nothing ever put them on screen.
-                     *
-                     * Guarded by `open` so a folder only spends rows on the rows it
-                     * has, and `group.apps.length` means an empty folder renders
-                     * nothing rather than an empty bordered box.
-                     */}
-                    {open && group.apps.length > 0 ? (
-                      <ul className="mt-0.5 flex flex-col gap-0.5 pl-3">
-                        {group.apps.map((app) => (
-                          <AppRow
-                            app={app}
-                            companyId={companyId}
-                            dragOverId={dragOverId}
-                            groupId={group.id}
-                            key={app.id}
-                            onChange={setState}
-                            onConnect={setConnectId}
-                            onEdit={setEditingId}
-                            openVaultPath={openVaultPath}
-                            setDragOverId={setDragOverId}
-                            state={state}
-                          />
-                        ))}
-                      </ul>
-                    ) : null}
-              </li>
-              );
-            })}
+            {tree.roots.map((rootGroup) => (
+              <GroupBranch
+                branchProps={{
+                  companyId,
+                  depth: 0,
+                  dragOverGroup,
+                  dragOverId,
+                  onConnect: setConnectId,
+                  onCreateNewRoot: createFolder,
+                  onDragOverGroupChange: setDragOverGroup,
+                  onDragOverIdChange: setDragOverId,
+                  onEdit: setEditingId,
+                  onRenameCommit: commitRename,
+                  onRenameStart: startRename,
+                  openVaultPath,
+                  renamingDraft: renameDraft,
+                  renamingId,
+                  setRenamingDraft: setRenameDraft,
+                  setRenamingId: setRenamingId,
+                  setState,
+                  state,
+                }}
+                group={rootGroup}
+                key={rootGroup.id}
+              />
+            ))}
             {groups.length > 1 ? (
               <li
                 className={cn(
@@ -622,10 +427,7 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
                   setDragOverId(null);
                   const groupId = event.dataTransfer.getData(DND_LAB_GROUP);
                   if (groupId) {
-                    const ids = groups.map((g) => g.id);
-                    setState(
-                      reorderTabGroups(companyId, moveIdToEnd(ids, groupId)),
-                    );
+                    setState(moveTabGroupToRootEnd(companyId, groupId));
                   }
                 }}
               />
@@ -731,6 +533,507 @@ export function LabToolsNav({ companyId }: { companyId: string }) {
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Recursive folder row + its own subtree.
+ *
+ * A folder can hold apps (`group.apps`) and other folders (`group.children`). The same
+ * row handles opening the folder, renaming it, drag-and-drop reordering, and the
+ * "move into ..." submenu. Subfolders are indented one step per level, the chevron
+ * folds the whole subtree, and the drop handlers walk the parent chain so a folder
+ * cannot be dropped onto itself or one of its own descendants.
+ *
+ * The component is invoked by the sidebar and by itself, which is why everything
+ * that depends on the outer state (dragOverId, renamingId, setState, ...) is
+ * passed through `branchProps` instead of being read from a context.
+ */
+type GroupBranchProps = {
+  companyId: string;
+  depth: number;
+  dragOverGroup: { id: string; position: "before" | "after" } | null;
+  dragOverId: string | null;
+  onConnect: (id: string) => void;
+  onCreateNewRoot: () => void;
+  onDragOverGroupChange: (
+    next:
+      | { id: string; position: "before" | "after" }
+      | null
+      | ((
+          prev: { id: string; position: "before" | "after" } | null,
+        ) => { id: string; position: "before" | "after" } | null),
+  ) => void;
+  onDragOverIdChange: (
+    next: string | null | ((prev: string | null) => string | null),
+  ) => void;
+  onEdit: (id: string | null) => void;
+  onRenameCommit: (groupId: string, currentLabel: string) => void;
+  onRenameStart: (groupId: string, currentLabel: string) => void;
+  openVaultPath: string | null;
+  renamingDraft: string;
+  renamingId: string | null;
+  setRenamingDraft: (next: string) => void;
+  setRenamingId: (next: string | null) => void;
+  setState: (next: Level3BrowserState) => void;
+  state: Level3BrowserState;
+};
+
+type GroupBranchArgs = {
+  branchProps: GroupBranchProps;
+  group: LabFolderNode;
+};
+
+const GROUP_INDENT = 12;
+
+function GroupBranch({ branchProps, group }: GroupBranchArgs) {
+  const {
+    companyId,
+    depth,
+    dragOverGroup,
+    dragOverId,
+    onConnect,
+    onCreateNewRoot,
+    onDragOverGroupChange,
+    onDragOverIdChange,
+    onEdit,
+    onRenameCommit,
+    onRenameStart,
+    openVaultPath,
+    renamingDraft,
+    renamingId,
+    setRenamingDraft,
+    setRenamingId,
+    setState,
+    state,
+  } = branchProps;
+  const open = !group.collapsed;
+  const folderDrop = dragOverId === `group:${group.id}` || dragOverId === `group:${group.id}:nest`;
+  const isOverGroup = dragOverGroup?.id === group.id;
+  const isOverBefore =
+    Boolean(isOverGroup) && dragOverGroup?.position === "before";
+  const isOverAfter =
+    Boolean(isOverGroup) && dragOverGroup?.position === "after";
+  const visual = visualFor(group.id);
+  const totalCount =
+    group.apps.length +
+    group.children.reduce(
+      (acc: number, child: LabFolderNode) => acc + child.apps.length,
+      0,
+    );
+  /**
+   * Dragged id must be known before deciding whether this folder can be a drop target.
+   * The sidebar never holds the active drag, but the dataTransfer of the row currently
+   * being dragged does, and the drop handler reads it on drop. The drop preview uses
+   * the row's hover handler instead, which sees the same types.
+   */
+  const nestedIndex = group.children.map((child: LabFolderNode) => child.id);
+  const dragIntoHere = (
+    event: ReactDragEvent<HTMLDivElement>,
+    isNested: boolean,
+  ): { mode: "nest" | "reorder"; placeAfter?: boolean } | null => {
+    const types = [...event.dataTransfer.types];
+    if (!types.includes(DND_LAB_GROUP)) return null;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rect = event.currentTarget.getBoundingClientRect();
+    const cursor = event.clientY - rect.top;
+    // A "drop into this folder" needs a clear center band, otherwise every drag ends
+    // nesting just because the user grazed the row.
+    const nestZoneTop = rect.height * 0.35;
+    const nestZoneBottom = rect.height * 0.65;
+    if (isNested && cursor > nestZoneTop && cursor < nestZoneBottom) {
+      return { mode: "nest" };
+    }
+    return {
+      mode: "reorder",
+      placeAfter: cursor >= rect.height / 2,
+    };
+  };
+
+  const handleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    // The hover handler stashes the result in `dragOverGroup` so we know whether the
+    // pointer was on the top/bottom edge (reorder sibling) or in the centre band
+    // (nest inside this folder). Reading before clearing is what makes a single drop
+    // predictable; once we clear, the next hover wipes the hint.
+    const pending = dragOverGroup;
+    onDragOverIdChange(null);
+    onDragOverGroupChange(null);
+    const noteDataRaw = event.dataTransfer.getData(DND_VAULT_NOTE);
+    if (noteDataRaw) {
+      try {
+        const { path, name } = JSON.parse(noteDataRaw);
+        setState(
+          linkVaultNoteToGroup(companyId, path, name, group.id),
+        );
+      } catch {
+        const cleanName = noteDataRaw.split("/").pop() ?? "Notiz";
+        setState(
+          linkVaultNoteToGroup(companyId, noteDataRaw, cleanName, group.id),
+        );
+      }
+      setState(setTabGroupOpen(companyId, group.id, true));
+      return;
+    }
+    const groupId = event.dataTransfer.getData(DND_LAB_GROUP);
+    if (groupId) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const cursor = event.clientY - rect.top;
+      const nestZoneTop = rect.height * 0.35;
+      const nestZoneBottom = rect.height * 0.65;
+      const hoverSaysNest =
+        pending?.id === `group:${group.id}:nest`;
+      const useNest =
+        groupId !== group.id &&
+        depth >= 0 &&
+        (hoverSaysNest ||
+          (pending === null &&
+            cursor > nestZoneTop &&
+            cursor < nestZoneBottom));
+      const placeAfter =
+        pending?.id === group.id
+          ? pending.position === "after"
+          : false;
+      if (useNest) {
+        setState(moveTabGroupIntoGroup(companyId, groupId, group.id));
+      } else {
+        setState(
+          moveTabGroupAsSibling(
+            companyId,
+            groupId,
+            group.id,
+            placeAfter,
+          ),
+        );
+      }
+      return;
+    }
+    const appId = event.dataTransfer.getData(DND_LAB_APP);
+    if (appId) {
+      setState(moveAppToGroup(companyId, appId, group.id));
+      setState(setTabGroupOpen(companyId, group.id, true));
+    }
+  };
+
+  return (
+    <li
+      className={cn(
+        "relative transition-all",
+        isOverBefore &&
+          "before:absolute before:-top-[2px] before:left-1 before:right-1 before:h-[3px] before:rounded-full before:bg-sky-500 before:z-20",
+        isOverAfter &&
+          "after:absolute after:-bottom-[2px] after:left-1 after:right-1 after:h-[3px] after:rounded-full after:bg-sky-500 after:z-20",
+      )}
+    >
+      <ContextMenu>
+        <ContextMenuTrigger
+          className={cn(
+            "group/folder flex w-full cursor-grab items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent active:cursor-grabbing",
+            folderDrop && "bg-sidebar-accent ring-1 ring-sky-400/50",
+          )}
+          draggable
+          onClick={() =>
+            setState(setTabGroupOpen(companyId, group.id, !open))
+          }
+          onDragStart={(event) => {
+            event.dataTransfer.setData(DND_LAB_GROUP, group.id);
+            event.dataTransfer.effectAllowed = "move";
+          }}
+          onDragOver={(event) => {
+            const types = [...event.dataTransfer.types];
+            if (
+              !types.includes(DND_LAB_GROUP) &&
+              !types.includes(DND_LAB_APP) &&
+              !types.includes(DND_VAULT_NOTE)
+            ) {
+              return;
+            }
+            if (types.includes(DND_LAB_GROUP)) {
+              const hint = dragIntoHere(event, depth >= 0);
+              if (!hint) return;
+              if (hint.mode === "nest") {
+                onDragOverGroupChange(null);
+                onDragOverIdChange(`group:${group.id}:nest`);
+              } else {
+                onDragOverGroupChange({
+                  id: group.id,
+                  position: hint.placeAfter ? "after" : "before",
+                });
+                onDragOverIdChange(null);
+              }
+              return;
+            }
+            event.dataTransfer.dropEffect = types.includes(DND_VAULT_NOTE)
+              ? "copy"
+              : "move";
+            onDragOverGroupChange(null);
+            onDragOverIdChange(`group:${group.id}`);
+          }}
+          onDragLeave={() => {
+            onDragOverIdChange((id) =>
+              id === `group:${group.id}` || id === `group:${group.id}:nest`
+                ? null
+                : id,
+            );
+            onDragOverGroupChange((prev) =>
+              prev?.id === group.id ? null : prev,
+            );
+          }}
+          onDrop={handleDrop}
+          style={{ paddingLeft: `${depth * GROUP_INDENT + 8}px` }}
+        >
+          <LabFolderIcon apps={group.apps} />
+          {renamingId === group.id ? (
+            <input
+              aria-label="Gruppenname"
+              autoFocus
+              className="min-w-0 flex-1 rounded-md border border-sidebar-border bg-background px-1.5 py-0.5 text-[13px] font-medium tracking-tight outline-none focus:border-sky-400/60"
+              draggable={false}
+              onBlur={() => onRenameCommit(group.id, group.label)}
+              onChange={(e) => setRenamingDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onDragStart={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onRenameCommit(group.id, group.label);
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setRenamingId(null);
+                }
+                e.stopPropagation();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              value={renamingDraft}
+            />
+          ) : (
+            <span
+              className="min-w-0 flex-1"
+              onDoubleClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRenameStart(group.id, group.label);
+              }}
+              title="Doppelklick zum Umbenennen"
+            >
+              <span className="block truncate text-[13px] font-medium tracking-tight">
+                {group.label}
+              </span>
+            </span>
+          )}
+          <span className="ml-1 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-sidebar-foreground/10 px-1.5 text-[10px] font-semibold tabular-nums text-sidebar-foreground/60">
+            {totalCount}
+          </span>
+          <ChevronDownIcon open={open} className="ml-1" />
+        </ContextMenuTrigger>
+        <ContextMenuContent className="min-w-60 rounded-xl p-1.5">
+          <ContextMenuItem
+            className="gap-2 rounded-lg px-2.5 py-2"
+            onClick={() =>
+              setState(setTabGroupOpen(companyId, group.id, true))
+            }
+          >
+            <IconFolder className="size-4" />
+            Öffnen
+          </ContextMenuItem>
+          <ContextMenuItem
+            className="gap-2 rounded-lg px-2.5 py-2"
+            onClick={() => onRenameStart(group.id, group.label)}
+          >
+            <IconPencil className="size-4" />
+            Umbenennen
+          </ContextMenuItem>
+          <ContextMenuItem
+            className="gap-2 rounded-lg px-2.5 py-2"
+            onClick={() =>
+              setState(
+                createTabGroup(
+                  companyId,
+                  `Unterordner von ${group.label}`.slice(0, 32),
+                  group.id,
+                ),
+              )
+            }
+          >
+            <IconFolderPlus className="size-4" />
+            Neuer Unterordner
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+
+          {group.parentId ? (
+            <ContextMenuItem
+              className="gap-2 rounded-lg px-2.5 py-2"
+              onClick={() =>
+                setState(moveTabGroupToRoot(companyId, group.id))
+              }
+            >
+              <IconCornerDownRight
+                className="size-4 rotate-180"
+                style={{ transform: "scaleX(-1)" }}
+              />
+              Auf oberste Ebene verschieben
+            </ContextMenuItem>
+          ) : null}
+
+          <GroupMoveSubmenu
+            companyId={companyId}
+            currentGroupId={group.id}
+            depth={depth}
+            draggableGroupIds={(() => {
+              const forbidden = new Set<string>([
+                group.id,
+                ...tabGroupDescendantIds(state, group.id),
+              ]);
+              return Array.from(
+                new Set(
+                  state.tabGroups
+                    .map((g) => g.id)
+                    .filter((id) => !forbidden.has(id)),
+                ),
+              );
+            })()}
+            onMove={(targetId) =>
+              setState(moveTabGroupIntoGroup(companyId, group.id, targetId))
+            }
+            state={state}
+          />
+
+          <ContextMenuSeparator />
+
+          <ContextMenuItem
+            className="gap-2 rounded-lg px-2.5 py-2"
+            disabled={nestedIndex.length === 0 || nestedIndex[0] === group.id}
+            onClick={() =>
+              setState(reorderTabGroupWithinSiblings(companyId, group.id, "up"))
+            }
+          >
+            <IconArrowUp className="size-4" />
+            Eins nach oben
+          </ContextMenuItem>
+          <ContextMenuItem
+            className="gap-2 rounded-lg px-2.5 py-2"
+            disabled={
+              nestedIndex.length === 0 ||
+              nestedIndex[nestedIndex.length - 1] === group.id
+            }
+            onClick={() =>
+              setState(
+                reorderTabGroupWithinSiblings(companyId, group.id, "down"),
+              )
+            }
+          >
+            <IconArrowDown className="size-4" />
+            Eins nach unten
+          </ContextMenuItem>
+
+          <ContextMenuSeparator />
+
+          <ContextMenuItem
+            className="gap-2 rounded-lg px-2.5 py-2 text-destructive focus:text-destructive"
+            onClick={() => {
+              const msg =
+                group.apps.length > 0
+                  ? `Gruppe „${group.label}" löschen? Die ${group.apps.length} App(s) werden ebenfalls entfernt.`
+                  : `Gruppe „${group.label}" löschen?`;
+              if (window.confirm(msg)) {
+                setState(setTabGroupOpen(companyId, group.id, false));
+                setTimeout(() => {
+                  setState(deleteTabGroup(companyId, group.id));
+                }, 0);
+              }
+            }}
+          >
+            <IconTrash className="size-4" />
+            Gruppe löschen
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+      {open && group.apps.length > 0 ? (
+        <ul className="mt-0.5 flex flex-col gap-0.5">
+          {group.apps.map((app) => (
+            <AppRow
+              app={app}
+              companyId={companyId}
+              dragOverId={dragOverId}
+              groupId={group.id}
+              key={app.id}
+              onChange={setState}
+              onConnect={onConnect}
+              onEdit={onEdit}
+              openVaultPath={openVaultPath}
+              setDragOverId={onDragOverIdChange}
+              state={state}
+            />
+          ))}
+        </ul>
+      ) : null}
+      {open && group.children.length > 0 ? (
+        <ul className="mt-0.5 flex flex-col gap-0.5">
+          {group.children.map((child) => (
+            <GroupBranch
+              branchProps={{ ...branchProps, depth: depth + 1 }}
+              group={child}
+              key={child.id}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * "Verschieben in ..." submenu: list every folder that is not this folder and
+ * not a descendant of this folder. Picking one makes the current folder a child
+ * of the picked one.
+ */
+function GroupMoveSubmenu({
+  currentGroupId,
+  draggableGroupIds,
+  onMove,
+  state,
+}: {
+  companyId: string;
+  currentGroupId: string;
+  depth: number;
+  draggableGroupIds: string[];
+  onMove: (targetId: string) => void;
+  state: Level3BrowserState;
+}) {
+  const treeLocal = labFolderTree(state);
+  const out: Array<{ id: string; label: string; depth: number }> = [];
+  const walk = (nodes: LabFolderNode[], depth: number) => {
+    for (const n of nodes) {
+      if (draggableGroupIds.includes(n.id)) {
+        out.push({ id: n.id, label: n.label, depth });
+        walk(n.children, depth + 1);
+      }
+    }
+  };
+  walk(treeLocal.roots, 0);
+  if (out.length === 0) return null;
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger className="gap-2 rounded-lg px-2.5 py-2">
+        <IconCornerDownRight className="size-4" />
+        Verschieben in …
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="min-w-56 rounded-xl p-1.5">
+        {out.map((target) => (
+          <ContextMenuItem
+            className="gap-2 rounded-lg px-2.5 py-2"
+            key={target.id}
+            onClick={() => onMove(target.id)}
+            style={{ paddingLeft: `${8 + target.depth * 12}px` }}
+          >
+            <IconFolder className="size-4" />
+            <span className="truncate">{target.label}</span>
+          </ContextMenuItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
   );
 }
 

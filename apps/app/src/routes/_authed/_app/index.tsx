@@ -8,7 +8,7 @@ export const Route = createFileRoute("/_authed/_app/")({
 function RouteComponent() {
   const navigate = useNavigate();
   useEffect(() => {
-    navigate({ to: "/model-one" });
+    navigate({ to: "/agents" });
   }, [navigate]);
   return null;
 }

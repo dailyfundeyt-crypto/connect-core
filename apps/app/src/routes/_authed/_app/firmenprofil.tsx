@@ -17,7 +17,7 @@ import { z } from "zod";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 
 const DailyfunPageApp = lazy(async () => {
-  const mod = await import("../../../dailyfun/ConnectApp");
+  const mod: any = await import("../../../dailyfun/ConnectApp" as any);
   return { default: mod.DailyfunPageApp };
 });
 

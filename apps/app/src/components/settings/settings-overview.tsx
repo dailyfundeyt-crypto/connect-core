@@ -1,42 +1,27 @@
 /**
- * Settings landing page — the first thing the user sees at /settings.
- *
- * 7-section card grid + search bar, matching the mobile design language
- * (dark, minimal, accessible).
+ * Settings landing page — 7-group card grid matching Grok Bot design system.
  */
 import {
-  IconUser,
-  IconPlugConnected,
-  IconSettings,
-  IconCloudUpload,
-  IconKeyboard,
-  IconShieldLock,
+  IconBuildingStore,
+  IconCpu,
   IconInfoCircle,
+  IconPalette,
+  IconPlugConnected,
+  IconRobot,
   IconSearch,
+  IconShieldLock,
+  IconUser,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { IconBrain } from "@tabler/icons-react";
-import { brainAgentsQueryOptions } from "@/lib/brain/queries";
 import { cn } from "@/lib/utils";
-import { useSignOut } from "@/lib/auth/use-sign-out";
 
 type Section = {
   id: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** Accent color from globals.css dark palette */
   accent: string;
   title: string;
   description: string;
-  /**
-   * The real targets of this card, as the sidebar spells them.
-   *
-   * These are the sidebar's own hashes and routes, not ids invented for the card: every chip used
-   * to be plain text describing a destination that did not exist, so a card click on `#konnektoren`
-   * fell through to a page with no such section. A chip is a link, so it has to name a hash
-   * `PANELS` (routes/_authed/settings/index.tsx) actually resolves.
-   */
   chips: { title: string; hash?: string; to?: string }[];
 };
 
@@ -45,294 +30,202 @@ const SECTIONS: Section[] = [
     id: "konto",
     icon: IconUser,
     accent: "#60a5fa",
-    title: "Konto & Sicherheit",
-    description: "Dein Profil, aktive Sitzungen und Abmeldung verwalten.",
+    title: "Konto",
+    description: "Profilname, Avatar und Sitzungsabmeldung.",
     chips: [
-      { title: "Profil", hash: "profile" },
-      { title: "Sitzungen", hash: "security" },
-      { title: "Konto", hash: "konto" },
+      { title: "Profil & Name", hash: "konto" },
       { title: "Abmelden", to: "/sign" },
     ],
   },
   {
-    id: "konnektoren",
-    icon: IconPlugConnected,
-    accent: "#a78bfa",
-    title: "Konnektoren",
-    description: "API-Keys, Model-Anbieter, MCP-Server und Connector-Mapping.",
+    id: "unternehmen",
+    icon: IconBuildingStore,
+    accent: "#38bdf8",
+    title: "Unternehmen",
+    description: "Multi-Company Profile, Workspace-Tools und Browser-Gruppen.",
     chips: [
-      { title: "E-Mail-Konten", hash: "konnektoren" },
-      { title: "API-Keys", hash: "api-keys" },
-      { title: "Model-Provider", hash: "model-provider" },
+      { title: "Firmenprofile", to: "/settings/companies" },
+      { title: "Tools pro Firma", hash: "company-tools" },
+      { title: "Sidebar-Tools", hash: "sidebar-tools" },
+      { title: "Browser-Gruppen", hash: "browser-groups" },
+    ],
+  },
+  {
+    id: "agenten",
+    icon: IconRobot,
+    accent: "#a78bfa",
+    title: "Agenten",
+    description: "Standing Instructions, Fokus-Kette und Sprachausgabe.",
+    chips: [
+      { title: "Standing Instructions", hash: "standing-instructions" },
+      { title: "Fokus-Kette", hash: "fokus" },
+      { title: "Voice & Keyring", hash: "voice" },
+      { title: "Desktop-Steuerung & Sicherheit", hash: "desktop-control" },
+    ],
+  },
+  {
+    id: "modelle",
+    icon: IconCpu,
+    accent: "#34d399",
+    title: "Modelle & CLIs",
+    description: "API-Keys, Model-Provider, lokale CLIs und Token-Budgets.",
+    chips: [
+      { title: "Globale API-Keys", hash: "api-keys" },
+      { title: "Modell-Provider", hash: "model-provider" },
+      { title: "Anbieter-CLIs", hash: "cli-providers" },
+      { title: "Model One", hash: "model-one" },
+      { title: "Codex-Nutzung", hash: "codex-usage" },
+    ],
+  },
+  {
+    id: "integrationen",
+    icon: IconPlugConnected,
+    accent: "#fb923c",
+    title: "Integrationen & MCP",
+    description: "MCP-Server, Handy-Tunnel, Helium-Brücke und Google Drive Sync.",
+    chips: [
       { title: "MCP-Server", hash: "mcp" },
       { title: "Connector-Mapping", hash: "connector-mapping" },
-      { title: "Browser-Gruppen", hash: "browser-groups" },
-      { title: "Ubuntu-Maschinen", hash: "ubuntu-machines" },
-      { title: "Voice", hash: "voice" },
       { title: "Handy verbinden", hash: "handy-verbinden" },
-      { title: "Connect-Agenten", hash: "connect-agenten" },
+      { title: "Mein Helium", hash: "mein-helium" },
+      { title: "Sync & Backup", hash: "sync-backup" },
+      { title: "Kalender", hash: "calendar" },
+      { title: "Ubuntu-Maschinen", hash: "ubuntu-machines" },
     ],
   },
   {
-    id: "ki-modelle",
-    icon: IconSettings,
-    accent: "#34d399",
-    title: "KI-Modelle",
-    description: "Standard-Agent, Modell-Auswahl und API-Provider pro Agent.",
-    chips: [
-      { title: "Modell One", hash: "model-provider" },
-      { title: "Modell Two", hash: "model-provider" },
-      { title: "Anbieter", hash: "api-keys" },
-    ],
-  },
-  {
-    id: "browser-gruppen",
-    icon: IconSettings,
-    accent: "#fb923c",
-    title: "Browser-Gruppen",
-    description: "Standard-Browser-Gruppen für neue Tabs festlegen.",
-    chips: [
-      { title: "Gruppen", hash: "browser-groups" },
-      { title: "Domains", hash: "browser-groups" },
-      { title: "Apple-Dot", hash: "browser-groups" },
-    ],
-  },
-  {
-    id: "sync-backup",
-    icon: IconCloudUpload,
-    accent: "#60a5fa",
-    title: "Sync & Backup",
-    description: "Google-Drive-Sicherung, Cloud-Sync-Status und Wiederherstellung.",
-    chips: [
-      { title: "Drive-Backup", hash: "sync-backup" },
-      { title: "Supabase-Sync", hash: "sync-backup" },
-    ],
-  },
-  {
-    id: "erweitert",
-    icon: IconKeyboard,
+    id: "darstellung",
+    icon: IconPalette,
     accent: "#f472b6",
-    title: "Erweitert",
-    description: "Farbmodus, Shortcuts, Deployment-Modus, Background-Agent und Codex-Nutzung.",
+    title: "Darstellung",
+    description: "Farbmodus (Hell/Dunkel) und Tastatur-Kurzbefehle.",
     chips: [
-      { title: "Darstellung", hash: "appearance" },
-      { title: "Fokus", hash: "fokus" },
-      { title: "Shortcuts", hash: "shortcuts" },
-      { title: "Deployment", hash: "deployment-mode" },
-      { title: "Spark", hash: "brain" },
-      { title: "Codex", hash: "codex-usage" },
-      { title: "Helium-Shell", hash: "helium-shell" },
-      { title: "Benachrichtigungen", hash: "benachrichtigungen" },
-      { title: "Standing Instructions", hash: "standing-instructions" },
+      { title: "Farbmodus", hash: "appearance" },
+      { title: "Tastatur-Shortcuts", hash: "shortcuts" },
     ],
   },
   {
-    id: "info",
-    icon: IconInfoCircle,
+    id: "sicherheit",
+    icon: IconShieldLock,
     accent: "#94a3b8",
-    title: "Über & Rechtliches",
-    description: "Version, Logs, Datenschutzerklärung und Nutzungsbedingungen.",
+    title: "Sicherheit & System",
+    description: "Deployment-Modus, Lab-Session, Quota und Systeminfo.",
     chips: [
-      { title: "Version", hash: "info" },
-      { title: "Feedback", hash: "donate" },
-      { title: "Über", hash: "uber" },
-      { title: "Datenschutz", hash: "privacy" },
-      { title: "Nutzungsbedingungen", hash: "terms" },
+      { title: "Deployment Mode", hash: "deployment-mode" },
+      { title: "Erweitert & Lab", hash: "erweitert" },
+      { title: "Über & Info", hash: "uber" },
     ],
   },
 ];
 
-function searchSections(query: string): Section[] {
-  const q = query.toLowerCase().trim();
-  if (!q) return SECTIONS;
-  return SECTIONS.filter(
-    (s) =>
-      s.title.toLowerCase().includes(q) ||
-      s.description.toLowerCase().includes(q) ||
-      s.chips.some((c) => c.title.toLowerCase().includes(q)),
-  );
-}
-
-/**
- * The Brain card's preview: the agents that currently hold a scope, four at a time.
- *
- * The Brain page is a separate route, so a chip alone gave no sense of whether anything is in it.
- * The agent list is the part worth previewing — it is what the page edits — and it comes from the
- * same query the Brain page uses, so the card and the page can never disagree.
- */
-function BrainPreview() {
-  const brain = useQuery(brainAgentsQueryOptions());
-  const agents = brain.data?.available ? brain.data.agents : [];
-  const preview = agents.slice(0, 4);
-
-  if (brain.isPending) {
-    return <div className="mt-auto h-9 w-9 animate-pulse rounded-[10px] bg-white/[0.04]" />;
-  }
-
-  if (preview.length === 0) {
-    // An empty Brain is a real state, not a loading one, and it is worth naming: the folder either
-    // is not reachable from this machine or holds nothing yet.
-    return (
-      <div className="mt-auto flex items-center gap-2 text-[11px] text-[#4a4a4a]">
-        <IconBrain className="size-3.5" />
-        {brain.data?.available
-          ? "Noch keine Agenten mit Berechtigungen"
-          : "Spark nicht auf diesem Gerät"}
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-auto flex items-center gap-2.5">
-      <div className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gradient-to-b from-[#7ec8f5] to-[#3b9de0] shadow-sm ring-1 ring-black/10">
-        <span className="absolute inset-[3px] grid grid-cols-2 grid-rows-2 gap-[2px] overflow-hidden rounded-[7px] bg-white/25 p-[2px]">
-          {preview.map((agent) => (
-            <span
-              className="flex min-w-0 items-center justify-center overflow-hidden rounded-[3px] bg-white/70 px-[2px] text-[7px] font-semibold leading-none text-[#0b3a5a]"
-              key={agent.slug}
-              title={agent.name ?? agent.slug}
-            >
-              {(agent.name ?? agent.slug).slice(0, 2).toUpperCase()}
-            </span>
-          ))}
-        </span>
-      </div>
-      <span className="text-[11px] leading-tight text-[#4a4a4a]">
-        {agents.length} Agent{agents.length === 1 ? "" : "en"} mit Zugriff
-        {agents.length > 4 ? ` · +${agents.length - 4}` : ""}
-      </span>
-    </div>
-  );
-}
-
 export function SettingsOverview() {
   const [query, setQuery] = useState("");
-  const { signOut } = useSignOut();
 
-  const sections = searchSections(query);
+  const filtered = query.trim()
+    ? SECTIONS.map((s) => ({
+        ...s,
+        chips: s.chips.filter((c) =>
+          c.title.toLowerCase().includes(query.toLowerCase()),
+        ),
+      })).filter(
+        (s) =>
+          s.chips.length > 0 ||
+          s.title.toLowerCase().includes(query.toLowerCase()) ||
+          s.description.toLowerCase().includes(query.toLowerCase()),
+      )
+    : SECTIONS;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-16 pt-4 md:px-6 md:pt-8">
-      {/* ── Page title ── */}
-      <h1 className="text-2xl font-bold text-white max-md:sr-only">Einstellungen</h1>
-      <p className="mt-1 text-sm text-[#666] max-md:mt-0">
-        Alles an einem Ort — suchen oder wählen, was du brauchst.
-      </p>
+    <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
+      {/* Header */}
+      <div className="mb-6 flex flex-col gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight text-[#1c1b19] dark:text-[#ededef]">
+          Einstellungen
+        </h1>
+        <p className="text-sm text-[#6b6862] dark:text-[#a1a1aa]">
+          Verwalte deine Kontoeinstellungen, Unternehmensprofile, Agenten-Konfigurationen und Integrationen.
+        </p>
 
-      {/* ── Search bar ── */}
-      <div className="group relative mt-4 md:mt-6">
-        <IconSearch className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#555] transition-colors group-focus-within:text-[#888]" />
-        <input
-          autoComplete="off"
-          className="h-11 w-full rounded-full border border-white/[0.08] bg-white/[0.05] pl-10 pr-4 text-[16px] text-white md:bg-[#161616] md:text-sm placeholder:text-[#444] transition-colors focus:border-white/[0.16] focus:outline-none focus:ring-0"
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Einstellungen durchsuchen …"
-          type="search"
-          value={query}
-        />
+        {/* Search */}
+        <div className="relative mt-2 max-w-md">
+          <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/60 dark:text-[#71717a]" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Einstellungen durchsuchen…"
+            className="h-10 w-full rounded-xl border border-black/[0.08] bg-white/70 pl-9 pr-4 text-sm text-[#1c1b19] outline-none transition-all placeholder:text-muted-foreground focus:border-sky-500/60 focus:ring-2 focus:ring-sky-500/20 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-[#ededef] dark:placeholder:text-[#71717a]"
+          />
+        </div>
       </div>
 
-      {/* ── Card grid ── */}
-      <div
-        className={cn(
-          "mt-6 grid gap-3",
-          sections.length === 1
-            ? "grid-cols-1"
-            : "grid-cols-1 sm:grid-cols-2",
-        )}
-      >
-        {sections.map((section) => {
-          const Icon = section.icon;
-          /*
-           * The card itself opens the first real target of its area.
-           *
-           * It used to link to `#${section.id}` — an id invented for the card. None of them is a
-           * section in this page (`konto`, `konnektoren`, `helium-shell`, …) and only `erweitert`
-           * is a hash `PanelOutlet` resolves, so six of seven cards navigated nowhere. The first
-           * chip is the honest target: it is a destination the sidebar also links to.
-           */
-          const first = section.chips[0];
-          return (
-            <Link
-              key={section.id}
-              to={first.to ?? "/settings"}
-              hash={first.to ? undefined : first.hash}
-              className={cn(
-                "group relative flex flex-col gap-3 rounded-2xl border border-white/[0.07]",
-                "bg-white/[0.035] p-5 backdrop-blur-sm transition-all duration-150 md:bg-[#111]",
-                "hover:border-white/[0.14] hover:bg-[#141414]",
-                "hover:scale-[1.01] cursor-pointer",
-              )}
-            >
-              {/* Left accent bar */}
-              <div
-                className="absolute left-0 top-4 bottom-4 w-0.5 rounded-full opacity-40 transition-opacity duration-150 group-hover:opacity-70"
-                style={{ backgroundColor: section.accent }}
-              />
-
-              {/* Icon */}
-              <div
-                className="inline-flex size-10 items-center justify-center rounded-xl"
-                style={{
-                  backgroundColor: `${section.accent}18`,
-                  color: section.accent,
-                }}
-              >
-                <Icon className="size-5" />
+      {/* Grid of 7 Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {filtered.map((sec) => (
+          <div
+            key={sec.id}
+            className={cn(
+              "group relative flex flex-col justify-between rounded-2xl border border-black/[0.08] bg-white/60 p-5 transition-all duration-150",
+              "hover:border-black/15 hover:bg-white/80 hover:shadow-sm",
+              "dark:border-white/[0.08] dark:bg-[#121216] dark:hover:border-white/15 dark:hover:bg-[#16161b]",
+            )}
+          >
+            <div>
+              <div className="flex items-center gap-3">
+                <div
+                  className="flex size-9 items-center justify-center rounded-xl transition-transform duration-150 group-hover:scale-105"
+                  style={{
+                    backgroundColor: `${sec.accent}18`,
+                    color: sec.accent,
+                  }}
+                >
+                  <sec.icon className="size-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-[#1c1b19] dark:text-[#ededef]">
+                    {sec.title}
+                  </h2>
+                </div>
               </div>
+              <p className="mt-2.5 text-xs leading-relaxed text-[#6b6862] dark:text-[#a1a1aa]">
+                {sec.description}
+              </p>
+            </div>
 
-              {/* Title */}
-              <div>
-                <h3 className="text-[15px] font-semibold text-white">
-                  {section.title}
-                </h3>
-                <p className="mt-1 text-[13px] leading-relaxed text-[#666]">
-                  {section.description}
-                </p>
-              </div>
-
-              {/* Chips — each one a real destination, so they are links and not labels */}
-              <div className="mt-auto flex flex-wrap gap-1.5">
-                {section.chips.map((chip) => (
+            {/* Chips */}
+            <div className="mt-4 flex flex-wrap gap-1.5 pt-3 border-t border-black/[0.04] dark:border-white/[0.04]">
+              {sec.chips.map((chip) =>
+                chip.to ? (
                   <Link
                     key={chip.title}
-                    to={chip.to ?? "/settings"}
-                    hash={chip.to ? undefined : chip.hash}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (chip.to === "/sign") {
-                        event.preventDefault();
-                        void signOut();
-                      }
-                    }}
-                    className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] text-[#9aa3b2] transition-colors md:px-2 md:py-0.5 md:text-[11px] md:text-[#555] hover:bg-white/[0.12] hover:text-[#ccc]"
+                    to={chip.to}
+                    className={cn(
+                      "inline-flex items-center rounded-lg border border-black/[0.08] bg-black/[0.03] px-2.5 py-1 text-xs font-medium text-[#4a4741] transition-colors",
+                      "hover:border-black/20 hover:bg-black/[0.06] hover:text-[#1c1b19]",
+                      "dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-[#a1a1aa] dark:hover:border-sky-500/40 dark:hover:bg-sky-500/10 dark:hover:text-sky-300",
+                    )}
                   >
                     {chip.title}
                   </Link>
-                ))}
-              </div>
-
-              {/* The Brain is a separate route, so the card previews what is actually in it. */}
-              {section.id === "erweitert" ? <BrainPreview /> : null}
-            </Link>
-          );
-        })}
-
-        {sections.length === 0 && (
-          <div className="col-span-full py-12 text-center text-sm text-[#555]">
-            Keine Ergebnisse für „{query}"
+                ) : (
+                  <Link
+                    key={chip.title}
+                    to="/settings"
+                    hash={chip.hash}
+                    className={cn(
+                      "inline-flex items-center rounded-lg border border-black/[0.08] bg-black/[0.03] px-2.5 py-1 text-xs font-medium text-[#4a4741] transition-colors",
+                      "hover:border-black/20 hover:bg-black/[0.06] hover:text-[#1c1b19]",
+                      "dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-[#a1a1aa] dark:hover:border-sky-500/40 dark:hover:bg-sky-500/10 dark:hover:text-sky-300",
+                    )}
+                  >
+                    {chip.title}
+                  </Link>
+                ),
+              )}
+            </div>
           </div>
-        )}
+        ))}
       </div>
-
-      {/*
-       * The sidebar is `hidden md:block`, so below the md breakpoint this page is the only way
-       * through and there is no left sidebar to point at. Stating it everywhere was the wrong half
-       * of the two-layout design: the sentence is true on the desktop layout and false on the phone.
-       */}
-      <p className="mt-8 hidden text-center text-xs text-[#3a3a3a] md:block">
-        Du kannst auch direkt über die linke Seitenleiste navigieren.
-      </p>
     </div>
   );
 }

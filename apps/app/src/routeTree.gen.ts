@@ -14,18 +14,24 @@ import { Route as LocalConnectRouteImport } from './routes/local-connect'
 import { Route as SignRouteImport } from './routes/sign'
 import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
 import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
+import { Route as AuthedDesignRouteImport } from './routes/_authed/design'
 import { Route as AuthedFocusRouteImport } from './routes/_authed/focus'
 import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
 import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settings/route'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
 import { Route as AuthedAppBrainRouteImport } from './routes/_authed/_app/brain'
+import { Route as AuthedAppCouncilRouteImport } from './routes/_authed/_app/council'
 import { Route as AuthedAppFirmenprofilRouteImport } from './routes/_authed/_app/firmenprofil'
 import { Route as AuthedAppMarketRouteImport } from './routes/_authed/_app/market'
 import { Route as AuthedAppModelOneRouteImport } from './routes/_authed/_app/model-one'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
+import { Route as AuthedAppSimulationRouteImport } from './routes/_authed/_app/simulation'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAppSocialRouteImport } from './routes/_authed/_app/social'
+import { Route as AuthedAppStoreRouteImport } from './routes/_authed/_app/store'
+import { Route as AuthedAppSwarmRouteImport } from './routes/_authed/_app/swarm'
+import { Route as AuthedAppUsageRouteImport } from './routes/_authed/_app/usage'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAdminAuditRouteImport } from './routes/_authed/admin/audit'
 import { Route as AuthedAdminBoundariesRouteImport } from './routes/_authed/admin/boundaries'
@@ -37,6 +43,7 @@ import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admi
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsBrainRouteImport } from './routes/_authed/settings/brain'
+import { Route as AuthedSettingsCompaniesRouteImport } from './routes/_authed/settings/companies'
 import { Route as AuthedSettingsDiagnoseRouteImport } from './routes/_authed/settings/diagnose'
 import { Route as AuthedSettingsDiagnoseCompaniesRouteImport } from './routes/_authed/settings/diagnose-companies'
 import { Route as AuthedSettingsMcpRouteImport } from './routes/_authed/settings/mcp'
@@ -79,6 +86,11 @@ const AuthedAdminRouteRoute = AuthedAdminRouteRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedDesignRoute = AuthedDesignRouteImport.update({
+  id: '/design',
+  path: '/design',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedFocusRoute = AuthedFocusRouteImport.update({
   id: '/focus',
   path: '/focus',
@@ -109,6 +121,11 @@ const AuthedAppBrainRoute = AuthedAppBrainRouteImport.update({
   path: '/brain',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppCouncilRoute = AuthedAppCouncilRouteImport.update({
+  id: '/council',
+  path: '/council',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppFirmenprofilRoute = AuthedAppFirmenprofilRouteImport.update({
   id: '/firmenprofil',
   path: '/firmenprofil',
@@ -129,6 +146,11 @@ const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
   path: '/routines',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppSimulationRoute = AuthedAppSimulationRouteImport.update({
+  id: '/simulation',
+  path: '/simulation',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppSkillsRoute = AuthedAppSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
@@ -137,6 +159,21 @@ const AuthedAppSkillsRoute = AuthedAppSkillsRouteImport.update({
 const AuthedAppSocialRoute = AuthedAppSocialRouteImport.update({
   id: '/social',
   path: '/social',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppStoreRoute = AuthedAppStoreRouteImport.update({
+  id: '/store',
+  path: '/store',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppSwarmRoute = AuthedAppSwarmRouteImport.update({
+  id: '/swarm',
+  path: '/swarm',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppUsageRoute = AuthedAppUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
@@ -193,6 +230,11 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
 const AuthedSettingsBrainRoute = AuthedSettingsBrainRouteImport.update({
   id: '/brain',
   path: '/brain',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
+const AuthedSettingsCompaniesRoute = AuthedSettingsCompaniesRouteImport.update({
+  id: '/companies',
+  path: '/companies',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
 const AuthedSettingsDiagnoseRoute = AuthedSettingsDiagnoseRouteImport.update({
@@ -302,16 +344,22 @@ export interface FileRoutesByFullPath {
   '/sign': typeof SignRoute
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
+  '/design': typeof AuthedDesignRoute
   '/focus': typeof AuthedFocusRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/bot': typeof AuthedAppBotRoute
   '/brain': typeof AuthedAppBrainRoute
+  '/council': typeof AuthedAppCouncilRoute
   '/firmenprofil': typeof AuthedAppFirmenprofilRoute
   '/market': typeof AuthedAppMarketRoute
   '/model-one': typeof AuthedAppModelOneRoute
   '/routines': typeof AuthedAppRoutinesRoute
+  '/simulation': typeof AuthedAppSimulationRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/social': typeof AuthedAppSocialRoute
+  '/store': typeof AuthedAppStoreRoute
+  '/swarm': typeof AuthedAppSwarmRoute
+  '/usage': typeof AuthedAppUsageRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/admin/computers': typeof AuthedAdminComputersRoute
@@ -321,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/brain': typeof AuthedSettingsBrainRoute
+  '/settings/companies': typeof AuthedSettingsCompaniesRoute
   '/settings/diagnose': typeof AuthedSettingsDiagnoseRoute
   '/settings/diagnose-companies': typeof AuthedSettingsDiagnoseCompaniesRoute
   '/settings/mcp': typeof AuthedSettingsMcpRoute
@@ -346,16 +395,22 @@ export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
   '/local-connect': typeof LocalConnectRoute
   '/sign': typeof SignRoute
+  '/design': typeof AuthedDesignRoute
   '/focus': typeof AuthedFocusRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/bot': typeof AuthedAppBotRoute
   '/brain': typeof AuthedAppBrainRoute
+  '/council': typeof AuthedAppCouncilRoute
   '/firmenprofil': typeof AuthedAppFirmenprofilRoute
   '/market': typeof AuthedAppMarketRoute
   '/model-one': typeof AuthedAppModelOneRoute
   '/routines': typeof AuthedAppRoutinesRoute
+  '/simulation': typeof AuthedAppSimulationRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/social': typeof AuthedAppSocialRoute
+  '/store': typeof AuthedAppStoreRoute
+  '/swarm': typeof AuthedAppSwarmRoute
+  '/usage': typeof AuthedAppUsageRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/admin/computers': typeof AuthedAdminComputersRoute
@@ -365,6 +420,7 @@ export interface FileRoutesByTo {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/brain': typeof AuthedSettingsBrainRoute
+  '/settings/companies': typeof AuthedSettingsCompaniesRoute
   '/settings/diagnose': typeof AuthedSettingsDiagnoseRoute
   '/settings/diagnose-companies': typeof AuthedSettingsDiagnoseCompaniesRoute
   '/settings/mcp': typeof AuthedSettingsMcpRoute
@@ -394,16 +450,22 @@ export interface FileRoutesById {
   '/_authed/admin': typeof AuthedAdminRouteRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/_authed/_app': typeof AuthedAppRouteWithChildren
+  '/_authed/design': typeof AuthedDesignRoute
   '/_authed/focus': typeof AuthedFocusRoute
   '/_authed/onboarding': typeof AuthedOnboardingRoute
   '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/brain': typeof AuthedAppBrainRoute
+  '/_authed/_app/council': typeof AuthedAppCouncilRoute
   '/_authed/_app/firmenprofil': typeof AuthedAppFirmenprofilRoute
   '/_authed/_app/market': typeof AuthedAppMarketRoute
   '/_authed/_app/model-one': typeof AuthedAppModelOneRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
+  '/_authed/_app/simulation': typeof AuthedAppSimulationRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/_app/social': typeof AuthedAppSocialRoute
+  '/_authed/_app/store': typeof AuthedAppStoreRoute
+  '/_authed/_app/swarm': typeof AuthedAppSwarmRoute
+  '/_authed/_app/usage': typeof AuthedAppUsageRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
   '/_authed/admin/boundaries': typeof AuthedAdminBoundariesRoute
   '/_authed/admin/computers': typeof AuthedAdminComputersRoute
@@ -413,6 +475,7 @@ export interface FileRoutesById {
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
   '/_authed/settings/brain': typeof AuthedSettingsBrainRoute
+  '/_authed/settings/companies': typeof AuthedSettingsCompaniesRoute
   '/_authed/settings/diagnose': typeof AuthedSettingsDiagnoseRoute
   '/_authed/settings/diagnose-companies': typeof AuthedSettingsDiagnoseCompaniesRoute
   '/_authed/settings/mcp': typeof AuthedSettingsMcpRoute
@@ -443,16 +506,22 @@ export interface FileRouteTypes {
     | '/sign'
     | '/admin'
     | '/settings'
+    | '/design'
     | '/focus'
     | '/onboarding'
     | '/bot'
     | '/brain'
+    | '/council'
     | '/firmenprofil'
     | '/market'
     | '/model-one'
     | '/routines'
+    | '/simulation'
     | '/skills'
     | '/social'
+    | '/store'
+    | '/swarm'
+    | '/usage'
     | '/admin/audit'
     | '/admin/boundaries'
     | '/admin/computers'
@@ -462,6 +531,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/brain'
+    | '/settings/companies'
     | '/settings/diagnose'
     | '/settings/diagnose-companies'
     | '/settings/mcp'
@@ -487,16 +557,22 @@ export interface FileRouteTypes {
     | '/'
     | '/local-connect'
     | '/sign'
+    | '/design'
     | '/focus'
     | '/onboarding'
     | '/bot'
     | '/brain'
+    | '/council'
     | '/firmenprofil'
     | '/market'
     | '/model-one'
     | '/routines'
+    | '/simulation'
     | '/skills'
     | '/social'
+    | '/store'
+    | '/swarm'
+    | '/usage'
     | '/admin/audit'
     | '/admin/boundaries'
     | '/admin/computers'
@@ -506,6 +582,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/brain'
+    | '/settings/companies'
     | '/settings/diagnose'
     | '/settings/diagnose-companies'
     | '/settings/mcp'
@@ -534,16 +611,22 @@ export interface FileRouteTypes {
     | '/_authed/admin'
     | '/_authed/settings'
     | '/_authed/_app'
+    | '/_authed/design'
     | '/_authed/focus'
     | '/_authed/onboarding'
     | '/_authed/_app/bot'
     | '/_authed/_app/brain'
+    | '/_authed/_app/council'
     | '/_authed/_app/firmenprofil'
     | '/_authed/_app/market'
     | '/_authed/_app/model-one'
     | '/_authed/_app/routines'
+    | '/_authed/_app/simulation'
     | '/_authed/_app/skills'
     | '/_authed/_app/social'
+    | '/_authed/_app/store'
+    | '/_authed/_app/swarm'
+    | '/_authed/_app/usage'
     | '/_authed/admin/audit'
     | '/_authed/admin/boundaries'
     | '/_authed/admin/computers'
@@ -553,6 +636,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
     | '/_authed/settings/brain'
+    | '/_authed/settings/companies'
     | '/_authed/settings/diagnose'
     | '/_authed/settings/diagnose-companies'
     | '/_authed/settings/mcp'
@@ -619,6 +703,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminRouteRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/design': {
+      id: '/_authed/design'
+      path: '/design'
+      fullPath: '/design'
+      preLoaderRoute: typeof AuthedDesignRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/focus': {
       id: '/_authed/focus'
       path: '/focus'
@@ -661,6 +752,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppBrainRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/council': {
+      id: '/_authed/_app/council'
+      path: '/council'
+      fullPath: '/council'
+      preLoaderRoute: typeof AuthedAppCouncilRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/firmenprofil': {
       id: '/_authed/_app/firmenprofil'
       path: '/firmenprofil'
@@ -689,6 +787,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppRoutinesRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/simulation': {
+      id: '/_authed/_app/simulation'
+      path: '/simulation'
+      fullPath: '/simulation'
+      preLoaderRoute: typeof AuthedAppSimulationRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/skills': {
       id: '/_authed/_app/skills'
       path: '/skills'
@@ -701,6 +806,27 @@ declare module '@tanstack/react-router' {
       path: '/social'
       fullPath: '/social'
       preLoaderRoute: typeof AuthedAppSocialRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/store': {
+      id: '/_authed/_app/store'
+      path: '/store'
+      fullPath: '/store'
+      preLoaderRoute: typeof AuthedAppStoreRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/swarm': {
+      id: '/_authed/_app/swarm'
+      path: '/swarm'
+      fullPath: '/swarm'
+      preLoaderRoute: typeof AuthedAppSwarmRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/usage': {
+      id: '/_authed/_app/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof AuthedAppUsageRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/admin/': {
@@ -778,6 +904,13 @@ declare module '@tanstack/react-router' {
       path: '/brain'
       fullPath: '/settings/brain'
       preLoaderRoute: typeof AuthedSettingsBrainRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
+    '/_authed/settings/companies': {
+      id: '/_authed/settings/companies'
+      path: '/companies'
+      fullPath: '/settings/companies'
+      preLoaderRoute: typeof AuthedSettingsCompaniesRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
     '/_authed/settings/diagnose': {
@@ -952,6 +1085,7 @@ const AuthedAdminRouteRouteWithChildren =
 
 interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsBrainRoute: typeof AuthedSettingsBrainRoute
+  AuthedSettingsCompaniesRoute: typeof AuthedSettingsCompaniesRoute
   AuthedSettingsDiagnoseRoute: typeof AuthedSettingsDiagnoseRoute
   AuthedSettingsDiagnoseCompaniesRoute: typeof AuthedSettingsDiagnoseCompaniesRoute
   AuthedSettingsMcpRoute: typeof AuthedSettingsMcpRoute
@@ -962,6 +1096,7 @@ interface AuthedSettingsRouteRouteChildren {
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsBrainRoute: AuthedSettingsBrainRoute,
+  AuthedSettingsCompaniesRoute: AuthedSettingsCompaniesRoute,
   AuthedSettingsDiagnoseRoute: AuthedSettingsDiagnoseRoute,
   AuthedSettingsDiagnoseCompaniesRoute: AuthedSettingsDiagnoseCompaniesRoute,
   AuthedSettingsMcpRoute: AuthedSettingsMcpRoute,
@@ -978,12 +1113,17 @@ const AuthedSettingsRouteRouteWithChildren =
 interface AuthedAppRouteChildren {
   AuthedAppBotRoute: typeof AuthedAppBotRoute
   AuthedAppBrainRoute: typeof AuthedAppBrainRoute
+  AuthedAppCouncilRoute: typeof AuthedAppCouncilRoute
   AuthedAppFirmenprofilRoute: typeof AuthedAppFirmenprofilRoute
   AuthedAppMarketRoute: typeof AuthedAppMarketRoute
   AuthedAppModelOneRoute: typeof AuthedAppModelOneRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
+  AuthedAppSimulationRoute: typeof AuthedAppSimulationRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppSocialRoute: typeof AuthedAppSocialRoute
+  AuthedAppStoreRoute: typeof AuthedAppStoreRoute
+  AuthedAppSwarmRoute: typeof AuthedAppSwarmRoute
+  AuthedAppUsageRoute: typeof AuthedAppUsageRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
   AuthedAppAgentAgentIdRoute: typeof AuthedAppAgentAgentIdRoute
   AuthedAppChannelChannelIdRoute: typeof AuthedAppChannelChannelIdRoute
@@ -996,12 +1136,17 @@ interface AuthedAppRouteChildren {
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppBotRoute: AuthedAppBotRoute,
   AuthedAppBrainRoute: AuthedAppBrainRoute,
+  AuthedAppCouncilRoute: AuthedAppCouncilRoute,
   AuthedAppFirmenprofilRoute: AuthedAppFirmenprofilRoute,
   AuthedAppMarketRoute: AuthedAppMarketRoute,
   AuthedAppModelOneRoute: AuthedAppModelOneRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
+  AuthedAppSimulationRoute: AuthedAppSimulationRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppSocialRoute: AuthedAppSocialRoute,
+  AuthedAppStoreRoute: AuthedAppStoreRoute,
+  AuthedAppSwarmRoute: AuthedAppSwarmRoute,
+  AuthedAppUsageRoute: AuthedAppUsageRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,
   AuthedAppAgentAgentIdRoute: AuthedAppAgentAgentIdRoute,
   AuthedAppChannelChannelIdRoute: AuthedAppChannelChannelIdRoute,
@@ -1019,6 +1164,7 @@ interface AuthedRouteChildren {
   AuthedAdminRouteRoute: typeof AuthedAdminRouteRouteWithChildren
   AuthedSettingsRouteRoute: typeof AuthedSettingsRouteRouteWithChildren
   AuthedAppRoute: typeof AuthedAppRouteWithChildren
+  AuthedDesignRoute: typeof AuthedDesignRoute
   AuthedFocusRoute: typeof AuthedFocusRoute
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
 }
@@ -1027,6 +1173,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRouteRoute: AuthedAdminRouteRouteWithChildren,
   AuthedSettingsRouteRoute: AuthedSettingsRouteRouteWithChildren,
   AuthedAppRoute: AuthedAppRouteWithChildren,
+  AuthedDesignRoute: AuthedDesignRoute,
   AuthedFocusRoute: AuthedFocusRoute,
   AuthedOnboardingRoute: AuthedOnboardingRoute,
 }

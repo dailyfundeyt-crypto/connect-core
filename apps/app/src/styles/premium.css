@@ -1,4 +1,4 @@
-﻿/*
+/*
  * CONNECT PREMIUM (Desktop + Web) — dunkler Tech-Look, ruhig und teuer.
  *
  * Aktiv, wenn <html> die Klassen `connect-premium` UND `dark` trägt (index.html setzt beide beim
@@ -9,6 +9,8 @@
  * Gleiche Akzentfarben wie die Handy-Version (mobile.css: --cm-accent / --cm-accent-2), damit
  * Handy und PC ein Produkt sind. Nur CSS: keine Komponente muss dafür umgebaut werden.
  */
+
+@import "./tokens.css";
 
 html.connect-premium.dark:not(.connect-mobile-ui),
 html.connect-premium.dark:not(.connect-mobile-ui) .lab-light {

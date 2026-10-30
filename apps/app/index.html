@@ -17,27 +17,96 @@
       if (window.location.hostname === "127.0.0.1") {
         window.location.hostname = "localhost";
       }
-      // localStorage throws in some privacy modes; a theme is not worth taking the app down for.
-      try {
-        // One-time migration from the old light startup default. Later choices are preserved.
-        if (window.localStorage.getItem("connect-theme.default-dark.v2") !== "1") {
-          window.localStorage.setItem("connect-theme", "dark");
-          window.localStorage.setItem("connect-theme.default-dark.v2", "1");
+      (function () {
+        // v06 themeV2 check: localStorage flag, window override, or URL parameter
+        var isThemeV2 = false;
+        try {
+          var v2Flag = window.localStorage.getItem("connect.flags.themeV2");
+          if (v2Flag === "true") {
+            isThemeV2 = true;
+          } else if (v2Flag === "false") {
+            isThemeV2 = false;
+          } else if (window.__CONNECT_FLAGS_V06 && typeof window.__CONNECT_FLAGS_V06.themeV2 === "boolean") {
+            isThemeV2 = window.__CONNECT_FLAGS_V06.themeV2;
+          } else if (window.location.search && window.location.search.indexOf("themeV2=1") !== -1) {
+            isThemeV2 = true;
+          }
+        } catch (e) {}
+
+        if (isThemeV2) {
+          // --- Theme v2: Dark Mode standardmäßig (System folgen) ---
+          try {
+            var pref = window.localStorage.getItem("connect.theme.v2") || "system";
+            var systemDark = true;
+            if (window.matchMedia) {
+              systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            }
+
+            var resolved = "dark";
+            if (pref === "light") {
+              resolved = "light";
+            } else if (pref === "dark") {
+              resolved = "dark";
+            } else if (pref === "system") {
+              resolved = systemDark ? "dark" : "light";
+            }
+
+            if (resolved === "dark") {
+              document.documentElement.classList.add("dark");
+              document.documentElement.style.colorScheme = "dark";
+            } else {
+              document.documentElement.classList.remove("dark");
+              document.documentElement.style.colorScheme = "light";
+            }
+
+            var premium = window.localStorage.getItem("connect.premium") !== "off";
+            document.documentElement.classList.toggle("connect-premium", premium);
+          } catch (e) {
+            // First principles: ohne Info dunkel
+            document.documentElement.classList.add("dark");
+            document.documentElement.style.colorScheme = "dark";
+          }
+          return;
         }
-        // Connect Premium: beim ersten Start einmalig auf den dunklen Premium-Look umstellen.
-        // Abschalten: localStorage "connect.premium" = "off". Hell/Dunkel bleibt im Menü umschaltbar.
-        const premium = window.localStorage.getItem("connect.premium") !== "off";
-        document.documentElement.classList.toggle("connect-premium", premium);
-        if (premium && window.localStorage.getItem("connect.premium.v1") !== "1") {
-          window.localStorage.setItem("connect-theme", "dark");
-          window.localStorage.setItem("connect.premium.v1", "1");
+
+        // --- Altes Verhalten (Swarm v3 / Legacy): wenn Flag aus ist ---
+        document.documentElement.classList.add("dark");
+        document.documentElement.style.colorScheme = "dark";
+
+        try {
+          let storedTheme = window.localStorage.getItem("connect-theme");
+          if (storedTheme === "system" || !storedTheme || window.localStorage.getItem("connect-theme.default-dark.v3") !== "1") {
+            if (storedTheme === "system" || !storedTheme) {
+              storedTheme = "dark";
+              window.localStorage.setItem("connect-theme", "dark");
+            }
+            window.localStorage.setItem("connect-theme.default-dark.v3", "1");
+          }
+
+          const premium = window.localStorage.getItem("connect.premium") !== "off";
+          document.documentElement.classList.toggle("connect-premium", premium);
+          if (premium && window.localStorage.getItem("connect.premium.v1") !== "1") {
+            if (storedTheme !== "light") {
+              window.localStorage.setItem("connect-theme", "dark");
+              storedTheme = "dark";
+            }
+            window.localStorage.setItem("connect.premium.v1", "1");
+          }
+
+          const isLight = storedTheme === "light";
+          if (isLight) {
+            document.documentElement.classList.remove("dark");
+            document.documentElement.style.colorScheme = "light";
+          } else {
+            document.documentElement.classList.add("dark");
+            document.documentElement.style.colorScheme = "dark";
+          }
+        } catch {
+          document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = "dark";
         }
-        const storedTheme = window.localStorage.getItem("connect-theme");
-        const dark = storedTheme === null || storedTheme === "dark";
-        document.documentElement.classList.toggle("dark", dark);
-        document.documentElement.style.colorScheme = dark ? "dark" : "light";
-      } catch {}
-    </script>
+      })();
+        </script>
     <style>
       /* Public-Intro: kleines Overlay oben links, KEIN Viewport-Block. */
       /* Früher war `min-height: 100dvh` der Grund, warum User im Lade- */
@@ -53,6 +122,76 @@
       html.dark #connect-public-intro a { color: #60a5fa; }
       @keyframes connect-intro-in { from { opacity: 0; } to { opacity: 1; } }
     </style>
+    <script src="/__connect/watch.js" defer></script>
+    <script>
+      /* helium-stale: Boot-Waechter. Laedt das App-Bundle nicht (Server startet neu, alte Tunnel-Adresse,
+         veraltete index.html), bleibt die Seite nicht mehr auf der Intro-Karte haengen. */
+      (function () {
+        var GATEWAY = "https://connect-kunc-preview.vercel.app/gateway";
+        var tunnel = /\.trycloudflare\.com$/i.test(location.hostname);
+        var KEY = "connect.bootguard.at";
+        // helium-pairfix: Reloads nie auf eine Einmal-Link-Adresse (Token waere schon verbraucht).
+        try { if (/^\/(pair|__connect\/(pc-)?pair)\/?$/.test(location.pathname)) history.replaceState(history.state, "", "/"); } catch (e) {}
+        var busy = false;
+        function intro() { return document.getElementById("connect-public-intro"); }
+        function cleanup() {
+          var jobs = [];
+          try {
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (r) { return Promise.all(r.map(function (x) { return x.unregister(); })); }));
+            }
+            if (window.caches && caches.keys) {
+              jobs.push(caches.keys().then(function (k) { return Promise.all(k.map(function (n) { return caches.delete(n); })); }));
+            }
+          } catch (e) {}
+          return Promise.all(jobs).catch(function () {});
+        }
+        function toGateway(reason) { location.replace(GATEWAY + "?from=tunnel&reason=" + encodeURIComponent(reason)); }
+        function recentlyReloaded() { try { return Date.now() - Number(sessionStorage.getItem(KEY) || 0) < 60000; } catch (e) { return true; } }
+        function markReload() { try { sessionStorage.setItem(KEY, String(Date.now())); } catch (e) {} }
+        function showStuck() {
+          var box = intro();
+          if (!box || document.getElementById("connect-intro-retry")) return;
+          var p = document.createElement("p");
+          p.innerHTML = 'Connect konnte nicht geladen werden. <a href="#" id="connect-intro-retry">Neu laden</a>';
+          box.appendChild(p);
+          document.getElementById("connect-intro-retry").addEventListener("click", function (e) {
+            e.preventDefault();
+            cleanup().then(function () { location.reload(); });
+          });
+        }
+        function recover(reason) {
+          if (busy || !intro()) return;
+          busy = true;
+          cleanup().then(function () {
+            if (tunnel) {
+              return fetch("/__connect/ping", { cache: "no-store" }).then(function (r) {
+                if (r.ok && !recentlyReloaded()) { markReload(); location.reload(); } else { toGateway(reason); }
+              }, function () { toGateway(reason); });
+            }
+            if (!recentlyReloaded()) { markReload(); location.reload(); return; }
+            busy = false;
+            showStuck();
+          });
+        }
+        window.addEventListener("error", function (e) {
+          var t = e && e.target;
+          if (t && (t.tagName === "SCRIPT" || t.tagName === "LINK") && /\/assets\//.test(t.src || t.href || "")) recover("asset");
+        }, true);
+        window.addEventListener("load", function () { setTimeout(function () { recover("timeout"); }, 4000); });
+        document.addEventListener("DOMContentLoaded", function () {
+          var a = document.getElementById("connect-intro-login");
+          if (!a) return;
+          if (tunnel) a.href = GATEWAY;
+          a.addEventListener("click", function (e) {
+            e.preventDefault();
+            var href = tunnel ? GATEWAY : "/sign";
+            cleanup().then(function () { location.assign(href); });
+          });
+        });
+      })();
+    </script>
+
   </head>
   <body>
     <div id="root">
@@ -60,7 +199,7 @@
       <div id="connect-public-intro" lang="de">
         <img src="/brand/connect-logo.png" alt="Connect Logo" width="28" height="28" />
         <h1>Connect</h1>
-        <p>Arbeitsbereich für KI-Agenten der Kunc GmbH. <a href="/sign">Anmelden</a></p>
+        <p>Arbeitsbereich für KI-Agenten der Kunc GmbH. <a id="connect-intro-login" href="/sign">Anmelden</a></p>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

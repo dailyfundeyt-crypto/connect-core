@@ -1,6 +1,9 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
+import type { Database } from "../db/client";
+import { createLearnRouter } from "./learn/routes";
+import { createRenameNotesRouter } from "./rename-note";
 import { backlinksFor, buildGraph, referencedImage } from "./graph";
 import {
   BRAIN_AREAS,
@@ -28,7 +31,7 @@ import {
   writeMarkdown,
   coreOf,
 } from "./store";
-import { accessFor, dashboard, readRoutines, resumeRoutine, runRoutine, startPulse, toggleNeed, worldOf } from "./maps";
+import { accessFor, dashboard, generateAndWriteAgentMap, getAgentMap, readRoutines, resumeRoutine, runRoutine, startPulse, toggleNeed, worldOf } from "./maps";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const LOOPBACK_IP = /^(127\.|::1$|::ffff:127\.)/;
@@ -74,6 +77,7 @@ const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg
 export function createBrainRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   configuredRoot: string | null = brainRootFromEnv(),
+  database?: Database,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", requireUser);
@@ -432,6 +436,41 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
     }
   });
 
+  app.get("/agents/:slug/map", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const slug = context.req.param("slug");
+    if (!isValidSlug(slug)) return context.json({ error: "Ungültiges Agent-Kürzel." }, 400);
+    try {
+      const map = await getAgentMap(coreOf(brain.root), slug);
+      return context.json({ available: true, slug, ...map });
+    } catch (error) {
+      return context.json({ error: error instanceof Error ? error.message : "Map-Datei konnte nicht geladen werden." }, 404);
+    }
+  });
+
+  app.post("/agents/:slug/map", async (context) => {
+    const brain = await root();
+    if (!brain.available) return context.json(unavailable(brain.reason), 404);
+    const slug = context.req.param("slug");
+    if (!isValidSlug(slug)) return context.json({ error: "Ungültiges Agent-Kürzel." }, 400);
+    try {
+      const result = await generateAndWriteAgentMap(coreOf(brain.root), slug);
+      // Workspace-Sync falls connectAgentId gefunden wird
+      const file = await readAgents(coreOf(brain.root));
+      const entry = file.agents.find((a) => a.slug === slug);
+      if (entry?.connectAgentId) {
+        try {
+          const { syncAgentMapToWorkspace } = await import("../agent-hub/agent-terminal-manager");
+          await syncAgentMapToWorkspace(entry.connectAgentId, slug);
+        } catch {}
+      }
+      return context.json({ available: true, slug, ...result });
+    } catch (error) {
+      return context.json({ error: error instanceof Error ? error.message : "Map-Datei konnte nicht erzeugt werden." }, 500);
+    }
+  });
+
   /* ---------------------------------------------------------------- MAPS (Screen + Pulse) */
   const jsonBody = async (context: { req: { header: (n: string) => string | undefined; json: () => Promise<unknown> } }) => {
     if (!(context.req.header("content-type") ?? "").includes("application/json")) return null;
@@ -490,6 +529,12 @@ const unavailable = (reason: string) => ({ available: false as const, reason });
     const brain = await root();
     return brain.available ? brain.root : null;
   });
+
+  // Agent 1 (Spark Brain): Notiz-Titel umbenennen → POST /api/brain/notes/rename
+  app.route("/notes", createRenameNotesRouter(configuredRoot));
+
+  // Spark-Learn Routes (/api/brain/learn/*)
+  app.route("/learn", createLearnRouter(database));
 
   return app;
 }

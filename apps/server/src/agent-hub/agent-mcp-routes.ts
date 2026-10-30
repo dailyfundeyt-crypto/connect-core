@@ -32,9 +32,14 @@ import {
   type BrowserAction,
   closeBrowserTab,
   listBrowserTabsFor,
+  getBrowserStatusFor,
   openBrowserTab,
   performBrowserAction,
+  retryBrowserLaunch,
 } from "./agent-browser";
+import { onAgentBrowserStatus } from "./agent-cdp";
+import { agents as agentsTable } from "../db/schema/core";
+import { basename } from "node:path";
 import { isCliKind, runCli } from "./cli-model";
 import {
   type CliRunEvent,
@@ -43,6 +48,7 @@ import {
   startAgentCliRun,
   subscribeAgentCliRun,
 } from "./agent-cli-stream";
+import { lookupAgentEngineCli } from "./agent-terminal-manager";
 import {
   type AgentMcpContext,
   type AgentMcpToolResult,
@@ -99,6 +105,8 @@ export type AgentProfileLookup = (agentId: string) => Promise<{
   title: string | null;
   model: string | null;
   systemPrompt: string | null;
+  accountEmail?: string | null;
+  browserProfile?: string | null;
 } | null>;
 
 export type AgentChatInvoke = (input: {
@@ -160,6 +168,20 @@ export function createAgentMcpRoutes(
   const fail = (error: unknown) => ({
     error: error instanceof Error ? error.message : String(error),
   });
+
+  // Swarmfix: Browser-Startstatus zusätzlich auf der agents-Zeile spiegeln
+  // (browser_status / browser_error / browser_status_at), damit die UI einen
+  // Status am Agenten zeigen kann. Fehler hier sind nie fatal.
+  if (database) {
+    onAgentBrowserStatus((profileDir, info) => {
+      const agentId = basename(profileDir);
+      void database
+        .update(agentsTable)
+        .set({ browserStatus: info.status, browserError: info.error, browserStatusAt: new Date() })
+        .where(eq(agentsTable.id, agentId))
+        .catch(() => undefined);
+    });
+  }
 
   /**
    * Tool-Liste für einen Agent. Liefert den Namen, eine Beschreibung und das
@@ -258,9 +280,34 @@ export function createAgentMcpRoutes(
       return createCliSseResponse(agentId, body.runId);
     }
     // 2) Neuen Run starten
-    const provider = typeof body.provider === "string" ? body.provider : "";
+    /*
+     * Helium-Schritt `chatcli`: `provider` ist optional. Fehlt er, nehmen wir die CLI, die für DIESEN
+     * Agenten gespeichert ist — dieselbe, die auch sein PTY-Terminal startet. Vorher zwang der
+     * Endpoint einen Provider, wodurch der Chat zwingend über die zentrale Codex-Bridge lief,
+     * während der CLI-Tab die Agenten-CLI fuhr: zwei Engines für ein und dasselbe Fenster.
+     *
+     * Eine mitgeschickte, aber unbekannte Provider-Angabe bleibt ein Fehler — nur ein fehlendes
+     * Feld wird ersetzt, nicht ein ausdrücklich falsches.
+     */
+    let provider = typeof body.provider === "string" ? body.provider.trim() : "";
+    if (!provider) {
+      provider = (await lookupAgentEngineCli(agentId)) ?? "";
+    }
+    if (!provider && (agent as any).chosenCli) {
+      provider = String((agent as any).chosenCli).trim();
+    }
+    if (!provider) {
+      provider = "antigravity";
+    }
     if (!isCliKind(provider)) {
-      return context.json({ error: `Unbekannter Provider: ${provider}` }, 400);
+      return context.json(
+        {
+          error: provider
+            ? `Unbekannter Provider: ${provider}`
+            : "Für diesen Agenten ist keine CLI gesetzt — bitte im Seitenfenster eine CLI wählen.",
+        },
+        400,
+      );
     }
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
     if (!prompt.trim()) {
@@ -276,6 +323,16 @@ export function createAgentMcpRoutes(
       allowWrite,
     });
     return createCliSseResponse(agentId, runId);
+  });
+
+  /** Öffnet eine URL im isolierten Helium-Profil des Agenten (CDP/Playwright). */
+  routes.post("/:agentId/browser/open", async (context) => {
+    const agentId = context.req.param("agentId");
+    const body = (await context.req.json().catch(() => ({}))) as { url?: string };
+    const targetUrl = typeof body?.url === "string" && body.url.trim() ? body.url.trim() : "about:blank";
+    const { browserUseOpen } = await import("../agents/agent-browser-use");
+    const res = await browserUseOpen(agentId, targetUrl);
+    return context.json(res, res.ok ? 200 : 400);
   });
 
   /** Letzten abgeschlossenen Run für diesen Agent abrufen (60s-Cache). */
@@ -339,8 +396,34 @@ export function createAgentMcpRoutes(
     const agent = await deps.lookupAgent(agentId);
     if (!agent) return context.json({ error: "Agent nicht gefunden." }, 404);
     try {
-      const row = await openBrowserTab(database, agentId);
+      const agentEmail = (agent as { accountEmail?: string | null }).accountEmail;
+      const { getAgentCliConfigDirs } = await import("./codex-accounts");
+      const dirs = getAgentCliConfigDirs(agentId, agentEmail);
+      const customProfile = (agent as { browserProfile?: string | null }).browserProfile || dirs.browserProfile;
+      const row = await openBrowserTab(database, agentId, customProfile);
       return context.json({ tab: row, stub: true });
+    } catch (error) {
+      return context.json(fail(error), 500);
+    }
+  });
+
+  // Swarmfix: ein Status pro Agent statt Fehler-Spam. GET liefert den
+  // aktuellen Browser-Startstatus, POST retry setzt einen gestoppten Start
+  // zurück (nach Profil-Reparatur) und versucht genau einmal neu.
+  routes.get("/:agentId/browser/status", async (context) => {
+    const agentId = context.req.param("agentId");
+    const agent = await deps.lookupAgent(agentId);
+    if (!agent) return context.json({ error: "Agent nicht gefunden." }, 404);
+    return context.json({ agentId, ...getBrowserStatusFor(agentId) });
+  });
+
+  routes.post("/:agentId/browser/retry", async (context) => {
+    const agentId = context.req.param("agentId");
+    const agent = await deps.lookupAgent(agentId);
+    if (!agent) return context.json({ error: "Agent nicht gefunden." }, 404);
+    try {
+      const { launch, status } = await retryBrowserLaunch(agentId);
+      return context.json({ agentId, ok: launch.ok, detail: launch.ok ? null : launch.detail, ...status });
     } catch (error) {
       return context.json(fail(error), 500);
     }
@@ -544,7 +627,110 @@ export function createAgentMcpRoutes(
   /** Verfügbare Apps auflisten. */
   routes.get("/apps", async (_context) => {
     const { listApps } = await import("./app-launcher");
-    return context.json({ apps: listApps() });
+    return _context.json({ apps: listApps() });
+  });
+
+  /** Registrierte Konten und Instanzen aus der Mehrkonten-Software (000_Codex Start).
+   *
+   * Optional `?kind=` Filter/Relabeling für die gewünschte CLI-Engine:
+   *  - `antigravity` / `gemini` → nur Google-Konten (gmail/googlemail), umbenannt zu
+   *    "Google-Konto (email)". Codex-/ChatGPT-Instanzen werden hier NICHT angezeigt,
+   *    weil Antigravity sich ausschließlich mit Google-Konten anmeldet.
+   *  - `codex` → nur Codex-/ChatGPT-Instanzen (appId beginnt mit "codex").
+   *  - `claude` → alles außer Google-/Codex-Konten.
+   *  - `freebuff` / `hermes` / unbekannt → alles.
+   *  - ohne Filter: alle Konten (für den Admin-/Settings-Bereich).
+   *
+   * Damit zeigt der Account-Picker im CLI-Terminal nur die Konten, die für die jeweilige CLI
+   * wirklich Sinn machen (Antigravity → nur Google-Konten ohne "Codex / ChatGPT"-Text).
+   */
+  routes.get("/codex-accounts", async (_context) => {
+    const { loadCodexRegister } = await import("./codex-accounts");
+    const kindRaw = (_context.req.query("kind") ?? "").toString().trim().toLowerCase();
+    const manifest = loadCodexRegister();
+
+    if (!kindRaw || kindRaw === "all") {
+      return _context.json(manifest);
+    }
+
+    const isGoogleAddress = (email: string) => {
+      const domain = email.split("@")[1]?.toLowerCase() ?? "";
+      return domain === "gmail.com" || domain === "googlemail.com";
+    };
+    const isCodexApp = (appId: string) => appId.toLowerCase().startsWith("codex");
+
+    /** Bei Antigravity: nur echte Google-Adressen, und das Label sagt "Google-Konto". */
+    const antigravityEmails: typeof manifest.availableEmails = [];
+    const antigravitySeen = new Set<string>();
+    for (const entry of manifest.availableEmails) {
+      if (!isGoogleAddress(entry.email)) continue;
+      const key = entry.email.toLowerCase();
+      if (antigravitySeen.has(key)) continue;
+      antigravitySeen.add(key);
+      antigravityEmails.push({
+        ...entry,
+        label: entry.appId === "antigravity"
+          ? entry.label
+          : `Google-Konto (${entry.email})`,
+        appId: "antigravity",
+        appName: "Antigravity / Google",
+      });
+    }
+
+    let allowed: (appId: string, email: string) => boolean;
+    if (kindRaw === "antigravity" || kindRaw === "gemini") {
+      // Ergebnis bereits vorbereitet.
+      return _context.json({
+        ...manifest,
+        availableEmails: antigravityEmails.length > 0 ? antigravityEmails : manifest.availableEmails.slice(0, 1),
+      });
+    } else if (kindRaw === "codex" || kindRaw === "codex-cli") {
+      allowed = (appId) => isCodexApp(appId);
+    } else if (kindRaw === "claude" || kindRaw === "claude-cli") {
+      allowed = (appId) => !isCodexApp(appId);
+    } else {
+      allowed = () => true;
+    }
+
+    const filtered: typeof manifest.availableEmails = [];
+    const seen = new Set<string>();
+    for (const entry of manifest.availableEmails) {
+      if (!allowed(entry.appId, entry.email)) continue;
+      const key = entry.email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      filtered.push(entry);
+    }
+
+    return _context.json({ ...manifest, availableEmails: filtered });
+  });
+
+  /** CLI-Konfiguration und isolierte Pfade für diesen Agenten. */
+  routes.get("/:agentId/cli-config", async (context) => {
+    const agentId = context.req.param("agentId");
+    const agent = await deps.lookupAgent(agentId);
+    if (!agent) return context.json({ error: "Agent nicht gefunden." }, 404);
+    const { getAgentCliConfigDirs, DEFAULT_GOOGLE_ACCOUNT } = await import("./codex-accounts");
+    let email = (agent as { accountEmail?: string | null }).accountEmail;
+    if (!email && database) {
+      try {
+        const [row] = await database
+          .select({ accountEmail: agentsTable.accountEmail })
+          .from(agentsTable)
+          .where(eq(agentsTable.id, agentId))
+          .limit(1);
+        email = row?.accountEmail ?? null;
+      } catch {
+        // ignore
+      }
+    }
+    const dirs = getAgentCliConfigDirs(agentId, email);
+    return context.json({
+      agentId,
+      accountEmail: email,
+      defaultGoogleAccount: DEFAULT_GOOGLE_ACCOUNT,
+      paths: dirs,
+    });
   });
 
   return routes;
@@ -634,6 +820,11 @@ function encodeRunEvent(event: CliRunEvent): string | null {
     return `event: end\ndata: ${JSON.stringify({ meta: event.meta })}\n\n`;
   }
   const inner = event.event;
+  // `notice` ist ein Status-Hinweis der CLI (nicht Teil der Antwort) und geht als
+  // eigenes SSE-Event raus, damit er nicht als erste Zeile im Chat-Text landet.
+  if (inner.notice) {
+    return `event: notice\ndata: ${JSON.stringify({ notice: inner.notice })}\n\n`;
+  }
   const payload: { text?: string; error?: string; usage?: { input: number; output: number } } = {};
   if (inner.text) payload.text = inner.text;
   if (inner.error) payload.error = inner.error;

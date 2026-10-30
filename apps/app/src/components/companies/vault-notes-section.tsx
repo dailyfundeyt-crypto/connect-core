@@ -6,6 +6,7 @@ import {
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconPencil,
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
@@ -28,6 +29,7 @@ import {
 import { IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconTemplate } from "@tabler/icons-react";
 import {
   brainKeys,
+  brainStatusQueryOptions,
   brainTreeQueryOptions,
   createBrainFolder,
   createBrainNote,
@@ -36,6 +38,7 @@ import {
   VAULT_PREFIX,
   type BrainFileInfo,
 } from "@/lib/brain/queries";
+import { RenameNoteDialog, type RenameDialogRequest } from "@/components/brain/rename-note-dialog";
 import {
   DND_VAULT_NOTE,
   getLevel3Browser,
@@ -146,11 +149,14 @@ export function VaultNotesSection({
 }) {
   const queryClient = useQueryClient();
   const tree = useQuery(brainTreeQueryOptions());
+  const status = useQuery(brainStatusQueryOptions());
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [targetParentFolder, setTargetParentFolder] = useState("");
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<{ path: string; name: string } | null>(null);
   const [deleteNoteTarget, setDeleteNoteTarget] = useState<{ path: string; name: string } | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameRequest, setRenameRequest] = useState<RenameDialogRequest>({ rename: null, create: null });
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -158,6 +164,28 @@ export function VaultNotesSection({
   const [tabGroups, setTabGroups] = useState(() =>
     companyId ? getLevel3Browser(companyId).tabGroups : [],
   );
+
+  const vaultName = useMemo(() => {
+    const configured = status.data?.available ? (status.data.vaultPath || status.data.path || "") : "";
+    const last = configured.split(/[\\/]/).filter(Boolean).pop();
+    return last || "Spark Brain";
+  }, [status.data]);
+
+  const openCreateNote = (folder: string = "00 Inbox") => {
+    setRenameRequest({
+      rename: null,
+      create: { folder },
+    });
+    setRenameOpen(true);
+  };
+
+  const openRenameNote = (path: string, currentTitle: string) => {
+    setRenameRequest({
+      rename: { path, currentTitle },
+      create: null,
+    });
+    setRenameOpen(true);
+  };
 
   useEffect(() => {
     if (!companyId) return;
@@ -217,19 +245,8 @@ export function VaultNotesSection({
     }
   };
 
-  const createNoteInFolder = async (folder: string = "00 Inbox") => {
-    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-    try {
-      const { path } = await createBrainNote({
-        folder,
-        title: stamp,
-        content: "",
-      });
-      onOpen(path);
-      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
-    } catch (err) {
-      console.error("[Neue Notiz] Fehler:", err);
-    }
+  const createNoteInFolder = (folder: string = "00 Inbox") => {
+    openCreateNote(folder);
   };
 
   const handleCreateFolder = async (name: string) => {
@@ -324,6 +341,10 @@ export function VaultNotesSection({
               <ContextMenuItem onClick={() => onOpen(node.path)}>
                 Im Editor öffnen
               </ContextMenuItem>
+              <ContextMenuItem onClick={() => openRenameNote(node.path, node.name)}>
+                <IconPencil className="mr-2 size-3.5" />
+                Notiz umbenennen …
+              </ContextMenuItem>
               {tabGroups.length > 0 ? (
                 <ContextMenuSub>
                   <ContextMenuSubTrigger className="gap-2">
@@ -397,7 +418,7 @@ export function VaultNotesSection({
               </button>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-56">
-              <ContextMenuItem onClick={() => void createNoteInFolder(node.path)}>
+              <ContextMenuItem onClick={() => openCreateNote(node.path)}>
                 <IconPlus className="mr-2 size-3.5" />
                 Neue Notiz anlegen
               </ContextMenuItem>
@@ -429,7 +450,7 @@ export function VaultNotesSection({
             className="absolute right-1 flex size-5 items-center justify-center rounded-md text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/folder-row:opacity-100"
             onClick={(e) => {
               e.stopPropagation();
-              void createNoteInFolder(node.path);
+              openCreateNote(node.path);
             }}
             title={`Neue Notiz in ${node.name}`}
             type="button"
@@ -452,8 +473,8 @@ export function VaultNotesSection({
     <div className="mt-3 flex min-h-0 flex-1 flex-col px-0.5" data-section="vault-notes">
       <div className="mb-0.5 flex h-7 shrink-0 items-center justify-between px-2">
         <SidebarGroupLabel className="h-auto p-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-sidebar-foreground/45">
-          <span className="flex items-center gap-1.5">
-            Planung
+          <span className="flex items-center gap-1.5 truncate" title={vaultName}>
+            {vaultName}
             <span className="font-semibold tabular-nums text-sidebar-foreground/55">
               {total}
             </span>
@@ -472,36 +493,36 @@ export function VaultNotesSection({
             <IconTemplate className="size-3.5" stroke={1.75} />
           </Button>
           <Button
-            aria-label="Planung durchsuchen"
+            aria-label={`${vaultName} durchsuchen`}
             className="size-6 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             onClick={() => setQuickSearchOpen(true)}
             size="icon"
-            title="Planung durchsuchen (⌘/Strg+K)"
+            title={`${vaultName} durchsuchen (⌘/Strg+K)`}
             type="button"
             variant="ghost"
           >
             <IconSearch className="size-3.5" stroke={1.75} />
           </Button>
           <Button
-            aria-label="Neuer Ordner in Planung"
+            aria-label={`Neuer Ordner in ${vaultName}`}
             className="size-6 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             onClick={() => {
               setTargetParentFolder("");
               setFolderDialogOpen(true);
             }}
             size="icon"
-            title="Neuer Ordner in Planung"
+            title={`Neuer Ordner in ${vaultName}`}
             type="button"
             variant="ghost"
           >
             <IconFolderPlus className="size-3.5" stroke={1.75} />
           </Button>
           <Button
-            aria-label="Neue Notiz in Planung"
+            aria-label={`Neue Notiz in ${vaultName}`}
             className="size-6 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            onClick={() => void createNoteInFolder("00 Inbox")}
+            onClick={() => openCreateNote("00 Inbox")}
             size="icon"
-            title="Neue Notiz in Planung"
+            title={`Neue Notiz in ${vaultName}`}
             type="button"
             variant="ghost"
           >
@@ -593,6 +614,15 @@ export function VaultNotesSection({
           <VaultImportButton companyId={companyId} folder="00 Inbox" />
         </div>
       ) : null}
+      <RenameNoteDialog
+        onOpenChange={setRenameOpen}
+        onSaved={(newPath) => {
+          onOpen(newPath);
+          if (companyId) setOpenVaultPath(companyId, newPath);
+        }}
+        open={renameOpen}
+        request={renameRequest}
+      />
     </div>
   );
 }

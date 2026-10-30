@@ -9,6 +9,7 @@
  * Erwartet laufenden Server auf 127.0.0.1:3001 und einen gültigen
  * Auth-Token + Agent-ID (oder legt einen Test-Agent an).
  */
+export {};
 
 const BASE = "http://127.0.0.1:3001";
 

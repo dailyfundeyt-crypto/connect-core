@@ -4,6 +4,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@connect/contracts": ["../../packages/contracts/src"],
+      "@connect/contracts/*": ["../../packages/contracts/src/*"],
+      "@contracts/*": ["../../packages/contracts/src/*"],
       "@flux/*": ["./src/company-apps/modules/flux/source/*"],
       "@dailyfun/components/*": ["./src/dailyfun/components/*"],
       "@dailyfun/contexts/*": ["./src/dailyfun/contexts/*"],

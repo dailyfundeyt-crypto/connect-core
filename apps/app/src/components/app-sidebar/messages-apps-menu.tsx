@@ -23,6 +23,8 @@ import {
   COMPANY_APP_OPEN_EVENT,
   COMPANY_APP_SELECTION_KEY,
   listCompanyApps,
+  openCompanyApp,
+  useActiveCompanyApp,
   type LoadedCompanyApp,
 } from "@/company-apps/registry";
 import { useCompanySwitcher } from "@/components/companies/company-switcher";
@@ -109,15 +111,10 @@ export function MessagesAppsMenu() {
     );
   }, [activeCompanyId, stockApps, listings]);
 
+  const { activeAppId } = useActiveCompanyApp();
+
   const openApp = (appId: string) => {
-    try {
-      window.localStorage.setItem(COMPANY_APP_SELECTION_KEY, appId);
-    } catch {
-      // ignore
-    }
-    window.dispatchEvent(
-      new CustomEvent(COMPANY_APP_OPEN_EVENT, { detail: { appId } }),
-    );
+    openCompanyApp(appId);
   };
 
   const copyPrompt = async () => {
@@ -159,16 +156,21 @@ export function MessagesAppsMenu() {
                 oder im Marketplace.
               </div>
             ) : (
-              apps.map(({ manifest }: LoadedCompanyApp) => (
-                <DropdownMenuItem
-                  key={manifest.id}
-                  onClick={() => openApp(manifest.id)}
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    {manifest.name ?? manifest.id}
-                  </span>
-                </DropdownMenuItem>
-              ))
+              apps.map(({ manifest }: LoadedCompanyApp) => {
+                const isCurrent = activeAppId === manifest.id;
+                return (
+                  <DropdownMenuItem
+                    key={manifest.id}
+                    onClick={() => openApp(manifest.id)}
+                    className="flex items-center justify-between"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {manifest.name ?? manifest.id}
+                    </span>
+                    {isCurrent ? <IconCheck className="size-4 shrink-0 text-primary" /> : null}
+                  </DropdownMenuItem>
+                );
+              })
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setPromptOpen(true)}>

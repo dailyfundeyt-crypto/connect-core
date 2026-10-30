@@ -71,6 +71,9 @@ div.min-h-dvh > div[style*="z-index:99999"] {
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  /* The person's own message bubble — the one accent in an otherwise neutral transcript. */
+  --chat-accent: oklch(0.82 0.15 152);
+  --chat-accent-foreground: oklch(0.2 0.05 152);
   /* Soft rounding across menus, rows, and composer — closer to the reference UI. */
   --radius: 0.75rem;
   /* Dual-tone: muted sidebar plane, bright content. */
@@ -102,6 +105,8 @@ div.min-h-dvh > div[style*="z-index:99999"] {
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --success: oklch(0.704 0.14 182.503);
+  --chat-accent: oklch(0.76 0.17 151);
+  --chat-accent-foreground: oklch(0.18 0.04 152);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -143,6 +148,8 @@ html.connect-mobile-ui {
   --accent: rgb(255 255 255 / 0.08);
   --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --chat-accent: oklch(0.76 0.17 151);
+  --chat-accent-foreground: oklch(0.18 0.04 152);
   --border: rgb(255 255 255 / 0.09);
   --input: rgb(255 255 255 / 0.12);
   --ring: #38bdf8;

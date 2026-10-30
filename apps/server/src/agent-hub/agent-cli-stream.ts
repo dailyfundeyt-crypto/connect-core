@@ -167,7 +167,7 @@ async function runAndPublish(entry: ActiveRun, allowWrite: boolean): Promise<voi
     meta.finishedAt = Date.now();
     publish({ kind: "event", event: { error: message, fatal: true } });
   }
-  if (abort.signal.aborted && meta.status === "running") {
+  if (abort.signal.aborted) {
     meta.status = "aborted";
   }
   rememberLast(meta);

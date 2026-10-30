@@ -24,6 +24,9 @@ import type {
   AgentProfile,
   CreateAgentInput,
 } from "./profile-types";
+import { normalizeAgentSkills } from "./agent-skills";
+import { normalizeAgentWebsites } from "./agent-websites";
+import { normalizeAgentSubagents } from "./agent-subagents";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type DatabaseExecutor = Pick<Database, "select"> | Pick<Transaction, "select">;
@@ -90,6 +93,8 @@ export type AgentProfileStore = {
    * presenting a credential, and the credential is the whole of its claim.
    */
   agentForCallbackToken(hash: string): Promise<{ id: string } | null>;
+  /** Setzt die Standard-CLI des Agenten (z.B. antigravity, freebuff, codex, claude, hermes) */
+  setChosenCli?(actor: AgentActor, id: string, chosenCli: string): Promise<AgentProfile>;
 };
 
 export class AgentNotFoundError extends Error {
@@ -136,6 +141,17 @@ const joinedProjection = {
   /* The hash, only so a surface can say whether one exists. It never leaves this module. */
   callbackTokenHash: agentProfiles.callbackTokenHash,
   configuration: agents.configuration,
+  headline: agents.headline,
+  role: agents.role,
+  description: agents.description,
+  chosenCli: agents.chosenCli,
+  accountEmail: agents.accountEmail,
+  skills: agents.skills,
+  sparkPermissions: agents.sparkPermissions,
+  browserProfile: agents.browserProfile,
+  websiteList: agents.websiteList,
+  subagents: agents.subagents,
+  mcpList: agents.mcpList,
 };
 
 function joinedProfiles(executor: DatabaseExecutor, actor: AgentActor) {
@@ -185,11 +201,22 @@ function mapProfile(
     hasAuth: authFromConfiguration(row.configuration) !== null,
     /** CLI-Engine-Konfiguration (Stufe 1.1+). */
     engine: engineOf(row.configuration),
+    headline: row.headline,
+    role: row.role,
+    description: row.description,
+    chosenCli: row.chosenCli,
+    accountEmail: row.accountEmail,
+    skills: normalizeAgentSkills(row.skills),
+    sparkPermissions: row.sparkPermissions as Record<string, unknown> | null,
+    browserProfile: row.browserProfile,
+    websiteList: normalizeAgentWebsites(row.websiteList),
+    subagents: normalizeAgentSubagents(row.subagents),
+    mcpList: row.mcpList as string[] | unknown[] | null,
   };
 }
 
 /** Liest die CLI/Browser-Engine-Konfiguration aus der JSONB-configuration. */
-function engineOf(configuration: unknown): AgentEngine | null {
+export function engineOf(configuration: unknown): AgentEngine | null {
   if (!configuration || typeof configuration !== "object") return null;
   const cfg = configuration as Record<string, unknown>;
   // Stufe 1.1: CLI-Engine in configuration.cli
@@ -198,7 +225,7 @@ function engineOf(configuration: unknown): AgentEngine | null {
     const obj = cli as Record<string, unknown>;
     const kind = obj.kind;
     if (typeof kind === "string") {
-      if (kind === "antigravity" || kind === "codex" || kind === "claude") {
+      if (kind === "antigravity" || kind === "codex" || kind === "claude" || kind === "freebuff") {
         const model = typeof obj.model === "string" && obj.model.length > 0 ? obj.model : "auto";
         const allowWrite = obj.allowWrite === true;
         return { kind, model, allowWrite };
@@ -494,6 +521,20 @@ export function createAgentProfileStore(
             id,
             name: input.name,
             type: "remote_ag_ui",
+            headline: input.headline ?? null,
+            role: input.role ?? null,
+            description: input.description ?? null,
+            chosenCli: input.chosenCli ?? input.cliEngine?.kind ?? (input.freebuffEngine ? "freebuff" : "antigravity"),
+            accountEmail: input.accountEmail ?? null,
+            skills: normalizeAgentSkills(input.skills),
+            sparkPermissions: input.sparkPermissions ?? {},
+            browserProfile:
+              typeof input.browserProfile === "string"
+                ? input.browserProfile
+                : (input.browserProfile?.profileName ?? null),
+            websiteList: normalizeAgentWebsites(input.websiteList),
+            subagents: normalizeAgentSubagents(input.subagents),
+            mcpList: input.mcpList ?? [],
             // Their endpoint if they gave one, ours if they did not. Validated before it reaches
             // here; see endpoint.ts for why a stored URL is a security decision and not a text
             // field.
@@ -505,7 +546,7 @@ export function createAgentProfileStore(
               // Stufe 1.1: CLI-Engine-Konfiguration.
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
               // Stufe 2 Phase C: Browser-Profile.
-              ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+              ...(input.browserProfile && typeof input.browserProfile !== "string" ? { browserProfile: input.browserProfile } : {}),
               // Stufe 4: Freebuff-Engine.
               ...(input.freebuffEngine ? { freebuff: input.freebuffEngine } : {}),
               // Stufe 3: Manus-Cloud-Engine.
@@ -543,10 +584,24 @@ export function createAgentProfileStore(
             id,
             name: input.name,
             type: "built_in",
+            headline: input.headline ?? null,
+            role: input.role ?? null,
+            description: input.description ?? null,
+            chosenCli: input.chosenCli ?? input.cliEngine?.kind ?? (input.freebuffEngine ? "freebuff" : "antigravity"),
+            accountEmail: input.accountEmail ?? null,
+            skills: normalizeAgentSkills(input.skills),
+            sparkPermissions: input.sparkPermissions ?? {},
+            browserProfile:
+              typeof input.browserProfile === "string"
+                ? input.browserProfile
+                : (input.browserProfile?.profileName ?? null),
+            websiteList: normalizeAgentWebsites(input.websiteList),
+            subagents: normalizeAgentSubagents(input.subagents),
+            mcpList: input.mcpList ?? [],
             configuration: {
               systemPrompt,
               ...(input.cliEngine ? { cli: input.cliEngine } : {}),
-              ...(input.browserProfile ? { browserProfile: input.browserProfile } : {}),
+              ...(input.browserProfile && typeof input.browserProfile !== "string" ? { browserProfile: input.browserProfile } : {}),
               ...(input.freebuffEngine ? { freebuff: input.freebuffEngine } : {}),
               ...(input.manusEngine ? { manus: input.manusEngine } : {}),
               ...(input.browserUseEngine ? { browserUse: input.browserUseEngine } : {}),
@@ -669,7 +724,29 @@ export function createAgentProfileStore(
            */
           await transaction
             .update(agents)
-            .set({ name: input.name, configuration, updatedAt })
+            .set({
+              name: input.name,
+              configuration,
+              updatedAt,
+              ...(input.headline !== undefined ? { headline: input.headline } : {}),
+              ...(input.role !== undefined ? { role: input.role } : {}),
+              ...(input.description !== undefined ? { description: input.description } : {}),
+              ...(input.chosenCli !== undefined ? { chosenCli: input.chosenCli ?? "antigravity" } : {}),
+              ...(input.accountEmail !== undefined ? { accountEmail: input.accountEmail } : {}),
+              ...(input.skills !== undefined ? { skills: normalizeAgentSkills(input.skills) } : {}),
+              ...(input.sparkPermissions !== undefined ? { sparkPermissions: input.sparkPermissions } : {}),
+              ...(input.browserProfile !== undefined
+                ? {
+                    browserProfile:
+                      typeof input.browserProfile === "string"
+                        ? input.browserProfile
+                        : (input.browserProfile?.profileName ?? null),
+                  }
+                : {}),
+              ...(input.websiteList !== undefined ? { websiteList: normalizeAgentWebsites(input.websiteList) } : {}),
+              ...(input.subagents !== undefined ? { subagents: normalizeAgentSubagents(input.subagents) } : {}),
+              ...(input.mcpList !== undefined ? { mcpList: input.mcpList } : {}),
+            })
             .where(eq(agents.id, id));
           await transaction
             .update(agentProfiles)
@@ -857,6 +934,44 @@ export function createAgentProfileStore(
         },
         { isolationLevel: "read committed" },
       );
+    },
+
+    async setChosenCli(actor, id, chosenCli) {
+      return database.transaction(async (transaction) => {
+        await lockProfileMutationRows(transaction, id);
+        const profile = await findAccessibleProfile(transaction, actor, id);
+        if (!profile) throw new AgentNotFoundError(id);
+        requireManageable(actor, profile);
+
+        const [row] = await transaction
+          .select({ configuration: agents.configuration })
+          .from(agents)
+          .where(eq(agents.id, id))
+          .limit(1);
+
+        const existingCfg = (row?.configuration as Record<string, unknown> | null) ?? {};
+        const newConfiguration: Record<string, unknown> = { ...existingCfg };
+        if (chosenCli === "freebuff") {
+          newConfiguration.freebuff = { kind: "freebuff", model: "auto", allowWrite: false };
+          newConfiguration.cli = { kind: "freebuff", model: "auto", allowWrite: false };
+        } else if (chosenCli === "antigravity" || chosenCli === "codex" || chosenCli === "claude") {
+          newConfiguration.cli = { kind: chosenCli, model: "auto", allowWrite: false };
+        }
+
+        const now = new Date();
+        await transaction
+          .update(agents)
+          .set({
+            chosenCli,
+            configuration: newConfiguration,
+            updatedAt: now,
+          })
+          .where(eq(agents.id, id));
+
+        const updated = await findAccessibleProfile(transaction, actor, id);
+        if (!updated) throw new AgentNotFoundError(id);
+        return updated;
+      });
     },
 
     agentForCallbackToken(hash) {

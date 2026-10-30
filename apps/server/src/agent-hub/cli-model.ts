@@ -11,9 +11,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { getAgentCliConfigDirs } from "./codex-accounts";
+import { prepareAgyHome } from "./agy-shared-sessions"; // helium-agyshare
 
-export type CliKind = "codex" | "claude" | "antigravity" | "freebuff";
+export type CliKind = "codex" | "claude" | "antigravity" | "freebuff" | "gemini";
 
 /**
  * Modelle, die jeder Provider nativ anbietet. "Browser-Use" ist kein
@@ -67,6 +69,14 @@ export const CLI_MODELS: Record<CliKind, string[]> = {
     "gemini-3.8-flash",
     "muse-spark-1.3",
   ],
+  gemini: [
+    "auto",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-exp",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+  ],
 };
 
 /**
@@ -101,6 +111,7 @@ const CLI_PACKAGES: Record<CliKind, { pkg: string; bin: string; label: string; b
    * (Unix) downloaded. Wir suchen dort direkt und im PATH als Fallback.
    */
   freebuff: { pkg: "freebuff", bin: "index.js", label: "Freebuff (Browser-Login, kostenlos)", binary: "freebuff" },
+  gemini: { pkg: "@google/gemini-cli", bin: "bin/gemini.js", label: "Gemini CLI", binary: "gemini" },
 };
 
 const MODEL_NAME = /^[A-Za-z0-9._:\-/]{1,64}$/;
@@ -178,7 +189,23 @@ export function cliEntry(kind: CliKind): string | null {
       const candidate = join(root, exe);
       if (existsSync(candidate)) return candidate;
     }
+    for (const root of npmGlobalRoots()) {
+      const candidate = join(root, "freebuff", "index.js");
+      if (existsSync(candidate)) return candidate;
+    }
     // Fallback: PATH-Lookup
+    return exe;
+  }
+  if (kind === "gemini") {
+    const exe = process.platform === "win32" ? "gemini.cmd" : "gemini";
+    for (const root of npmGlobalRoots()) {
+      const candidate = join(root, "@google", "gemini-cli", "bin", "gemini.js");
+      if (existsSync(candidate)) return candidate;
+    }
+    if (process.env.APPDATA) {
+      const candidate = join(process.env.APPDATA, "npm", exe);
+      if (existsSync(candidate)) return candidate;
+    }
     return exe;
   }
   const { pkg, bin } = CLI_PACKAGES[kind];
@@ -194,8 +221,15 @@ function nodeBinary(): string {
   return existsSync(fixed) ? fixed : "node";
 }
 
-/** Child env without Connect's own secrets, so the CLI uses the person's login and nothing leaks. */
-function childEnv(): NodeJS.ProcessEnv {
+/** Child env without Connect's own secrets, with isolated CLI config directories per agent. */
+function childEnv(
+  agentId?: string,
+  accountEmail?: string,
+  kind?: CliKind,
+  skills?: Array<{ id: string; name: string; enabled: boolean }>,
+  websites?: Array<{ id?: string; url: string; purpose?: string; enabled?: boolean }>,
+  subagents?: Array<{ id?: string; name: string; url: string; description?: string; enabled?: boolean }>,
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   const secret = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|DATABASE_URL|COOKIE|CREDENTIAL)/i;
   for (const [name, value] of Object.entries(process.env)) {
@@ -206,6 +240,60 @@ function childEnv(): NodeJS.ProcessEnv {
     env[name] = value;
   }
   env.NO_COLOR = "1";
+
+  if (agentId) {
+    const paths = getAgentCliConfigDirs(agentId, accountEmail);
+    env.CONNECT_AGENT_ID = agentId;
+    env.AGENT_ID = agentId;
+    env.AGENT_WORKDIR = paths.workspace;
+    env.AGENT_BROWSER_PROFILE = paths.browserProfile;
+    // Echte CLI-Config-Verzeichnisse pro Bot (Mehrkonten-Software)
+    env.CODEX_HOME = paths.codexHome;
+    env.CLAUDE_CONFIG_DIR = paths.claudeConfig;
+    env.HERMES_HOME = paths.hermesHome;
+    // freebuff liest FREEBUFF_CONFIG_DIR (absolut) — XDG_CONFIG_HOME ignoriert die CLI.
+    env.FREEBUFF_CONFIG_DIR = paths.freebuffConfig;
+    env.ANTIGRAVITY_CONFIG_DIR = paths.antigravityHome;
+    env.ANTIGRAVITY_HOME = paths.antigravityHome;
+    env.AGY_ACCOUNT = paths.googleAccount;
+    env.GOOGLE_ACCOUNT = paths.googleAccount;
+    env.CONNECT_ACCOUNT_EMAIL = paths.googleAccount;
+
+    if (skills && skills.length > 0) {
+      const active = skills.filter((s) => s.enabled);
+      env.CONNECT_AGENT_SKILLS = JSON.stringify(active.map((s) => s.name));
+      env.AGENT_SKILLS = active.map((s) => s.name).join(", ");
+      env.ENABLED_SKILLS = active.map((s) => s.id).join(",");
+    }
+
+    // Phase C Schritt 13: Webseiten-Liste im Env
+    if (websites && websites.length > 0) {
+      const activeWeb = websites.filter((w) => w.enabled !== false);
+      env.CONNECT_AGENT_WEBSITES = JSON.stringify(activeWeb.map((w) => ({ url: w.url, purpose: w.purpose || "" })));
+      env.AGENT_WEBSITES = activeWeb.map((w) => `${w.url} (${w.purpose || "Kontext"})`).join("; ");
+    }
+
+    // Phase C Schritt 14: Subagenten (Online-KIs) im Env
+    if (subagents && subagents.length > 0) {
+      const activeSubs = subagents.filter((s) => s.enabled !== false);
+      env.CONNECT_AGENT_SUBAGENTS = JSON.stringify(activeSubs.map((s) => ({ name: s.name, url: s.url, description: s.description || "" })));
+      env.AGENT_SUBAGENTS = activeSubs.map((s) => `${s.name} (${s.url} - ${s.description || "Online-KI"})`).join("; ");
+    }
+
+    if (kind === "antigravity") {
+      // helium-agyshare: gemeinsamer Verlauf + No-Ask-Dateien auch fuer Chat-Aufrufe
+      try {
+        prepareAgyHome(paths.antigravityHome);
+      } catch {
+        // best effort
+      }
+      env.USERPROFILE = paths.antigravityHome;
+      env.HOME = paths.antigravityHome;
+      env.HOMEDRIVE = paths.antigravityHome.slice(0, 2);
+      env.HOMEPATH = paths.antigravityHome.slice(2);
+    }
+  }
+
   return env;
 }
 
@@ -227,7 +315,18 @@ function killTree(child: ChildProcess) {
   } else child.kill("SIGTERM");
 }
 
-type CliEvent = { text?: string; error?: string; usage?: { input: number; output: number }; fatal?: boolean };
+export type CliEvent = {
+  text?: string;
+  error?: string;
+  usage?: { input: number; output: number };
+  fatal?: boolean;
+  /**
+   * Hinweis über den Zustand der CLI (z.B. "Antigravity bereit — 20 Browser-Tools").
+   * Gehört NICHT zur Antwort des Agenten und landet deshalb nicht in `text` — sonst
+   * steht die Zeile als erste Zeile in der Chat-Antwort.
+   */
+  notice?: string;
+};
 
 /**
  * CLI-Args pro Provider.
@@ -247,9 +346,24 @@ type CliEvent = { text?: string; error?: string; usage?: { input: number; output
  */
 function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean, prompt: string): string[] {
   if (kind === "codex") {
-    return ["exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--color", "never", "--sandbox", allowWrite ? "workspace-write" : "read-only", "-m", model, "-C", cwd, "-"];
+    const args = [
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "--ignore-user-config",
+      "--color",
+      "never",
+      "--sandbox",
+      allowWrite ? "workspace-write" : "read-only",
+    ];
+    if (model && model !== "auto") {
+      args.push("-m", model);
+    }
+    args.push("-C", cwd, "-");
+    return args;
   }
   if (kind === "claude") {
+    const effectiveModel = model && model !== "auto" ? model : "sonnet";
     return [
       "-p",
       "--output-format",
@@ -257,7 +371,7 @@ function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean,
       "--verbose",
       "--include-partial-messages",
       "--model",
-      model,
+      effectiveModel,
       "--allowedTools",
       allowWrite ? "Read Glob Grep WebFetch WebSearch Edit Write" : "Read Glob Grep WebFetch WebSearch",
     ];
@@ -267,19 +381,16 @@ function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean,
   //   - `--cwd <dir>` für Arbeitsverzeichnis
   //   - `--trust-agents` für Auto-Load .agents Files (sonst fragt die CLI)
   //   - **kein** `--model`-Flag (Modell wird in settings.json gesetzt)
-  //   - **kein** `--output-format`-Flag (Freebuff streamt direkt)
-  //   - **kein** `-p`-Flag (Prompt wird als positional arg übergeben)
+  //   - **kein** `--output-format`-Flag
+  //   - **kein** `-p`-Flag und akzeptiert keinen Prompt als Argument
   //
-  // Freebuff startet standardmäßig eine interaktive TUI; wir übergeben
-  // den Prompt als einziges positional arg, dann führt sie aus und
-  // beendet sich selbst. Browser-Use + Web-Research sind built-in und
-  // werden automatisch aktiviert, wenn der Prompt das braucht.
+  // Freebuff ist eine interaktive TUI-Anwendung und wird im PTY-Terminal
+  // (CLI-Reiter) interaktiv gefahren.
   if (kind === "freebuff") {
     return [
       "--cwd",
       cwd,
       "--trust-agents",
-      prompt,
     ];
   }
   // antigravity: `-p` braucht zwingend ein Argument direkt danach
@@ -297,17 +408,17 @@ function argsFor(kind: CliKind, model: string, cwd: string, allowWrite: boolean,
   // nutzen den `cwd`-Parameter von `spawn()` für das Arbeitsverzeichnis
   // und übergeben keine Flags, die agy nicht kennt.
   //
-  // Für Write-Tasks setzen wir `--dangerously-skip-permissions` (agy
-  // hat keinen `--sandbox`-Toggle für `-p`-Mode; das `--sandbox`-Flag
-  // existiert zwar, ist aber für interaktive Sessions).
+  // Im Headless-Batch-Modus (-p) kann agy den Benutzer nicht interaktiv
+  // nach Tool-Rechten (WebFetch, Browser-Tools, etc.) fragen. Ohne das Flag
+  // bricht agy mit 'a tool required permission that headless mode cannot prompt for' ab.
+  // Wir setzen daher `--dangerously-skip-permissions` immer für `-p`.
   const args = [
     "--output-format",
     "stream-json",
+    "--dangerously-skip-permissions",
+    "-p",
+    prompt,
   ];
-  if (allowWrite) {
-    args.push("--dangerously-skip-permissions");
-  }
-  args.push("-p", prompt);
   return args;
 }
 
@@ -331,15 +442,17 @@ function parseLine(kind: CliKind, line: string, state: { sawDelta: boolean; retr
     return null;
   }
   if (kind === "antigravity") {
-    const obj = event as { type?: string; event?: string; text_delta?: string };
-    if (obj.type === "step_update") {
-      const step = (obj as { step_update?: { step_type?: string; text_delta?: string } }).step_update;
-      if (step?.step_type === "agent_response" && step.text_delta) {
-        state.sawDelta = true;
-        return { text: step.text_delta };
-      }
-    }
-    return null;
+    /*
+     * Antigravity streamt `{"event": "step_update", "step_update": { step_type, text_delta }}` —
+     * der Ereignistyp steht in `event`, NICHT in `type`. Der eigene Zweig hier unten las nur `type`
+     * und erkannte deshalb kein einziges Ereignis: der Run endete mit "keine Antwort erhalten",
+     * obwohl die CLI sauber geantwortet hatte.
+     *
+     * `parseAntigravityLine` ist die vollständige Antigravity-Auswertung (sie akzeptiert `event`
+     * wie auch `type`, verarbeitet `init`, `step_update`, `result` und Auth-Fehler). Die wird hier
+     * benutzt, statt sie parallel zu pflegen.
+     */
+    return parseAntigravityLine(event, state);
   }
   if (kind === "codex") {
     const item = event.item as { type?: string; text?: string } | undefined;
@@ -406,9 +519,9 @@ function parseAntigravityLine(event: Record<string, unknown>, state: { sawDelta:
     if (tools.length > 0) {
       const browserTools = tools.filter((t) => t.startsWith("browser_") || t === "open_browser_url" || t === "click_browser_pixel" || t === "capture_browser_screenshot" || t === "read_browser_page");
       const note = browserTools.length > 0
-        ? `\n[Antigravity bereit — Browser-Tools: ${browserTools.length}]\n`
-        : `\n[Antigravity bereit — ${tools.length} Tools]\n`;
-      return { text: note };
+        ? `Antigravity bereit — ${browserTools.length} Browser-Tools`
+        : `Antigravity bereit — ${tools.length} Tools`;
+      return { notice: note };
     }
     return null;
   }
@@ -477,10 +590,117 @@ function parseAntigravityLine(event: Record<string, unknown>, state: { sawDelta:
   return null;
 }
 
-export type CliRunOptions = { kind: CliKind; model: string; agentId: string; prompt: string; allowWrite?: boolean; signal?: AbortSignal };
+export function detectBrowserOpenIntent(prompt: string): { url: string; label: string } | null {
+  const p = prompt.trim();
+  const lower = p.toLowerCase();
+
+  const hasBrowserWord = lower.includes("browser");
+  const hasOpenAction =
+    lower.includes("öffne") ||
+    lower.includes("oeffne") ||
+    lower.includes("open") ||
+    lower.includes("gehe") ||
+    lower.includes("navigier") ||
+    lower.includes("starte");
+
+  const isBrowserIntent =
+    (hasBrowserWord && hasOpenAction) ||
+    (/(?:^|\s)(?:öffne|oeffne|open)\s+(?:https?:\/\/|[a-z0-9-]+\.[a-z]{2,})/i.test(lower));
+
+  if (!isBrowserIntent) return null;
+
+  let target = "";
+  // 1. "öffne im browser <target>" / "open in browser <target>"
+  const m1 = lower.match(/(?:öffne|oeffne|open|starte?)\s+(?:im\s+browser|in\s+(?:the\s+)?browser)\s+(.+)/i);
+  // 2. "öffne <target> im browser" / "open <target> in browser"
+  const m2 = lower.match(/(?:öffne|oeffne|open|starte?)\s+(.+?)\s+(?:im\s+browser|in\s+(?:the\s+)?browser)/i);
+  // 3. "im browser (öffne/gehe zu) <target>"
+  const m3 = lower.match(/(?:im\s+browser|in\s+(?:the\s+)?browser)[:,\s]+(?:öffne|oeffne|open|gehe\s+zu|navigier\w*)?\s*(.+)/i);
+  // 4. "gehe/navigiere (zu/auf) <target> (im browser)"
+  const m4 = lower.match(/(?:gehe|navigier\w*)\s+(?:zu|auf|in)?\s*(.+?)(?:\s+(?:im\s+browser|in\s+(?:the\s+)?browser))?$/i);
+  // 5. fallback: "öffne <target>"
+  const m5 = lower.match(/(?:öffne|oeffne|open)\s+(.+)/i);
+
+  if (m1 && m1[1]) {
+    target = m1[1].trim();
+  } else if (m2 && m2[1]) {
+    target = m2[1].trim();
+  } else if (m3 && m3[1]) {
+    target = m3[1].trim();
+  } else if (m4 && m4[1]) {
+    target = m4[1].trim();
+  } else if (m5 && m5[1]) {
+    target = m5[1].trim();
+  }
+
+  target = target
+    .replace(/(?:im\s+browser|in\s+(?:the\s+)?browser)/gi, "")
+    .replace(/^(bitte|mal|doch)\s+/gi, "")
+    .replace(/[.!?]+$/g, "")
+    .trim();
+
+  if (!target) return null;
+
+  let url = "";
+  let label = target;
+
+  if (/^https?:\/\//i.test(target)) {
+    url = target;
+    try {
+      label = new URL(target).hostname.replace(/^www\./, "");
+    } catch {}
+  } else if (target === "tiktok" || target === "tik tok") {
+    url = "https://www.tiktok.com";
+    label = "TikTok";
+  } else if (target === "youtube") {
+    url = "https://www.youtube.com";
+    label = "YouTube";
+  } else if (target === "google") {
+    url = "https://www.google.com";
+    label = "Google";
+  } else if (target === "instagram") {
+    url = "https://www.instagram.com";
+    label = "Instagram";
+  } else if (/^[a-zA-Z0-9-]+(\.[a-zA-Z]{2,})+(:\d+)?(\/.*)?$/.test(target)) {
+    url = `https://${target}`;
+    label = target;
+  } else {
+    url = `https://www.${target.replace(/\s+/g, "")}.com`;
+    label = target;
+  }
+
+  return { url, label };
+}
+
+export type CliRunOptions = { kind: CliKind; model: string; agentId: string; prompt: string; allowWrite?: boolean; signal?: AbortSignal; accountEmail?: string };
 
 /** Runs the CLI once and yields text pieces as they come. Throws with a readable German message. */
 export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> {
+  // Echte Browser-Aktionen im isolierten Helium-Profil des Agenten steuern
+  const browserIntent = detectBrowserOpenIntent(options.prompt);
+  if (browserIntent && options.agentId) {
+    try {
+      const { browserUseOpen } = await import("../agents/agent-browser-use");
+      const res = await browserUseOpen(options.agentId, browserIntent.url);
+      if (res.ok) {
+        yield {
+          text: `${browserIntent.label} wurde in deinem Agent-Browser geöffnet: ${res.url || browserIntent.url}`,
+        };
+        return;
+      } else {
+        yield {
+          text: `Fehler beim Öffnen im Agent-Browser: ${res.error || "Navigation fehlgeschlagen"}`,
+        };
+        return;
+      }
+    } catch (err) {
+      yield {
+        text: `Fehler beim Öffnen im Agent-Browser: ${err instanceof Error ? err.message : String(err)}`,
+      };
+      return;
+    }
+  }
+
   const entry = cliEntry(options.kind);
   const label = CLI_PACKAGES[options.kind].label;
   if (!entry) throw new Error(`${label}: Die CLI ist auf diesem PC nicht installiert (npm i -g ${CLI_PACKAGES[options.kind].pkg}).`);
@@ -497,21 +717,78 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
     }
   }
   if (options.kind === "freebuff") {
-    // Freebuff akzeptiert das Modell **nur** über die settings.json
-    // (`freebuffModel`-Feld), nicht als CLI-Flag. Wir schreiben den
-    // gewünschten Modellnamen in die Settings, BEVOR wir die CLI starten.
+    // Freebuff akzeptiert das Modell über die settings.json
     await writeFreebuffModel(options.model);
+    // Freebuff ist eine rein interaktive Terminal-CLI (OpenTUI) mit ConPTY/xterm.js
+    // und unterstützt keinen Headless-Streaming-Batch-Modus per Prompt-Argument.
+    // Wir antworten dem Chat direkt mit einer verständlichen Anleitung.
+    yield {
+      text: "Freebuff ist als interaktives Terminal (TUI) konzipiert. Bitte wechsle oben auf den Reiter **CLI**, um direkt im Freebuff-Terminal interaktiv zu chatten und Code zu bearbeiten.",
+    };
+    return;
   }
   const cwd = agentWorkdir(options.agentId);
-  const args = argsFor(options.kind, options.model, cwd, !!options.allowWrite, options.prompt);
-  // Antigravity & Freebuff sind native Binaries und werden direkt aufgerufen;
+  let effectiveEmail = options.accountEmail;
+  let agentSkills: any[] = [];
+  let agentWebsites: any[] = [];
+  let agentSubagents: any[] = [];
+  let effectivePrompt = options.prompt;
+  if (options.agentId) {
+    try {
+      const {
+        lookupAgentAccountEmail,
+        lookupAgentSkills,
+        lookupAgentWebsites,
+        lookupAgentSubagents,
+      } = await import("./agent-terminal-manager");
+      if (!effectiveEmail) {
+        effectiveEmail = (await lookupAgentAccountEmail(options.agentId)) ?? undefined;
+      }
+      agentSkills = await lookupAgentSkills(options.agentId);
+      agentWebsites = await lookupAgentWebsites(options.agentId);
+      agentSubagents = await lookupAgentSubagents(options.agentId);
+      const { syncAgentSkillsToWorkspace } = await import("../agents/agent-skills");
+      const { syncAgentWebsitesToWorkspace, formatWebsitesContext } = await import("../agents/agent-websites");
+      const { syncAgentSubagentsToWorkspace, formatSubagentsContext } = await import("../agents/agent-subagents");
+      const paths = getAgentCliConfigDirs(options.agentId, effectiveEmail);
+      syncAgentSkillsToWorkspace(options.agentId, agentSkills, cwd, paths.antigravityHome);
+      syncAgentWebsitesToWorkspace(options.agentId, agentWebsites, cwd, paths.antigravityHome);
+      syncAgentSubagentsToWorkspace(options.agentId, agentSubagents, cwd, paths.antigravityHome);
+      const { syncAgentMapToWorkspace } = await import("./agent-terminal-manager");
+      await syncAgentMapToWorkspace(options.agentId);
+
+      // Phase C Schritt 13: Webseiten-Liste als Kontext für den Prompt
+      const websiteCtx = formatWebsitesContext(agentWebsites);
+      if (websiteCtx && !options.prompt.includes("Bekannte Webseiten & Portale")) {
+        effectivePrompt = `${websiteCtx}\n\n${options.prompt}`;
+      }
+
+      // Phase C Schritt 14: Subagenten (Online-KIs) als Kontext für den Prompt
+      const subagentCtx = formatSubagentsContext(agentSubagents);
+      if (subagentCtx && !effectivePrompt.includes("Verfügbare Subagenten")) {
+        effectivePrompt = `${subagentCtx}\n\n${effectivePrompt}`;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const args = argsFor(options.kind, options.model, cwd, !!options.allowWrite, effectivePrompt);
+  // Antigravity ist ein natives Binary und wird direkt aufgerufen;
   // Codex und Claude sind Node-Skripte, also läuft das über `node entry.js`.
-  const isNativeBinary = options.kind === "antigravity" || options.kind === "freebuff";
+  const isNativeBinary = options.kind === "antigravity" || (options.kind === "gemini" && !entry?.endsWith(".js"));
   const cmd = isNativeBinary ? entry : nodeBinary();
   const cmdArgs = isNativeBinary ? args : [entry, ...args];
   const child = spawn(cmd, cmdArgs, {
     cwd,
-    env: childEnv(),
+    env: childEnv(
+      options.agentId,
+      effectiveEmail,
+      options.kind,
+      agentSkills,
+      agentWebsites,
+      agentSubagents,
+    ),
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -570,12 +847,11 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
   options.signal?.addEventListener("abort", onAbort, { once: true });
   // Antigravity bekommt den Prompt als `-p "<prompt>"`-Argument; Codex und
   // Claude lesen ihn aus stdin. Stdin für Antigravity schließen wir
-  // sofort, damit agy nicht auf eine EOF wartet. Freebuff bekommt den
-  // Prompt als positional arg, stdin schließen wir auch sofort.
-  if (options.kind === "antigravity" || options.kind === "freebuff") {
+  // sofort, damit agy nicht auf eine EOF wartet.
+  if (options.kind === "antigravity") {
     child.stdin?.end();
   } else {
-    child.stdin?.end(options.prompt, "utf8");
+    child.stdin?.end(effectivePrompt, "utf8");
   }
 
   let produced = false;
@@ -602,7 +878,10 @@ export async function* runCli(options: CliRunOptions): AsyncGenerator<CliEvent> 
     if (options.signal?.aborted) return;
     if (lastError && !produced) throw new Error(`${label}: ${lastError}`);
     if (!produced) {
-      const hint = /not logged in|login|unauthor|401/i.test(stderr) ? " Bitte unter Einstellungen › Anbieter neu anmelden." : "";
+      const isAuthError =
+        /(not logged in|please log in|unauthorized|auth(?:entication)? required|\b401\b)/i.test(stderr) &&
+        !/choices are login/i.test(stderr);
+      const hint = isAuthError ? " Bitte unter Einstellungen › Anbieter neu anmelden." : "";
       throw new Error(`${label}: keine Antwort erhalten.${hint}${stderr ? ` (${stderr.trim().split("\n").slice(-2).join(" ").slice(0, 300)})` : ""}`);
     }
   } finally {
@@ -621,7 +900,7 @@ export { flattenPrompt };
 
 type CallOptions = { prompt: PromptMessage[]; abortSignal?: AbortSignal };
 
-export function createCliModel(input: { kind: CliKind; model: string; agentId: string; allowWrite?: boolean }) {
+export function createCliModel(input: { kind: CliKind; model: string; agentId: string; allowWrite?: boolean; accountEmail?: string }) {
   const provider = `${input.kind}-cli`;
   const usageOf = (u?: { input: number; output: number }) => ({
     inputTokens: u?.input,
@@ -743,7 +1022,11 @@ export async function cliStatus(kind: CliKind): Promise<CliStatus> {
     // Freebuff-Login läuft über `freebuff login` (Browser-OAuth). Wir
     // prüfen `~/.config/manicode/credentials.json` — existiert der Token,
     // ist der User eingeloggt.
-    const credentialsPath = join(homedir(), ".config", "manicode", "credentials.json");
+    const freebuffDir = process.env.FREEBUFF_CONFIG_DIR?.trim();
+    const credentialsPath = join(
+      freebuffDir && isAbsolute(freebuffDir) ? freebuffDir : join(homedir(), ".config", "manicode"),
+      "credentials.json",
+    );
     let loggedIn = false;
     try {
       const raw = JSON.parse(await Bun.file(credentialsPath).text()) as { default?: { tokenStore?: string } };
@@ -757,7 +1040,7 @@ export async function cliStatus(kind: CliKind): Promise<CliStatus> {
       version,
       loggedIn,
       detail: loggedIn
-        ? "Angemeldet (Token im System-Keyring)."
+        ? "Angemeldet (Token in credentials.json)."
         : "Nicht angemeldet. Bitte `freebuff login` einmalig ausführen.",
     };
   }
@@ -823,7 +1106,10 @@ export function startCliLogin(kind: CliKind): { started: boolean; message: strin
 type FreebuffSettings = { mode?: string; adsEnabled?: boolean; freebuffModel?: string; [k: string]: unknown };
 
 function freebuffSettingsPath(): string {
-  return join(homedir(), ".config", "manicode", "settings.json");
+  // FREEBUFF_CONFIG_DIR hat Vorrang; nur ein absoluter Pfad ist gültig.
+  const override = process.env.FREEBUFF_CONFIG_DIR?.trim();
+  const base = override && isAbsolute(override) ? override : join(homedir(), ".config", "manicode");
+  return join(base, "settings.json");
 }
 
 async function readFreebuffSettings(): Promise<FreebuffSettings> {

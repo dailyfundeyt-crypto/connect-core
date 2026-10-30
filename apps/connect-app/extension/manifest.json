@@ -18,7 +18,7 @@
     "http://localhost:3101/*"
   ],
   "background": {
-    "service_worker": "sw-0.4.20-app2bf68eea.js"
+    "service_worker": "sw-0.4.20-appde5efa36.js"
   },
   "side_panel": {
     "default_path": "sidebar.html"

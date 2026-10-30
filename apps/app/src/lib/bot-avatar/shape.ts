@@ -1,0 +1,352 @@
+/**
+ * Portions of this software are derived from bloub / Grokbot-animations
+ * Copyright (c) 2026 Jérémy Perret
+ * Licensed under the MIT License. See docs/third-party/bloub-MIT.txt
+ *
+ * Silhouetten = radiales Profil r(theta) + Pose.
+ *
+ * Alle Formen werden an DIESELBEN 64 Winkeln abgetastet. Zwei beliebige Formen
+ * haben dadurch Punkt fuer Punkt entsprechende Radien, und das Morphing
+ * reduziert sich auf eine lineare Interpolation der Radien. Das ist der Grund,
+ * warum die Uebergaenge ohne Morphing-Bibliothek sauber bleiben.
+ */
+
+import { lerp, r2, TAU } from "./math";
+import { PROFILE_SAMPLES, PROFILES, type ProfileName } from "./profiles";
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface Silhouette {
+  radii: number[];
+  /** Rotation des Profils in Radiant. */
+  rot: number;
+  /** Verschiebung des Mittelpunkts in Einheiten des Kugelradius. */
+  cx: number;
+  cy: number;
+  /** Squash & Stretch, angewendet im Bildschirm-Koordinatensystem. */
+  sx: number;
+  sy: number;
+}
+
+const ANGLES = Array.from(
+  { length: PROFILE_SAMPLES },
+  (_, i) => (i / PROFILE_SAMPLES) * TAU,
+);
+const COS = ANGLES.map(Math.cos);
+const SIN = ANGLES.map(Math.sin);
+
+export function silhouette(
+  name: ProfileName,
+  pose: Partial<Silhouette> = {},
+): Silhouette {
+  return {
+    radii: [...PROFILES[name]],
+    rot: 0,
+    cx: 0,
+    cy: 0,
+    sx: 1,
+    sy: 1,
+    ...pose,
+  };
+}
+
+/** Perfekter Kreis: neutrale Basis (Punkt, Blase, Ueberblendungsziel). */
+export function circle(
+  radius: number,
+  pose: Partial<Silhouette> = {},
+): Silhouette {
+  return {
+    radii: new Array(PROFILE_SAMPLES).fill(radius),
+    rot: 0,
+    cx: 0,
+    cy: 0,
+    sx: 1,
+    sy: 1,
+    ...pose,
+  };
+}
+
+/** Interpolation zweier Silhouetten. `out` wird wiederverwendet. */
+export function blend(
+  a: Silhouette,
+  b: Silhouette,
+  t: number,
+  out?: Silhouette,
+): Silhouette {
+  const dst = out ?? {
+    radii: new Array<number>(PROFILE_SAMPLES),
+    rot: 0,
+    cx: 0,
+    cy: 0,
+    sx: 1,
+    sy: 1,
+  };
+  for (let i = 0; i < PROFILE_SAMPLES; i++) {
+    dst.radii[i] = lerp(a.radii[i] ?? 1, b.radii[i] ?? 1, t);
+  }
+  let dRot = b.rot - a.rot;
+  while (dRot > Math.PI) dRot -= TAU;
+  while (dRot < -Math.PI) dRot += TAU;
+  dst.rot = a.rot + dRot * t;
+  dst.cx = lerp(a.cx, b.cx, t);
+  dst.cy = lerp(a.cy, b.cy, t);
+  dst.sx = lerp(a.sx, b.sx, t);
+  dst.sy = lerp(a.sy, b.sy, t);
+  return dst;
+}
+
+/** Projektion der Silhouette in Bildschirmpunkte. `scale` = Kugelradius. */
+export function toPoints(
+  s: Silhouette,
+  scale: number,
+  out: Point[] = [],
+): Point[] {
+  const cr = Math.cos(s.rot);
+  const sr = Math.sin(s.rot);
+  for (let i = 0; i < PROFILE_SAMPLES; i++) {
+    const r = s.radii[i] ?? 1;
+    const x = r * (COS[i] ?? 0);
+    const y = r * (SIN[i] ?? 0);
+    const rx = x * cr - y * sr;
+    const ry = x * sr + y * cr;
+    const p = out[i] ?? { x: 0, y: 0 };
+    p.x = (rx * s.sx + s.cx) * scale;
+    p.y = (ry * s.sy + s.cy) * scale;
+    out[i] = p;
+  }
+  out.length = PROFILE_SAMPLES;
+  return out;
+}
+
+/** Geschlossene Polylinie -> Catmull-Rom-Kubische. */
+export function closedPath(pts: Point[], tension = 1 / 6): string {
+  const n = pts.length;
+  if (n < 3) return "";
+  const first = pts[0];
+  if (!first) return "";
+  let d = `M${r2(first.x)} ${r2(first.y)}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n];
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % n];
+    const p3 = pts[(i + 2) % n];
+    if (!p0 || !p1 || !p2 || !p3) continue;
+    const c1x = p1.x + (p2.x - p0.x) * tension;
+    const c1y = p1.y + (p2.y - p0.y) * tension;
+    const c2x = p2.x - (p3.x - p1.x) * tension;
+    const c2y = p2.y - (p3.y - p1.y) * tension;
+    d += `C${r2(c1x)} ${r2(c1y)} ${r2(c2x)} ${r2(c2y)} ${r2(p2.x)} ${r2(p2.y)}`;
+  }
+  return `${d}Z`;
+}
+
+/**
+ * Beliebiges Polygon -> radiales Profil, per Raycast aus `center`.
+ *
+ * Dient dazu, Formen zu bauen, die sich nicht natuerlich als r(theta)
+ * beschreiben lassen. Wird einmal beim Laden berechnet, nie im Renderloop.
+ */
+export function profileFromPolygon(
+  poly: Point[],
+  cx: number,
+  cy: number,
+): number[] {
+  const radii = new Array<number>(PROFILE_SAMPLES).fill(0);
+  const n = poly.length;
+  for (let k = 0; k < PROFILE_SAMPLES; k++) {
+    const dx = COS[k] ?? 0;
+    const dy = SIN[k] ?? 0;
+    let best = 0;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % n];
+      if (!a || !b) continue;
+      const ex = b.x - a.x;
+      const ey = b.y - a.y;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const px = a.x - cx;
+      const py = a.y - cy;
+      const t = (px * ey - py * ex) / den;
+      const u = (px * dy - py * dx) / den;
+      if (t > best && u >= 0 && u <= 1) best = t;
+    }
+    radii[k] = best;
+  }
+  return radii;
+}
+
+/** Konvexe Huelle zweier Kreise. */
+export function hullOfCircles(
+  x1: number,
+  y1: number,
+  r1: number,
+  x2: number,
+  y2: number,
+  r2v: number,
+  steps = 96,
+): Point[] {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy) || 1e-6;
+  const base = Math.atan2(dy, dx);
+  const spread = Math.acos(Math.max(-1, Math.min(1, (r1 - r2v) / dist)));
+  const pts: Point[] = [];
+  for (let i = 0; i <= steps / 2; i++) {
+    const a = base + spread + ((TAU - 2 * spread) * i) / (steps / 2);
+    pts.push({ x: x1 + Math.cos(a) * r1, y: y1 + Math.sin(a) * r1 });
+  }
+  for (let i = 0; i <= steps / 2; i++) {
+    const a = base - spread + (2 * spread * i) / (steps / 2);
+    pts.push({ x: x2 + Math.cos(a) * r2v, y: y2 + Math.sin(a) * r2v });
+  }
+  return pts;
+}
+
+/**
+ * Radius des Profils in einer beliebigen Richtung, linear interpoliert.
+ *
+ * Noetig, um Augen, die "auf" dem Koerper sitzen, an die tatsaechliche
+ * Silhouette anzupassen - sonst ragt ein Auge ueber den Rand hinaus und die
+ * Maske schneidet es ab.
+ */
+export function radiusAtAngle(radii: number[], angle: number): number {
+  const n = radii.length;
+  const t = ((((angle / TAU) % 1) + 1) % 1) * n;
+  const i = Math.floor(t);
+  return lerp(radii[i % n] ?? 1, radii[(i + 1) % n] ?? 1, t - i);
+}
+
+/**
+ * Superellipse: |x/sx|^n + |y/sy|^n = 1.
+ * n = 2 ergibt eine Ellipse, n ~ 4 das Squircle.
+ */
+export function superellipseProfile(n: number, sx = 1, sy = 1): number[] {
+  return ANGLES.map((_, i) => {
+    const c = Math.abs((COS[i] ?? 0) / sx) ** n;
+    const s = Math.abs((SIN[i] ?? 0) / sy) ** n;
+    return (c + s) ** (-1 / n);
+  });
+}
+
+/**
+ * Radiales Profil der UNION von Kreisen: r(theta) = der weiteste Schnittpunkt
+ * von Strahl und Kreis. Exakt, solange der Ursprung in der Union liegt.
+ */
+export function unionOfCirclesProfile(
+  circles: Array<{ x: number; y: number; r: number }>,
+): number[] {
+  const out = new Array<number>(PROFILE_SAMPLES).fill(0);
+  for (let i = 0; i < PROFILE_SAMPLES; i++) {
+    const dx = COS[i] ?? 0;
+    const dy = SIN[i] ?? 0;
+    let best = 0;
+    for (const c of circles) {
+      const b = dx * c.x + dy * c.y;
+      const disc = b * b - (c.x * c.x + c.y * c.y - c.r * c.r);
+      if (disc < 0) continue;
+      const t = b + Math.sqrt(disc);
+      if (t > best) best = t;
+    }
+    out[i] = best;
+  }
+  return out;
+}
+
+/**
+ * Polygon mit abgerundeten Ecken, als Summe der Minkowski-Summe mit einer
+ * Scheibe: jede Kante wird um `rc` nach aussen geschoben, jede Ecke wird zum
+ * Bogen. Die Eckpunkte sind also auf dem gewuenschten Radius MINUS rc zu setzen.
+ * Erwartet ein Polygon im Uhrzeigersinn (Bildschirm, y nach unten).
+ */
+export function roundedPolygon(
+  verts: Point[],
+  rc: number,
+  arcSteps = 10,
+): Point[] {
+  const n = verts.length;
+  const out: Point[] = [];
+  const normal = (a: Point, b: Point) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return Math.atan2(-dx / len, dy / len);
+  };
+  for (let i = 0; i < n; i++) {
+    const prev = verts[(i - 1 + n) % n];
+    const cur = verts[i];
+    const next = verts[(i + 1) % n];
+    if (!prev || !cur || !next) continue;
+    const a0 = normal(prev, cur);
+    const a1 = normal(cur, next);
+    let d = a1 - a0;
+    while (d > Math.PI) d -= TAU;
+    while (d < -Math.PI) d += TAU;
+    for (let k = 0; k <= arcSteps; k++) {
+      const a = a0 + (d * k) / arcSteps;
+      out.push({ x: cur.x + Math.cos(a) * rc, y: cur.y + Math.sin(a) * rc });
+    }
+  }
+  return out;
+}
+
+/** Regelmaessiges Polygon mit abgerundeten Ecken, in `radius` eingeschrieben. */
+export function regularPolygonProfile(
+  sides: number,
+  radius: number,
+  rc: number,
+  rotationDeg = 0,
+): number[] {
+  const rot = (rotationDeg * Math.PI) / 180;
+  const verts = Array.from({ length: sides }, (_, i) => {
+    const a = rot + (i / sides) * TAU;
+    return { x: Math.cos(a) * (radius - rc), y: Math.sin(a) * (radius - rc) };
+  });
+  return profileFromPolygon(roundedPolygon(verts, rc), 0, 0);
+}
+
+/**
+ * Polygon mit abgerundeten Ecken -> radiales Profil.
+ *
+ * Die Ecken werden auf den Radius MINUS `rc` gesetzt, damit die gerundete
+ * Form wieder genau `radius` erreicht.
+ */
+export function roundedPolygonProfile(
+  verts: Point[],
+  rc: number,
+  arcSteps = 10,
+): number[] {
+  return profileFromPolygon(roundedPolygon(verts, rc, arcSteps), 0, 0);
+}
+
+/** Exakte geschlossene Polylinie: behaelt gerade Kanten. */
+export function polyPath(pts: Point[], scale = 1): string {
+  if (pts.length < 3) return "";
+  let d = "";
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (!p) continue;
+    d += `${i === 0 ? "M" : "L"}${r2(p.x * scale)} ${r2(p.y * scale)}`;
+  }
+  return `${d}Z`;
+}
+
+/** Kapsel (Stadion), zentriert um den Ursprung: die Augenform des Bots. */
+export function capsulePath(w: number, h: number): string {
+  const hw = Math.max(w, 0.01) / 2;
+  const hh = Math.max(h, 0.01) / 2;
+  const r = Math.min(hw, hh);
+  return (
+    `M${r2(-hw)} ${r2(-hh + r)}` +
+    `A${r2(r)} ${r2(r)} 0 0 1 ${r2(-hw + r)} ${r2(-hh)}` +
+    `L${r2(hw - r)} ${r2(-hh)}` +
+    `A${r2(r)} ${r2(r)} 0 0 1 ${r2(hw)} ${r2(-hh + r)}` +
+    `L${r2(hw)} ${r2(hh - r)}` +
+    `A${r2(r)} ${r2(r)} 0 0 1 ${r2(hw - r)} ${r2(hh)}` +
+    `L${r2(-hw + r)} ${r2(hh)}` +
+    `A${r2(r)} ${r2(r)} 0 0 1 ${r2(-hw)} ${r2(hh - r)}Z`
+  );
+}

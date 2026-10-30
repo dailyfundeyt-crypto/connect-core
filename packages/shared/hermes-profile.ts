@@ -29,6 +29,8 @@ export const HERMES_DEFAULT_TOOL_ALLOWLIST = [
   "computer_run_command",
   "askApproval",
   "askChoice",
+  "browser_open",
+  "browser_open_tab",
 ] as const;
 
 export type HermesAllowedTool = (typeof HERMES_DEFAULT_TOOL_ALLOWLIST)[number];

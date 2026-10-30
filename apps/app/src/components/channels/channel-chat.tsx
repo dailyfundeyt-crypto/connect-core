@@ -7,10 +7,16 @@ import {
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { attachmentModality } from "@/components/channels/chat-messages";
+import {
+  CloudStatusProvider,
+  useCloudAgentChat,
+} from "@/components/channels/cloud-agent-chat";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
+import { T3AgentChat } from "@/components/channels/t3";
+import { Button } from "@/components/ui/button";
 import {
   seedMessage,
   takeFirstMessage,
@@ -22,7 +28,13 @@ import {
   rotationThresholdChars,
   takePrimer,
 } from "@/lib/agents/agent-conversation";
-import { agentUsesExternalShell } from "@/lib/agents/agent-shell";
+import {
+  agentUsesExternalShell,
+  resolveAgentRuntimeKind,
+  resolveAgentT3Provider,
+} from "@/lib/agents/agent-shell";
+import { resolveAgentChatCli, runAgentCliTurn } from "@/lib/agents/agent-cli-turn";
+import { cloudAgentConfigQueryOptions } from "@/lib/agents/cloud-agent";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   dispatchModelTurn,
@@ -48,6 +60,8 @@ import { readThreadMessages } from "@/lib/copilot/thread-messages";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import { queryClient } from "@/query-client";
 import { newId } from "../../lib/new-id";
+import { useCliUnifiedSessionFlag } from "@/v06/unified-cli/useCliUnifiedSessionFlag";
+import { useUnifiedSession } from "@/v06/unified-cli/useUnifiedSession";
 
 /**
  * How long a stalled thread join is worth waiting for before it is ended.
@@ -79,6 +93,23 @@ function sameActivity(
     left.at === right.at &&
     left.text === right.text
   );
+}
+
+function plainUnifiedContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string"
+      ? (part as { text: string }).text
+      : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function sessionCliProvider(value: string | undefined): "codex" | "claude" | "antigravity" | "freebuff" | "gemini" | undefined {
+  return value === "codex" || value === "claude" || value === "antigravity" || value === "freebuff" || value === "gemini"
+    ? value
+    : undefined;
 }
 
 export function channelHistoryNotice({
@@ -230,9 +261,12 @@ export function ChannelChat({
   header,
   initialVisible,
   onRotate,
+  onConfigureCloud,
 }: {
   channel: AgentChannel;
   runtimeAgentId: string;
+  /** Cloud-Agent ohne gespeicherte Verbindung: führt direkt in seine Cloud-Einstellungen. */
+  onConfigureCloud?: () => void;
   /** oneconv: drawn above the transcript (earlier parts of the agent's conversation). */
   header?: (info: { hiddenCount: number; showMore: () => void }) => ReactNode;
   /** oneconv: rows of this part drawn at first; older ones come back via the header. */
@@ -247,6 +281,28 @@ export function ChannelChat({
   // Mentions are scoped to the channel's permitted agents.
   const { data: agentProfiles } = useQuery(agentListQueryOptions());
   const channelAgentId = `channel:${channel.id}`;
+  /** The profile of the Bot this conversation belongs to. */
+  const runtimeProfile = useMemo(
+    () => agentProfiles?.find((a) => a.id === runtimeAgentId),
+    [agentProfiles, runtimeAgentId],
+  );
+  /**
+   * WOHIN dieser Bot antwortet — dieselbe Frage, die die Route `/$agentId` stellt.
+   *
+   * `cloud` (Muse) gewinnt immer, `t3` nur, wenn die Brücke freigeschaltet ist. Der Server meldet
+   * heute nur `cloud` oder `cli`; `t3` entsteht hier aus dem Profil (Engine mit T3-Treiber) hinter
+   * dem Flag. Alles andere bleibt beim bisherigen Chat — unverändert, Byte für Byte.
+   */
+  const serverRuntime = useQuery({
+    ...cloudAgentConfigQueryOptions(runtimeAgentId),
+    enabled: Boolean(runtimeAgentId),
+    throwOnError: false,
+  }).data?.runtime;
+  const runtimeKind = resolveAgentRuntimeKind({
+    serverRuntime,
+    profile: runtimeProfile,
+  });
+  const isT3Chat = runtimeKind === "t3";
   const { agent, isReady } = useAgent({
     agentId: channelAgentId,
     runtimeAgentId,
@@ -256,6 +312,26 @@ export function ChannelChat({
       UseAgentUpdate.OnRunStatusChanged,
     ],
   });
+  const unifiedEnabled = useCliUnifiedSessionFlag();
+  const unified = useUnifiedSession(unifiedEnabled ? channel.id : null);
+
+  // The existing AG-UI transcript remains canonical for normal chat. Its final
+  // text is mirrored under the same channel id so a provider switch and the
+  // terminal handoff see exactly that durable conversation as well.
+  const unifiedSignature = agent.messages
+    .map((message) => `${message.id}:${message.role}:${plainUnifiedContent(message.content)}`)
+    .join("\u0001");
+  useEffect(() => {
+    if (!unifiedEnabled || agent.isRunning) return;
+    const writable = agent.messages.flatMap((message) => {
+      if (message.role !== "user" && message.role !== "assistant" && message.role !== "system") return [];
+      const content = plainUnifiedContent(message.content);
+      return content
+        ? [{ id: `chat-${message.id}`, role: message.role, source: "chat" as const, content }]
+        : [];
+    });
+    void Promise.all(writable.map((message) => unified.recordMessage(message)));
+  }, [agent.isRunning, unifiedEnabled, unified.recordMessage, unifiedSignature]);
 
   /**
    * First-message seed from the compose screen. It is taken once per mount and retained until the
@@ -588,6 +664,15 @@ export function ChannelChat({
   const reportRef = useRef(report);
   reportRef.current = report;
 
+  /** Cloud-Agents (Muse, Grok Bot per Webhook, OpenAI-kompatibel): Antwort kommt später, per Abfrage. */
+  const cloud = useCloudAgentChat({
+    runtimeAgentId,
+    channelId: channel.id,
+    agentRef,
+    messageCount: agent.messages.length,
+    onReply: (text) => reportRef.current(text, runtimeAgentId),
+  });
+
   /**
    * Everything `say` does once it has something worth sending, split out so the counter it is
    * wrapped in covers every way out of here, a throw included.
@@ -619,6 +704,57 @@ export function ChannelChat({
     // used throughout, so the message, the repair and the run cannot land on two different agents.
     const target = agentRef.current;
 
+    const deliverProfile = agentProfiles?.find((a) => a.id === runtimeAgentId);
+    const agentName = deliverProfile?.name ?? runtimeAgentId;
+
+    /*
+     * DER T3-WEG (A22). Der Bot läuft über die T3-Brücke, also geht der Text dorthin und die
+     * Antwort kommt über den SSE-Stream in den T3-Chat zurück — nicht über den AG-UI-Run.
+     *
+     * Nur dieser eine Pfad nutzt `sendT3Message`; der Rest der Datei bleibt der alte Weg. Der
+     * Aufrufer dieser Funktion ist der Composer, und im T3-Fall zeichnet `T3AgentChat` seinen
+     * eigenen; dieser Pfad ist damit nur der eine Fall, in dem eine Nachricht ohne Composer
+     * ankommt (die erste Nachricht aus dem Compose-Bildschirm).
+     */
+    if (isT3Chat) {
+      const { sendT3Message } = await import("@/lib/t3");
+      const provider = resolveAgentT3Provider(deliverProfile);
+      try {
+        await sendT3Message(runtimeAgentId, {
+          clientMessageId: newId(),
+          text: trimmed,
+          ...(provider ? { provider } : {}),
+        });
+        awaitingReply.current = false;
+        return;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Die T3-Brücke ist nicht erreichbar.";
+        awaitingReply.current = false;
+        turnFailure.current = message;
+        setRunError(message);
+        throw error instanceof Error ? error : new Error(message);
+      }
+    }
+
+    /*
+     * DIE CLI DES BOTS — vor allem anderen Provider-Pfad (Helium-Schritt `chatcli`).
+     *
+     * Steht hier an erster Stelle, weil das die Engine ist, die derselbe Bot im CLI-Tab fährt: sein
+     * PTY-Terminal startet sie aus `agents.configuration.engine.kind` bzw. `chosen_cli`. Vorher
+     * entschied allein der globale Model-Provider im localStorage, und der Chat schickte den Text an
+     * den zentralen Codex-Bridge-Proxy — für einen Bot mit z.B. Claude-Engine also an die falsche CLI.
+     *
+     * `resolveAgentChatCli` liefert `null`, wenn der Bot keine echte CLI hat (Hermes, Browser-Profil,
+     * Manus). Dann greift unverändert der bisherige Weg: Model-One-Router, Legacy-Shell, sonst
+     * CopilotKit/Hermes.
+     */
+    const configuredCli = resolveAgentChatCli(deliverProfile);
+    const unifiedProvider = unifiedEnabled ? sessionCliProvider(unified.session?.provider) : undefined;
+    const agentCli = configuredCli && unifiedProvider
+      ? { ...configuredCli, cli: unifiedProvider }
+      : configuredCli;
+
     /*
      * oneconv · KONTEXT-ROTATION. A thread too long for the model continues in a fresh segment of the
      * same conversation (the screen stays, see routes/_authed/_app/agent/$agentId.tsx). Only for runs
@@ -627,6 +763,7 @@ export function ChannelChat({
     if (
       onRotateRef.current &&
       attachments.length === 0 &&
+      !agentCli &&
       !shouldUseModelRouter(runtimeAgentId) &&
       !agentUsesExternalShell(runtimeAgentId) &&
       contextSizeChars(target.messages as never) > rotationThresholdChars()
@@ -672,9 +809,10 @@ export function ChannelChat({
       });
     }
 
+    const userMessageId = newId();
     target.addMessage({
       content: toMessageContent(trimmed, attachments),
-      id: newId(),
+      id: userMessageId,
       role: "user",
     });
     report(trimmed || describeAttachments(attachments), null);
@@ -685,11 +823,81 @@ export function ChannelChat({
       target.setMessages(repaired as typeof target.messages);
     }
 
+    // Cloud-Agent: an den Connect-Server übergeben; die Antwort kommt über `cloud` nach.
+    if (await cloud.resolveIsCloud()) {
+      /*
+       * NIE in den CLI-Pfad ausweichen. Ein Cloud-Agent ohne Verbindung ist nicht einsatzbereit, und
+       * eine CLI, die stattdessen antwortet, wäre eine falsche Auskunft über das, was hier läuft.
+       */
+      if (!cloud.configured) {
+        const message =
+          "Dieser Agent ist noch nicht eingerichtet. Bitte zuerst die Cloud-Verbindung speichern.";
+        awaitingReply.current = false;
+        turnFailure.current = message;
+        setRunError(message);
+        throw new Error(message);
+      }
+      try {
+        await cloud.send({
+          clientMessageId: userMessageId,
+          threadId: channel.threadId,
+          text: trimmed,
+          attachments: attachments.map((a) => {
+            const { attachmentId, filename } = uploadedAttachment(a);
+            return { attachmentId, filename: filename ?? "datei" };
+          }),
+        });
+        awaitingReply.current = false;
+        return;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        awaitingReply.current = false;
+        turnFailure.current = message;
+        setRunError(message);
+        throw error instanceof Error ? error : new Error(message);
+      }
+    }
+
+    /*
+     * DIE CLI DES BOTS. Auflösung und Begründung stehen weiter oben, wo `agentCli` berechnet wird —
+     * dort liegt sie vor der Rotation, weil ein CLI-Bot seinen Kontext nicht an das Modell übergibt.
+     */
+    if (agentCli) {
+      const fileHints = attachments
+        .map((a) => {
+          try {
+            return uploadedAttachment(a).filename;
+          } catch {
+            return undefined;
+          }
+        })
+        .filter((n): n is string => Boolean(n));
+      const result = await runAgentCliTurn({
+        agentId: runtimeAgentId,
+        text: trimmed,
+        agentName,
+        fileHints: fileHints.length ? fileHints : undefined,
+        ...agentCli,
+        ...(unifiedProvider ? { provider: unifiedProvider } : {}),
+      });
+      target.addMessage({
+        content: result.summary,
+        id: newId(),
+        role: "assistant",
+      });
+      report(result.summary, runtimeAgentId);
+      awaitingReply.current = false;
+      if (!result.ok) {
+        turnFailure.current = result.summary;
+        setRunError(result.summary);
+        throw new Error(result.summary);
+      }
+      return;
+    }
+
     // Model One (External) or legacy shell bots — never hit Hermes AG-UI.
     if (shouldUseModelRouter(runtimeAgentId)) {
-      const agentName =
-        agentProfiles?.find((a) => a.id === runtimeAgentId)?.name ??
-        runtimeAgentId;
       const fileHints = attachments
         .map((a) => {
           try {
@@ -723,9 +931,6 @@ export function ChannelChat({
         return;
       }
     } else if (agentUsesExternalShell(runtimeAgentId)) {
-      const agentName =
-        agentProfiles?.find((a) => a.id === runtimeAgentId)?.name ??
-        runtimeAgentId;
       const result = await dispatchShellTurn({
         agentId: runtimeAgentId,
         text: trimmed,
@@ -905,6 +1110,27 @@ export function ChannelChat({
       threadId={channel.threadId}
     >
       <ConversationProvider ask={askFromComponent}>
+        <CloudStatusProvider value={cloud.statuses}>
+        {/*
+         * DER T3-CHAT (A22).
+         *
+         * Ein Bot, der über die T3-Brücke läuft, zeichnet hier den T3-Chat statt des bisherigen
+         * AG-UI-Chats: SSE-Stream, Tool-Zeilen, Freigabekarten, 100k-Kontext-Trenner. Sonst gäbe es
+         * zwei Wahrheiten über dieselbe Unterhaltung — der eine Chat nähme die Nachricht an, der
+         * andere bekäme sie nicht.
+         *
+         * Hinter dem Flag `connect.t3.bridge`. Flag aus: exakt der alte Aufbau, ohne eine Zeile
+         * Unterschied. Cloud-Agenten (Muse) sind nie betroffen — `runtimeKind` ist für sie `cloud`,
+         * und `cloud` wird zuallererst geprüft.
+         */}
+        {isT3Chat ? (
+          <T3AgentChat
+            agentId={runtimeAgentId}
+            className="min-h-0 flex-1"
+            cliName={runtimeProfile?.name}
+            onReply={(text) => reportRef.current(text, runtimeAgentId)}
+          />
+        ) : (
         <ConversationView
           agents={toAgentOptions(agentProfiles, channel.agentIds)}
           channelId={channel.id}
@@ -916,13 +1142,29 @@ export function ChannelChat({
           busy={agent.isRunning || turnsInFlight > 0}
           // The `/` menu exposes only skills granted to this Bot.
           commands={skillCommands}
-          // Readiness is handled by `say`; deletion is the only disabled-chat state.
-          disabled={!channel.active}
+          // Readiness is handled by `say`; deletion and a missing cloud connection are the only disabled states.
+          disabled={!channel.active || (cloud.isCloud && !cloud.configured)}
           messages={transcriptMessages(agent.messages, seed)}
+          {...(unifiedEnabled ? { cliMessages: unified.messages } : {})}
           {...(header ? { header } : {})}
           {...(initialVisible ? { initialVisible } : {})}
           notice={
-            channel.active ? null : (
+            cloud.isCloud && !cloud.configured ? (
+              <div
+                className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2"
+                role="status"
+              >
+                <p className="text-sm text-muted-foreground">
+                  Dieser Agent ist noch nicht eingerichtet — für ihn ist eine Cloud-Verbindung
+                  nötig.
+                </p>
+                {onConfigureCloud ? (
+                  <Button onClick={onConfigureCloud} size="sm" type="button" variant="secondary">
+                    Jetzt einrichten
+                  </Button>
+                ) : null}
+              </div>
+            ) : channel.active ? null : (
               <p className="pb-2 text-sm text-muted-foreground" role="status">
                 This coworker has been deleted. The conversation stays
                 readable, but it can no longer reply.
@@ -1004,6 +1246,8 @@ export function ChannelChat({
             "Coworker"
           }
         />
+        )}
+        </CloudStatusProvider>
       </ConversationProvider>
     </CopilotChatConfigurationProvider>
   );

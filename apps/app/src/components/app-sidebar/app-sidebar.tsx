@@ -10,8 +10,12 @@ import {
   IconDeviceMobile,
   IconSettings,
   IconChartBar,
+  IconFlask,
+  IconScale,
+  IconServer,
   IconSun,
   IconUsersGroup,
+  IconActivity,
 } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
@@ -19,10 +23,12 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { isFeatureEnabled } from "@/contracts/flags";
+import { SidebarV2 } from "@/components/sidebar-v2";
 import { UserAvatar } from "@/components/app-sidebar/user-avatar";
 import {
   DropdownMenu,
@@ -85,11 +91,11 @@ import {
   subscribeFocusTimer,
   toggleFocusTimer,
 } from "@/lib/focus-timer";
-import {
-  getCompany,
-  listCompanies,
-  subscribeCompanies,
-} from "@/lib/companies/store";
+import { getCompany, listCompanies, subscribeCompanies } from "@/lib/companies/store";
+import { getT3Flag } from "@/lib/t3/contracts";
+import { AgentGrid } from "@/components/app-sidebar/agent-grid";
+import { UsageT3Modal } from "@/components/usage-t3/UsageT3Modal";
+import { PhoneT3Dialog } from "@/components/phone-t3";
 
 const userMenuItemClassName = "gap-2 px-2 py-1.5";
 
@@ -232,6 +238,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { toggleSidebar, state: sidebarState } = useSidebar();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const { active: activeCompany } = useCompanySwitcher();
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const channels = useInfiniteQuery(channelListQueryOptions());
@@ -356,6 +363,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [timerPanelOpen, setTimerPanelOpen] = useState(false);
   const [timer, setTimer] = useState(() => getFocusTimer());
 
+  /*
+   * T3-Dialoge im Benutzer-Menü (I1).
+   *
+   * „Nutzung & Limits" (A24) und „Handy verbinden" (A34) haben beide eine eigene
+   * Komponente mit eigener Modal-Hülle. Sie öffnen nur, wenn ihr T3-Flag gesetzt ist;
+   * ist das Flag aus, bleibt der alte Weg (Navigation nach /settings#…) erhalten.
+   */
+  const t3BridgeEnabled = getT3Flag("bridge");
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
+
   useEffect(() => subscribeFocusTimer(() => setTimer(getFocusTimer())), []);
   useEffect(() => {
     if (!timer.running) return;
@@ -365,7 +383,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const timerLabel = formatFocusTimer(timer.seconds);
 
+  // Swarm-v2 Lane 1: Render SidebarV2 if feature flag is active
+  if (isFeatureEnabled("sidebarV2")) {
+    return (
+      <SidebarV2
+        channels={companyChannels}
+        {...props}
+      />
+    );
+  }
+
   return (
+    <>
     <Sidebar data-chat-sidebar="true" collapsible="icon" {...props}>
       <SidebarHeader className="gap-2 border-b border-sidebar-border/50 p-2.5 pb-3 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-1.5">
         {/* Top rail: Logo (Company-Switcher) · Focus · Messages · Browser · Unternehmen · collapse */}
@@ -418,10 +447,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   className="gap-2 rounded-lg px-2.5 py-2"
-                  onClick={() => void navigate({ to: "/settings", hash: "model-one" })}
+                  onClick={() => void navigate({ to: "/agents", search: { new: true, tab: "mine" } })}
                 >
                   <IconRobot className="size-4" />
-                  New bot
+                  Neuer Agent
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="gap-2 rounded-lg px-2.5 py-2"
@@ -430,6 +459,34 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <IconBuildingStore className="size-4" />
                   Market
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => void navigate({ to: "/swarm" as any })}
+                >
+                  <IconServer className="size-4 text-emerald-500" />
+                  Swarm-Dashboard
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => void navigate({ to: "/council" as any })}
+                >
+                  <IconScale className="size-4 text-amber-500" />
+                  Council (Roast-Room)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => void navigate({ to: "/simulation" as any })}
+                >
+                  <IconFlask className="size-4 text-cyan-500" />
+                  Simulation Studio
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 rounded-lg px-2.5 py-2"
+                  onClick={() => void navigate({ to: "/usage" as any })}
+                >
+                  <IconActivity className="size-4 text-cyan-500" />
+                  Nutzung & Conductor
+                </DropdownMenuItem>
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -437,6 +494,58 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent className="scroll-fade-b px-1.5 pt-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:overflow-x-hidden group-data-[collapsible=icon]:px-1.5">
         <SidebarMenu className="group-data-[collapsible=icon]:items-center">
+          <SidebarGroup className="gap-1 p-0 mb-1.5 w-full group-data-[collapsible=icon]:items-center">
+            <SidebarMenuItem className="w-full">
+              <SidebarMenuButton
+                isActive={location.pathname === "/swarm"}
+                onClick={() => void navigate({ to: "/swarm" as any })}
+                tooltip="Swarm-Dashboard (20 Kacheln)"
+                className="h-9 w-full rounded-xl font-medium gap-2.5 px-2 hover:bg-sidebar-accent text-sidebar-foreground group-data-[collapsible=icon]:justify-center"
+              >
+                <IconServer className="size-4 text-emerald-500 shrink-0" />
+                <span className="truncate group-data-[collapsible=icon]:hidden font-semibold">Swarm</span>
+                <span className="ml-auto rounded-full bg-emerald-500/15 px-1.5 py-0.2 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 group-data-[collapsible=icon]:hidden">
+                  20
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem className="w-full">
+              <SidebarMenuButton
+                isActive={location.pathname === "/council"}
+                onClick={() => void navigate({ to: "/council" as any })}
+                tooltip="Council (Roast-Room)"
+                className="h-9 w-full rounded-xl font-medium gap-2.5 px-2 hover:bg-sidebar-accent text-sidebar-foreground group-data-[collapsible=icon]:justify-center"
+              >
+                <IconScale className="size-4 text-amber-500 shrink-0" />
+                <span className="truncate group-data-[collapsible=icon]:hidden font-semibold">Council</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem className="w-full">
+              <SidebarMenuButton
+                isActive={location.pathname === "/simulation"}
+                onClick={() => void navigate({ to: "/simulation" as any })}
+                tooltip="Simulation Studio"
+                className="h-9 w-full rounded-xl font-medium gap-2.5 px-2 hover:bg-sidebar-accent text-sidebar-foreground group-data-[collapsible=icon]:justify-center"
+              >
+                <IconFlask className="size-4 text-cyan-500 shrink-0" />
+                <span className="truncate group-data-[collapsible=icon]:hidden font-semibold">Simulation</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem className="w-full">
+              <SidebarMenuButton
+                isActive={location.pathname === "/usage"}
+                onClick={() => void navigate({ to: "/usage" as any })}
+                tooltip="Nutzung & Conductor"
+                className="h-9 w-full rounded-xl font-medium gap-2.5 px-2 hover:bg-sidebar-accent text-sidebar-foreground group-data-[collapsible=icon]:justify-center"
+              >
+                <IconActivity className="size-4 text-cyan-500 shrink-0" />
+                <span className="truncate group-data-[collapsible=icon]:hidden font-semibold">Conductor</span>
+                <span className="ml-auto rounded-full bg-cyan-500/15 px-1.5 py-0.2 text-[10px] font-bold text-cyan-600 dark:text-cyan-400 group-data-[collapsible=icon]:hidden">
+                  Live
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarGroup>
           <SidebarGroup className="gap-0 p-0 group-data-[collapsible=icon]:items-center">
 
             {/*
@@ -479,11 +588,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </div>
             ) : null}
             <div className="order-3 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-              <CompanyAgentsNav
-                query={search}
-                searching={searching}
-                channels={companyChannels}
-              />
+              {/*
+               * Agenten-Raster (A28, Idee I6) — Grok-Bot-Stil mit Ordnern.
+               *
+               * Hinter dem Flag `mascot` ersetzt das Raster die alte Agentenliste.
+               * Flag aus = die alte Liste bleibt genau wie vorher stehen. Das Raster
+               * prüft das Flag selbst ebenfalls und rendert dann nichts — hier wird
+               * deshalb die Entscheidung getroffen, damit niemals beide da sind.
+               *
+               * APPS und PC-APPS (I3/I4) bleiben unangetastet — sie stehen weiterhin
+               * in `CompanyAppFoldersNav` bzw. `MessagesAppsMenu`.
+               */}
+              {getT3Flag("mascot") ? (
+                <AgentGrid search={search} />
+              ) : (
+                <CompanyAgentsNav
+                  query={search}
+                  searching={searching}
+                  channels={companyChannels}
+                />
+              )}
             </div>
             <div className="order-2 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
               <CompanyAppFoldersNav searching={searching} />
@@ -563,16 +687,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className={userMenuItemClassName}
-                    onClick={() =>
-                      void navigate({ to: "/settings", hash: "usage" })
-                    }
+                    onClick={() => {
+                      /*
+                       * Mit T3-Brücke öffnet „Nutzung & Limits" die volle A24-Ansicht
+                       * (Cost / Tokens / Limits) als Dialog — an derselben Stelle, an der
+                       * es vorher die Navigation nach /settings#codex-usage war.
+                       * Ohne Brücke bleibt die alte Navigation.
+                       */
+                      if (t3BridgeEnabled) {
+                        setUsageOpen(true);
+                        return;
+                      }
+                      void navigate({ to: "/settings", hash: "usage" });
+                    }}
                   >
                     <IconChartBar />
                     Usage
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className={userMenuItemClassName}
-                    onClick={() => void navigate({ to: "/settings", hash: "handy-verbinden" })}
+                    onClick={() => {
+                      /*
+                       * „Handy verbinden" aus T3 (A34). Ohne Brücke geht es wie bisher
+                       * in die Einstellungen.
+                       */
+                      if (t3BridgeEnabled) {
+                        setPhoneOpen(true);
+                        return;
+                      }
+                      void navigate({ to: "/settings", hash: "handy-verbinden" });
+                    }}
                   >
                     <IconDeviceMobile />
                     Handy verbinden
@@ -645,7 +789,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarFooter>
       <SidebarRail />
       <NewAgentGroupDialog onOpenChange={setGroupOpen} open={groupOpen} />
+      {/*
+       * Die T3-Dialoge hängen am Benutzer-Menü und werden dort geöffnet. Sie rendern
+       * nur, solange ihr Flag gesetzt ist — sonst ist der alte Weg aktiv.
+       */}
+      <UsageT3Modal isOpen={usageOpen} onClose={() => setUsageOpen(false)} />
+      <PhoneT3Dialog isOpen={phoneOpen} onClose={() => setPhoneOpen(false)} />
     </Sidebar>
+    </>
   );
 }
 

@@ -116,6 +116,9 @@ internal sealed class Backend
         // Sobald ein Identity Provider konfiguriert ist, ist das aus — dann bindet
         // jede Anmeldung an ihr eigenes Konto (eigene Firmen, eigene Agenten).
         e["CONNECT_SINGLE_USER"] = hasIdp ? "false" : "true";
+        // T3-Backend: ohne dieses Flag bleiben alle T3-Oberflächen unsichtbar
+        // (kompilierte Defaults: alles aus). connect.env darf überschreiben.
+        if (!envFile.ContainsKey("CONNECT_FLAGS_T3")) e["CONNECT_FLAGS_T3"] = "all";
         e["APP_DIST_DIR"] = _p.AppDistDir;
         e["TENANT_PACKAGE_DIR"] = _p.TenantDir;
         e["CONNECT_APP_URL"] = origin;

@@ -10,6 +10,12 @@ import "./flux-app.css";
 /** Mounts Flux's complete original route tree as a Connect Messages app module. */
 export default function FluxCompanyApp({ company, identity }: CompanyAppProps) {
   setFluxCompanyScope(company.id);
+  const effectiveIdentity = identity ?? {
+    id: "connect-user",
+    email: "user@connect.local",
+    name: "Connect User",
+    image: null,
+  };
   const router = useMemo(() => {
     const queryClient = new QueryClient();
     const history = createMemoryHistory({ initialEntries: ["/app/dashboard"] });
@@ -18,7 +24,7 @@ export default function FluxCompanyApp({ company, identity }: CompanyAppProps) {
 
   return (
     <div className="flux-app dark h-full min-h-0 w-full overflow-hidden text-white" data-company={company.id}>
-      <ConnectAuthBridge identity={identity}>
+      <ConnectAuthBridge identity={effectiveIdentity}>
         <RouterProvider router={router} />
       </ConnectAuthBridge>
     </div>

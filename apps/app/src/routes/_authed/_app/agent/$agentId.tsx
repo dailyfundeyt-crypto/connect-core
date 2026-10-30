@@ -6,23 +6,34 @@
  * of the same Bot are drawn above it on request, and a thread that grows too long for the model is
  * continued in a fresh one in the background (`onRotate`), on the same screen.
  */
-import { IconDeviceDesktop, IconSettings } from "@tabler/icons-react";
+import { IconDeviceDesktop, IconFolder, IconListCheck, IconMessageDots, IconSettings, IconTerminal2 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { AgentBrowserMenu } from "@/components/agents/agent-browser-menu";
 import { AgentChromeFullscreen } from "@/components/agents/agent-chrome-fullscreen";
+import { AgentCliTerminal } from "@/components/agents/agent-cli-terminal";
+import { AgentDialog, isSectionId } from "@/components/agents/agent-dialog";
 import { AgentHistory } from "@/components/agents/agent-history";
-import { AgentProfile } from "@/components/agents/agent-profile";
 import { ComputerViewPanel } from "@/components/agents/computer-view-panel";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
+import { InboxUnavailable, InboxView } from "@/components/cloud-inbox/inbox-view";
+import {
+  ProjectsPanel,
+  ProjectsUnavailable,
+} from "@/components/cloud-inbox/projects-panel";
+import {
+  ScheduledTasksPanel,
+  TasksUnavailable,
+} from "@/components/cloud-inbox/scheduled-tasks-panel";
 import { stashFirstMessage } from "@/components/channels/transcript-messages";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { MobileBackOrSidebarToggle } from "@/components/mobile/mobile-shell";
 import { Button } from "@/components/ui/button";
+import { getAgentBrowserMode } from "@/lib/agents/agent-browser";
 import {
   type AgentSegment,
   buildRotationPrimer,
@@ -33,16 +44,30 @@ import {
   stashPrimer,
   unreadSegmentIds,
 } from "@/lib/agents/agent-conversation";
+import {
+  cloudProviderShortLabel,
+  useAgentRuntime,
+} from "@/lib/agents/cloud-agent";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { getAgentBrowserMode } from "@/lib/agents/agent-browser";
 import { subscribeOpenAgentWatch } from "@/lib/agents/shell-dispatch";
 import { markChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions, channelQueryOptions } from "@/lib/channels/queries";
 import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
+import { cn } from "@/lib/utils";
 
 const searchSchema = z.object({
-  settings: z.boolean().optional(),
+    settings: z.boolean().optional(),
   watch: z.boolean().optional(),
+  view: z.enum(["chat", "cli"]).optional(),
+  /**
+   * Die Ansicht eines Cloud-Agenten: Chat, Inbox, Aufgaben oder Projekte.
+   *
+   * Für CLI-Agenten bleibt es bei „chat“/„cli“ — die Inbox-Ansicht gibt es nur dort, wo es eine
+   * Cloud-Verbindung gibt.
+   */
+  cloudView: z.enum(["chat", "inbox", "tasks", "projects"]).optional(),
+  /** Which register of the one detail shell to open; ignored when it names no section. */
+  section: z.string().optional(),
 });
 
 const SCREEN_PANEL_WIDTH = 400;
@@ -56,15 +81,38 @@ export const Route = createFileRoute("/_authed/_app/agent/$agentId")({
 
 const ROTATION_MARK = "[Connect · Kontext-Übergabe]";
 
+/**
+ * Die vier Ansichten eines Cloud-Agenten. Sie sitzen an genau der Stelle, an der sonst die
+ * CLI-Auswahl steht, und sehen genauso aus.
+ */
+const CLOUD_VIEWS = [
+  { id: "chat", label: "Chat", icon: IconMessageDots, hint: "Unterhaltung mit dem Agenten" },
+  { id: "inbox", label: "Inbox", icon: IconMessageDots, hint: "Nachrichten der Muse-Inbox" },
+  { id: "tasks", label: "Aufgaben", icon: IconListCheck, hint: "Geplante Aufgaben und offene Muse-Aufgaben" },
+  { id: "projects", label: "Projekte", icon: IconFolder, hint: "Projekte der Muse-Inbox" },
+] as const;
+
 function AgentConversationRoute() {
   const { agentId } = Route.useParams();
-  const { settings, watch } = Route.useSearch();
+  const { settings, watch, view, cloudView, section } = Route.useSearch();
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const mobileShell = useMobileShell();
   const agents = useQuery(agentListQueryOptions());
   const agent = agents.data?.find((a) => a.id === agentId);
   const agentName = agent?.name ?? "Agent";
+  const isFreebuff = agent?.chosenCli === "freebuff" || agent?.engine?.kind === "freebuff";
+  /*
+   * Ein Cloud-Agent hat keinen CLI-Tab: seine Antworten kommen vom Anbieter, nicht von einem
+   * lokalen Prozess. `view=cli` in einem alten Link darf ihn deshalb nicht dorthin schicken.
+   */
+  const runtime = useAgentRuntime(agentId);
+  const isCloud = runtime.runtime === "cloud";
+  const activeView = isCloud ? "chat" : (view ?? (isFreebuff ? "cli" : "chat"));
+  /* Die vier Ansichten eines Cloud-Agenten — dieselbe Stelle, an der sonst die CLI-Auswahl steht. */
+  const activeCloudView = cloudView ?? "chat";
+  const hasInboxKey = Boolean(runtime.config?.hasKey);
+  const hasOwnerKey = Boolean(runtime.config?.hasOwnerKey);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [segments, setSegments] = useState<AgentSegment[] | null>(null);
@@ -111,7 +159,9 @@ function AgentConversationRoute() {
     for (const id of unreadKey.split(",")) markReadMutate(id);
   }, [unreadKey, markReadMutate]);
 
-  const isSettingsOpen = settings === true;
+  /* A link that names a register opens that register, the way the old modal link did. */
+  const initialSection = isSectionId(section) ? section : undefined;
+  const isSettingsOpen = settings === true || initialSection !== undefined;
   const isWatching = watch === true;
   const isChromeFullscreen = isWatching && getAgentBrowserMode(agentId) === "chrome";
   const needsYou = useNeedsYou(agentId, !isWatching);
@@ -130,6 +180,8 @@ function AgentConversationRoute() {
       search: (previous) => ({
         ...previous,
         settings: next === "settings" ? true : undefined,
+        /* Closing drops the register too, or the dialog would reopen from the URL. */
+        section: next === null ? undefined : previous.section,
         watch: next === "watch" ? true : undefined,
       }),
     });
@@ -179,30 +231,103 @@ function AgentConversationRoute() {
     <>
     <DetailPanel
       onClose={() => show(null)}
-      open={isSettingsOpen || (isWatching && !isChromeFullscreen)}
+      open={isWatching && !isChromeFullscreen}
       detailWidth={isWatching && !isChromeFullscreen ? SCREEN_PANEL_WIDTH : undefined}
-      title={mobileShell ? (isWatching ? "Computer" : "Agent-Einstellungen") : undefined}
+      title={mobileShell && isWatching ? "Computer" : undefined}
       detail={
-        /* A `key` makes sure the two trees look like different components to React so it never
-         * tries to reuse the same hook state across them. Without it, the conditional can flip
-         * while React still thinks it's the same component, and a different hook count between
-         * the two branches trips the "Rendered more hooks than during the previous render" guard. */
+        /* Only while watching: the panel mounts the live screen, which polls. Closed means closed. */
         isWatching && !isChromeFullscreen ? (
           <ComputerViewPanel agentId={agentId} key="watch" name={agentName} />
-        ) : (
-          <AgentProfile agentId={agentId} key="profile" />
-        )
+        ) : null
       }
     >
       <div className="flex flex-col">
-        <div className="h-12 border-b border-border sticky top-0 flex flex-row items-center justify-between px-3 gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
+        <div className="h-12 sticky top-0 flex flex-row items-center justify-between px-3 gap-2 transition-colors duration-180 z-10 bg-background/70 backdrop-blur-md">
+          <div className="flex min-w-0 items-center gap-2">
             <MobileBackOrSidebarToggle />
-            <ChannelAvatar participantIds={[agentId]} size={22} />
-            <span className="min-w-0 text-sm tracking-tight truncate" data-testid="agent-conversation-title">
+            <ChannelAvatar participantIds={[agentId]} size={24} />
+            <span className="min-w-0 text-sm font-medium tracking-tight truncate" data-testid="agent-conversation-title">
               {agentName}
             </span>
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                isCloud
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  : "border-border/70 bg-muted/40 text-muted-foreground",
+              )}
+              data-testid="agent-runtime-badge"
+            >
+              {isCloud
+                ? `Cloud${runtime.config ? ` · ${cloudProviderShortLabel(runtime.config.provider)}` : ""}`
+                : `CLI · ${agentName}`}
+            </span>
           </div>
+
+          {/* Toggle Chat ↔ CLI (Schritt 17) — nur für Agents, die wirklich eine CLI haben. */}
+          {isCloud ? (
+          <div
+            className="flex items-center rounded-full border border-border/70 bg-muted/40 p-0.5 text-xs font-medium transition-colors duration-180"
+            data-testid="cloud-view-switcher"
+          >
+            {CLOUD_VIEWS.map((entry) => (
+              <button
+                type="button"
+                key={entry.id}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, cloudView: entry.id }),
+                  })
+                }
+                className={cn(
+                  "flex items-center gap-1 px-3 py-1 rounded-full transition-colors cursor-pointer",
+                  activeCloudView === entry.id
+                    ? "bg-background text-foreground shadow-sm font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                data-testid={`cloud-view-${entry.id}`}
+                title={entry.hint}
+              >
+                <entry.icon className="size-3.5" />
+                <span>{entry.label}</span>
+              </button>
+            ))}
+          </div>
+          ) : (
+          <div className="flex items-center rounded-full border border-border/70 bg-muted/40 p-0.5 text-xs font-medium transition-colors duration-180">
+            <button
+              type="button"
+              onClick={() => void navigate({ search: (prev) => ({ ...prev, view: isFreebuff ? "chat" : undefined }) })}
+              className={cn(
+                "flex items-center gap-1 px-3 py-1 rounded-full transition-colors cursor-pointer",
+                activeView === "chat"
+                  ? "bg-background text-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              data-testid="toggle-chat-view"
+              title="Chat-Interface anzeigen"
+            >
+              <IconMessageDots className="size-3.5" />
+              <span>Chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void navigate({ search: (prev) => ({ ...prev, view: isFreebuff ? undefined : "cli" }) })}
+              className={cn(
+                "flex items-center gap-1 px-3 py-1 rounded-full transition-colors cursor-pointer",
+                activeView === "cli"
+                  ? "bg-background text-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              data-testid="toggle-cli-view"
+              title="Echtes CLI-Terminal (PTY) anzeigen"
+            >
+              <IconTerminal2 className="size-3.5" />
+              <span>CLI</span>
+            </button>
+          </div>
+          )}
+
           <div className="flex flex-row gap-1.5">
             <AgentBrowserMenu
               active={isWatching}
@@ -213,7 +338,7 @@ function AgentConversationRoute() {
             <Button
               aria-label="Agent-Einstellungen"
               aria-pressed={isSettingsOpen}
-              className={isSettingsOpen ? "bg-foreground/5" : undefined}
+              className={cn("rounded-full", isSettingsOpen && "bg-foreground/5")}
               onClick={() => void show(isSettingsOpen ? null : "settings")}
               variant="ghost"
               size="icon"
@@ -223,7 +348,27 @@ function AgentConversationRoute() {
           </div>
         </div>
       </div>
-      {error ? (
+      {isCloud && activeCloudView === "inbox" ? (
+        hasInboxKey ? (
+          <InboxView agentId={agentId} hasOwnerKey={hasOwnerKey} />
+        ) : (
+          <InboxUnavailable />
+        )
+      ) : isCloud && activeCloudView === "tasks" ? (
+        hasInboxKey ? (
+          <ScheduledTasksPanel agentId={agentId} />
+        ) : (
+          <TasksUnavailable />
+        )
+      ) : isCloud && activeCloudView === "projects" ? (
+        hasInboxKey ? (
+          <ProjectsPanel agentId={agentId} />
+        ) : (
+          <ProjectsUnavailable />
+        )
+      ) : activeView === "cli" ? (
+        <AgentCliTerminal agentId={agentId} agentName={agentName} conversationId={activeId} />
+      ) : error ? (
         <p className="p-8 text-sm text-destructive" role="alert">
           {error}
         </p>
@@ -240,6 +385,9 @@ function AgentConversationRoute() {
           )}
           initialVisible={VISIBLE_ROWS}
           key={channel.data.id}
+          onConfigureCloud={() =>
+            void navigate({ search: (previous) => ({ ...previous, settings: true, section: "cloud" }) })
+          }
           onRotate={onRotate}
           runtimeAgentId={agentId}
         />
@@ -256,6 +404,17 @@ function AgentConversationRoute() {
     {isChromeFullscreen ? (
       <AgentChromeFullscreen agentId={agentId} name={agentName} onClose={() => void show(null)} />
     ) : null}
+    {/*
+      * The one detail shell. It used to be mounted by the catalog as its own modal and by the
+      * drawer as a second hull with a card stack; both now land here, on the route that owns the
+      * conversation, so a Bot has exactly one place where its sections live.
+      */}
+    <AgentDialog
+      agentId={agentId}
+      initialSection={initialSection}
+      onClose={() => void show(null)}
+      open={isSettingsOpen}
+    />
     </>
   );
 }

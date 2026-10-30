@@ -13,6 +13,10 @@ export type PairedDevice = {
   userAgent: string;
   /** Better-Auth-Sitzung, die dieses Geraet traegt (wird beim Entfernen mit geloescht). */
   sessionToken: string | null;
+  /** Wie gekoppelt: "qr" (Handy-QR), "pc-login" (Laptop per Handy-Freigabe) oder "gateway" (Vercel-Gateway). Fehlt bei alten Eintraegen. */
+  via?: string;
+  /** Hash der Browser-Kennung vom Gateway: gleicher Browser -> gleiches Geraet nach Tunnel-Wechsel (kein neues Geraet je Besuch). */
+  browserKeyHash?: string | null;
 };
 
 export type TunnelState = {
@@ -54,7 +58,7 @@ export function createTunnelStore(dataDir: string) {
 
   return {
     devices: () => devices.slice(),
-    addDevice(input: { label: string; userId: string; userAgent: string }) {
+    addDevice(input: { label: string; userId: string; userAgent: string; via?: string; browserKeyHash?: string | null }) {
       const id = `dev_${randomBytes(9).toString("base64url")}`;
       const secret = randomBytes(32).toString("base64url");
       const device: PairedDevice = {
@@ -66,6 +70,8 @@ export function createTunnelStore(dataDir: string) {
         lastSeenAt: new Date().toISOString(),
         userAgent: input.userAgent.slice(0, 300),
         sessionToken: null,
+        ...(input.via ? { via: input.via } : {}),
+        ...(input.browserKeyHash ? { browserKeyHash: input.browserKeyHash } : {}),
       };
       devices.push(device);
       saveDevices();
@@ -83,6 +89,16 @@ export function createTunnelStore(dataDir: string) {
       const b = Buffer.from(device.secretHash, "hex");
       if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
       return device;
+    },
+    /** Neues Geheimnis fuer ein bestehendes Geraet (alter Cookie wird ungueltig). Fuer Gateway-Wiederkehr nach Tunnel-Wechsel. */
+    reissue(id: string): { device: PairedDevice; cookieValue: string } | null {
+      const device = devices.find((candidate) => candidate.id === id);
+      if (!device) return null;
+      const secret = randomBytes(32).toString("base64url");
+      device.secretHash = sha256(secret);
+      device.lastSeenAt = new Date().toISOString();
+      saveDevices();
+      return { device, cookieValue: `${device.id}.${secret}` };
     },
     touch(device: PairedDevice) {
       device.lastSeenAt = new Date().toISOString();

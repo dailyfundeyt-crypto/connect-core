@@ -61,15 +61,16 @@ export function AgentComputerPeek({
 
   // Warm the default Chrome profile quietly so the peek has something to show.
   useEffect(() => {
-    if (session.status === "idle" && prefs.runtime === "chrome") {
+    if (prefs.runtime === "chrome") {
       void ensureAgentBrowserStarted(agentId);
     }
-  }, [agentId, prefs.runtime, session.status]);
+  }, [agentId, prefs.runtime]);
 
   const live =
     session.status === "running" ||
     session.status === "starting" ||
-    session.status === "error";
+    session.status === "error" ||
+    prefs.runtime === "chrome";
 
   if (!live && prefs.runtime === "chrome" && session.status === "idle") {
     // Still show a quiet Chrome strip so the person knows the default computer.
@@ -80,9 +81,15 @@ export function AgentComputerPeek({
         onOpen={() => openWatch(navigate)}
         runtime="chrome"
       >
-        <ChromeFramePlaceholder
-          message="Bereit · tippe oder öffne den Monitor"
-          subtle
+        <AgentChromeLive
+          agentId={agentId}
+          fallback={() => (
+            <ChromeFramePlaceholder
+              message="Bereit · tippe oder öffne den Monitor"
+              subtle
+            />
+          )}
+          intervalMs={2000}
         />
       </PeekShell>
     );
@@ -135,31 +142,26 @@ export function AgentComputerPeek({
             </span>
           </div>
         )
-      ) : prefs.runtime === "chrome" && session.status === "running" ? (
+      ) : prefs.runtime === "chrome" ? (
         <AgentChromeLive
           agentId={agentId}
           fallback={(error) => (
             <ChromeFramePlaceholder
-              message={error ?? "Vorschau lädt…"}
-              subtle
+              message={
+                session.status === "starting"
+                  ? "Chrome-Profil startet…"
+                  : error
+                    ? error
+                    : (session.message ?? "Vorschau lädt…")
+              }
+              subtle={session.status !== "error"}
             />
           )}
-          intervalMs={2000}
+          intervalMs={1800}
           onUnavailable={() => {
             // Agent window was closed / server restarted — relaunch its own profile.
             stopAgentBrowser(agentId);
           }}
-        />
-      ) : prefs.runtime === "chrome" ? (
-        <ChromeFramePlaceholder
-          message={
-            session.status === "error"
-              ? (session.message ?? "Chrome nicht erreichbar")
-              : session.status === "starting"
-                ? "Chrome-Profil startet…"
-                : (session.message ?? "Chrome-Profil aktiv")
-          }
-          subtle={session.status !== "error"}
         />
       ) : (
         <div className="flex h-full items-center justify-center gap-2 text-[11px] text-muted-foreground">

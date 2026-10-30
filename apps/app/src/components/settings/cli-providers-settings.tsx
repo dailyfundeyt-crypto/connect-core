@@ -64,7 +64,7 @@ function LocalCliProvidersPanel({ localBridge }: { localBridge: import("@/lib/pc
    * auf (siehe `startCliLogin` in `cli-model.ts`).
    */
   const loginMutation = useMutation({
-    mutationFn: (kind: "codex" | "claude" | "antigravity") => startCliProviderLogin(kind),
+    mutationFn: (kind: string) => startCliProviderLogin(kind),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["agent-hub", "cli-providers"] });
     },
@@ -115,21 +115,25 @@ function LocalCliProvidersPanel({ localBridge }: { localBridge: import("@/lib/pc
                 aber nicht angemeldet ist. Für Antigravity öffnet das den
                 Onboarding-Wizard im Terminal (siehe `startCliLogin`).
               */}
-              {provider.installed && provider.loggedIn === false && (provider.kind === "codex" || provider.kind === "claude" || provider.kind === "antigravity") ? (
+              {provider.installed && provider.loggedIn === false && (provider.kind === "codex" || provider.kind === "claude" || provider.kind === "antigravity" || provider.kind.startsWith("freebuff:")) ? (
                 <Button
                   className="mt-2"
                   disabled={loginMutation.isPending}
-                  onClick={() => loginMutation.mutate(provider.kind as "codex" | "claude" | "antigravity")}
+                  onClick={() => loginMutation.mutate(provider.kind)}
                   size="sm"
                   type="button"
                   variant="outline"
                 >
                   {loginMutation.isPending ? "Starte…" :
+                    provider.kind.startsWith("freebuff:") ? "freebuff-Login starten" :
                     provider.kind === "antigravity" ? "Google-Anmeldung starten" : "Anmeldung starten"}
                 </Button>
               ) : null}
             </div>
           ))}
+          {loginMutation.data ? (
+            <p className="px-1 text-sm text-muted-foreground">{loginMutation.data.message}</p>
+          ) : null}
           {providers.isLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <IconLoader2 className="size-4 animate-spin" /> Status wird geladen…

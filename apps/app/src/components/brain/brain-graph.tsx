@@ -1112,7 +1112,7 @@ export function BrainGraph({
   if (!graphData?.available || !sim) {
     return (
       <div className={cn("grid place-items-center text-center text-sm text-muted-foreground", fullPage ? "h-full w-full" : "rounded-xl border border-dashed px-4 py-8", className)}>
-        Die lokalen Brain-Daten konnten für den Graphen nicht geladen werden. Prüfe den verbundenen Plannung-Ordner.
+        Die lokalen Brain-Daten konnten für den Graphen nicht geladen werden. Prüfe den verbundenen Spark Brain Ordner.
       </div>
     );
   }

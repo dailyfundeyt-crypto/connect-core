@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { areaOfPath, BrainMapsGraph, colorFor, type GraphArea, type GraphFile, type GraphView } from "@/components/brain/maps/brain-maps-graph";
+import { BrainStructureOverview, AgentAccessView } from "@/components/brain/insights";
 import { SparkLogo } from "@/components/brand/spark-logo";
 import { VaultNoteEditor } from "@/components/companies/vault-note-editor";
 import { brainTreeQueryOptions } from "@/lib/brain/queries";
@@ -52,6 +53,7 @@ export function BrainMapsPage({ focus, from }: { focus?: string; from?: string }
   const navigate = useNavigate();
   const dash = useQuery(mapsDashboardQueryOptions());
   const tree = useQuery(brainTreeQueryOptions());
+  const [primaryTab, setPrimaryTab] = useState<"uebersicht" | "agent" | "graph">("uebersicht");
   const [view, setView] = useState<GraphView>("ringe");
   const [selected, setSelected] = useState<string | null>(focus ?? null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -123,118 +125,178 @@ export function BrainMapsPage({ focus, from }: { focus?: string; from?: string }
 
   return (
     <Shell>
-      <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-white/[0.07] px-6 py-3">
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight text-white">
-            <SparkLogo size={32} /> Spark
-          </h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
-            {files.length.toLocaleString("de-DE")} Dateien · {data.areas.length} Bereiche · {data.agents.length} Agenten · {data.routines.length} Routinen
-          </p>
-        </div>
-        <div className="flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
-          {VIEWS.map((v) => (
+      <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-white/[0.07] px-6 py-3">
+        <div className="flex items-center gap-6">
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight text-white">
+              <SparkLogo size={32} /> Spark
+            </h1>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              {files.length.toLocaleString("de-DE")} Dateien · {data.areas.length} Bereiche · {data.agents.length} Agenten · {data.routines.length} Routinen
+            </p>
+          </div>
+
+          {/* Primary View Switcher: Übersicht | Agent | Graph */}
+          <div className="flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
             <button
-              className={cn("rounded-lg px-4 py-1.5 text-sm font-medium transition", view === v.id ? "bg-white text-black" : "text-neutral-400 hover:text-white")}
-              key={v.id}
-              onClick={() => setView(v.id)}
+              className={cn(
+                "rounded-lg px-3.5 py-1.5 text-xs sm:text-sm font-medium transition",
+                primaryTab === "uebersicht" ? "bg-white text-black font-semibold" : "text-neutral-400 hover:text-white",
+              )}
+              onClick={() => setPrimaryTab("uebersicht")}
               type="button"
             >
-              {v.label}
+              Übersicht
             </button>
-          ))}
+            <button
+              className={cn(
+                "rounded-lg px-3.5 py-1.5 text-xs sm:text-sm font-medium transition",
+                primaryTab === "agent" ? "bg-white text-black font-semibold" : "text-neutral-400 hover:text-white",
+              )}
+              onClick={() => setPrimaryTab("agent")}
+              type="button"
+            >
+              Agenten-Sicht
+            </button>
+            <button
+              className={cn(
+                "rounded-lg px-3.5 py-1.5 text-xs sm:text-sm font-medium transition",
+                primaryTab === "graph" ? "bg-white text-black font-semibold" : "text-neutral-400 hover:text-white",
+              )}
+              onClick={() => setPrimaryTab("graph")}
+              type="button"
+            >
+              Graph
+            </button>
+          </div>
         </div>
-        <label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-          <IconSearch className="size-4 text-neutral-500" />
-          <input
-            className="w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-600"
-            data-testid="brain-maps-search"
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Datei suchen…"
-            value={query}
-          />
-          {matches ? <span className="text-xs text-neutral-500">{matches.size}</span> : null}
-        </label>
-        <select
-          className="rounded-xl border border-white/10 bg-[#111] px-3 py-2 text-sm text-white"
-          data-testid="brain-maps-agent"
-          onChange={(e) => {
-            setFocusAgent(e.target.value || null);
-            if (e.target.value && view === "ringe") setView("links");
-          }}
-          value={focusAgent ?? ""}
-        >
-          <option value="">Alle Agenten</option>
-          {data.agents.map((a) => (
-            <option key={a.slug} value={a.slug}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-        <button className="rounded-xl border border-white/10 p-2 text-neutral-400 hover:text-white" onClick={() => void navigate({ to: "/settings/brain" })} title="Rechte und Datenquelle (Einstellungen)" type="button">
-          <IconSettings className="size-5" />
-        </button>
-      </header>
 
-      <div className="flex gap-2 overflow-x-auto border-b border-white/[0.05] px-6 py-2.5 [scrollbar-width:thin]">
-        <Chip active={!focusArea} label="Alle Bereiche" onClick={() => setFocusArea(null)} />
-        {areas.map((a) => (
-          <Chip active={focusArea === a.id} color={a.color} count={a.count} key={a.id} label={a.name} onClick={() => setFocusArea(focusArea === a.id ? null : a.id)} />
-        ))}
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[250px_minmax(0,1fr)_310px] 2xl:grid-cols-[300px_minmax(0,1fr)_360px]">
-        <aside className="min-h-0 overflow-y-auto border-r border-white/[0.06] p-5">
-          <Agenda data={data} onOpen={(p) => setSelected(p)} />
-          <Pulse areas={areas} files={files} />
-        </aside>
-
-        <main className="relative min-h-[640px] overflow-hidden">
-          <BrainMapsGraph
-            agents={data.agents}
-            areas={areas}
-            files={files}
-            focusAgent={focusAgent}
-            focusArea={focusArea}
-            mapPath={data.mapPath}
-            matches={matches}
-            onSelect={setSelected}
-            routines={data.routines}
-            selected={selected}
-            view={view}
-          />
-          {matches && matches.size > 0 ? (
-            <div className="absolute top-3 left-3 max-h-[60%] w-80 overflow-y-auto rounded-xl border border-white/10 bg-[#0d0d0f]/95 p-2 shadow-2xl">
-              {[...matches].slice(0, 40).map((p) => (
-                <button className="block w-full truncate rounded-lg px-3 py-2 text-left text-sm text-neutral-200 hover:bg-white/10" key={p} onClick={() => setSelected(p)} type="button">
-                  {title(p)}
-                  <span className="block truncate text-xs text-neutral-500">{p}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <Legend view={view} />
-        </main>
-
-        <aside className="min-h-0 overflow-y-auto border-l border-white/[0.06] p-5">
-          {selected ? (
-            <Detail
-              agents={data.agents}
-              area={areas.find((a) => a.id === files.find((f) => f.path === selected)?.area)}
-              mtime={files.find((f) => f.path === selected)?.mtime}
-              onClose={() => setSelected(null)}
-              onOpen={() => openInEditor(selected)}
-              path={selected}
-            />
-          ) : (
+        <div className="flex items-center gap-3">
+          {primaryTab === "graph" && (
             <>
-              <Needs data={data} />
-              <Routines data={data} />
-              <Lint data={data} onOpen={(p) => setSelected(p)} />
+              <div className="flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
+                {VIEWS.map((v) => (
+                  <button
+                    className={cn("rounded-lg px-3 py-1 text-xs font-medium transition", view === v.id ? "bg-white text-black" : "text-neutral-400 hover:text-white")}
+                    key={v.id}
+                    onClick={() => setView(v.id)}
+                    type="button"
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+              <label className="flex min-w-[200px] items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5">
+                <IconSearch className="size-3.5 text-neutral-500" />
+                <input
+                  className="w-full bg-transparent text-xs text-white outline-none placeholder:text-neutral-600"
+                  data-testid="brain-maps-search"
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Datei suchen…"
+                  value={query}
+                />
+                {matches ? <span className="text-[10px] text-neutral-500">{matches.size}</span> : null}
+              </label>
+              <select
+                className="rounded-xl border border-white/10 bg-[#111] px-2.5 py-1.5 text-xs text-white"
+                data-testid="brain-maps-agent"
+                onChange={(e) => {
+                  setFocusAgent(e.target.value || null);
+                  if (e.target.value && view === "ringe") setView("links");
+                }}
+                value={focusAgent ?? ""}
+              >
+                <option value="">Alle Agenten</option>
+                {data.agents.map((a) => (
+                  <option key={a.slug} value={a.slug}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
             </>
           )}
-        </aside>
-      </div>
+
+          <button className="rounded-xl border border-white/10 p-2 text-neutral-400 hover:text-white" onClick={() => void navigate({ to: "/settings/brain" })} title="Rechte und Datenquelle (Einstellungen)" type="button">
+            <IconSettings className="size-5" />
+          </button>
+        </div>
+      </header>
+
+      {primaryTab === "uebersicht" && (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <BrainStructureOverview onOpenDoc={openInEditor} />
+        </div>
+      )}
+
+      {primaryTab === "agent" && (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <AgentAccessView onOpenDoc={openInEditor} />
+        </div>
+      )}
+
+      {primaryTab === "graph" && (
+        <>
+          <div className="flex gap-2 overflow-x-auto border-b border-white/[0.05] px-6 py-2.5 [scrollbar-width:thin]">
+            <Chip active={!focusArea} label="Alle Bereiche" onClick={() => setFocusArea(null)} />
+            {areas.map((a) => (
+              <Chip active={focusArea === a.id} color={a.color} count={a.count} key={a.id} label={a.name} onClick={() => setFocusArea(focusArea === a.id ? null : a.id)} />
+            ))}
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[250px_minmax(0,1fr)_310px] 2xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+            <aside className="min-h-0 overflow-y-auto border-r border-white/[0.06] p-5">
+              <Agenda data={data} onOpen={(p) => setSelected(p)} />
+              <Pulse areas={areas} files={files} />
+            </aside>
+
+            <main className="relative min-h-[640px] overflow-hidden">
+              <BrainMapsGraph
+                agents={data.agents}
+                areas={areas}
+                files={files}
+                focusAgent={focusAgent}
+                focusArea={focusArea}
+                mapPath={data.mapPath}
+                matches={matches}
+                onSelect={setSelected}
+                routines={data.routines}
+                selected={selected}
+                view={view}
+              />
+              {matches && matches.size > 0 ? (
+                <div className="absolute top-3 left-3 max-h-[60%] w-80 overflow-y-auto rounded-xl border border-white/10 bg-[#0d0d0f]/95 p-2 shadow-2xl">
+                  {[...matches].slice(0, 40).map((p) => (
+                    <button className="block w-full truncate rounded-lg px-3 py-2 text-left text-sm text-neutral-200 hover:bg-white/10" key={p} onClick={() => setSelected(p)} type="button">
+                      {title(p)}
+                      <span className="block truncate text-xs text-neutral-500">{p}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <Legend view={view} />
+            </main>
+
+            <aside className="min-h-0 overflow-y-auto border-l border-white/[0.06] p-5">
+              {selected ? (
+                <Detail
+                  agents={data.agents}
+                  area={areas.find((a) => a.id === files.find((f) => f.path === selected)?.area)}
+                  mtime={files.find((f) => f.path === selected)?.mtime}
+                  onClose={() => setSelected(null)}
+                  onOpen={() => openInEditor(selected)}
+                  path={selected}
+                />
+              ) : (
+                <>
+                  <Needs data={data} />
+                  <Routines data={data} />
+                  <Lint data={data} onOpen={(p) => setSelected(p)} />
+                </>
+              )}
+            </aside>
+          </div>
+        </>
+      )}
 
       {editing ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setEditing(null)}>
@@ -245,7 +307,7 @@ export function BrainMapsPage({ focus, from }: { focus?: string; from?: string }
                 <IconX className="size-5" />
               </button>
             </div>
-            <VaultNoteEditor path={editing} />
+            <VaultNoteEditor onPathChange={setEditing} path={editing} />
           </div>
         </div>
       ) : null}

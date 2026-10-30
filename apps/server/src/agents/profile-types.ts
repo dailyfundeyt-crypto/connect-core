@@ -1,3 +1,10 @@
+import type { AgentSkill } from "./agent-skills";
+export type { AgentSkill } from "./agent-skills";
+import type { AgentWebsite } from "./agent-websites";
+export type { AgentWebsite } from "./agent-websites";
+import type { AgentSubagent } from "./agent-subagents";
+export type { AgentSubagent } from "./agent-subagents";
+
 export type AgentVisibility = "public" | "private";
 
 export type AgentActor = {
@@ -16,7 +23,7 @@ export type AgentActor = {
  * Wenn keines von beiden gesetzt ist, läuft er auf dem lokalen Bot.
  */
 export type CliEngine = {
-  kind: "antigravity" | "codex" | "claude";
+  kind: "antigravity" | "codex" | "claude" | "freebuff";
   /** Default "auto" — die CLI wählt ihr eigenes Modell. */
   model: string;
   /** Ob die CLI Dateien schreiben darf. Default false (read-only). */
@@ -118,13 +125,35 @@ export type AgentProfile = {
    */
   hasCallbackToken: boolean;
   /** Engine-Konfiguration (Stufe 1.1+): CLI oder Browser-Profile. */
-  engine: AgentEngine | null;
+  engine?: AgentEngine | null;
+  headline?: string | null;
+  role?: string | null;
+  description?: string | null;
+  chosenCli?: string | null;
+  accountEmail?: string | null;
+  skills?: AgentSkill[] | string[] | unknown[] | null;
+  sparkPermissions?: Record<string, unknown> | null;
+  browserProfile?: string | BrowserProfileEngine | null;
+  websiteList?: AgentWebsite[] | string[] | unknown[] | null;
+  subagents?: AgentSubagent[] | string[] | unknown[] | null;
+  mcpList?: string[] | unknown[] | null;
 };
 
 export type CreateAgentInput = Pick<
   AgentProfile,
   "name" | "title" | "roleDescription" | "visibility"
 > & {
+  headline?: string | null;
+  role?: string | null;
+  description?: string | null;
+  chosenCli?: string | null;
+  accountEmail?: string | null;
+  skills?: AgentSkill[] | string[] | unknown[] | null;
+  sparkPermissions?: Record<string, unknown> | null;
+  browserProfile?: BrowserProfileEngine | string | null;
+  websiteList?: AgentWebsite[] | string[] | unknown[] | null;
+  subagents?: AgentSubagent[] | string[] | unknown[] | null;
+  mcpList?: string[] | unknown[] | null;
   /**
    * The AG-UI endpoint this Bot runs on, or undefined for the one in the box.
    *
@@ -145,11 +174,6 @@ export type CreateAgentInput = Pick<
    * nutzt der Agent das lokale Modell (ohne CLI).
    */
   cliEngine?: CliEngine;
-  /**
-   * Browser-Profile-Engine (Stufe 2 Phase C). Optional: wenn nicht gesetzt,
-   * hat der Agent kein eigenes Browser-Profil.
-   */
-  browserProfile?: BrowserProfileEngine;
   /**
    * Freebuff-Engine (Stufe 4). Optional: wenn nicht gesetzt, läuft der
    * Agent nicht auf Freebuff. Erfordert installiertes `npm i -g freebuff`

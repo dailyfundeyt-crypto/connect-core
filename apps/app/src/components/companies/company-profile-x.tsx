@@ -56,6 +56,7 @@ import {
   subscribeBlueCheck,
 } from "@/lib/donations/blue-check";
 import { useLocale } from "@/lib/i18n/use-locale";
+import { CompanyTokenUsageSection } from "@/components/companies/token-usage/token-usage-section";
 
 type Tab = "posts" | "connections";
 
@@ -547,6 +548,22 @@ export function CompanyProfileX({
         {projectsSlot ? <div className="mt-1">{projectsSlot}</div> : null}
 
         <CompanyMarketplaceStrip companyId={company.id} />
+
+        {/*
+         * Öffentlicher Token-Verbrauch der Firma (A35).
+         *
+         * Die Sektion liefert Widget **und** Admin-Schalter (A35). Sie prüft das
+         * Flag `companyPublicUsage` selbst: ist es aus, rendert sie nichts und das
+         * Profil sieht exakt aus wie vorher.
+         *
+         * `isAdmin` wird bewusst immer gesetzt: **der Server entscheidet**, ob
+         * jemand Firmen-Admin ist. A20 antwortet Nicht-Admins mit `403`, und die
+         * Sektion blendet die Schalter dann aus (`forbidden`) — statt im Client eine
+         * eigene Admin-Regel zu erfinden.
+         */}
+        <div className="mt-3">
+          <CompanyTokenUsageSection companyId={company.id} isAdmin />
+        </div>
 
         {/* helium-social: Schalter „Profil öffentlich“ (Connect Social) */}
         <SocialPublishCard companyId={company.id} />

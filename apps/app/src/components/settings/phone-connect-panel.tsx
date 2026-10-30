@@ -49,6 +49,7 @@ export function PhoneConnectPanel() {
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -182,9 +183,26 @@ export function PhoneConnectPanel() {
               Einmal-Code, gültig bis {new Date(pairing.expiresAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}{" "}
               Uhr. Nach dem Scannen „Koppeln“ tippen.
             </p>
-            <Button variant="outline" size="sm" className="text-zinc-100" onClick={() => void newCode()}>
-              <IconRefresh className="size-4" /> Neuer Code
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button variant="outline" size="sm" className="text-zinc-100" onClick={() => void newCode()}>
+                <IconRefresh className="size-4" /> Neuer Code
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-zinc-100"
+                onClick={() => {
+                  void navigator.clipboard.writeText(pairing.pairUrl);
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 1500);
+                }}
+              >
+                <IconCopy className="size-4" /> {linkCopied ? "Link kopiert" : "Link kopieren"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Der Link gilt 10 Minuten und koppelt genau ein Gerät. Nur an eigene Geräte schicken.
+            </p>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">{error ?? "QR-Code erscheint, sobald der Tunnel online ist …"}</p>

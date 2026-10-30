@@ -1,0 +1,48 @@
+{
+  "$schema": "https://connect.imput.net/schemas/package-v1.json",
+  "schemaVersion": "1.0",
+  "kind": "skill",
+  "slug": "link-curator",
+  "name": "Link-Kurator (Instagram → Spark)",
+  "version": "1.0.0",
+  "summary": "Extrahiert Tools aus Instagram-Videos via getthescript.app und sortiert Links + Notizen in Spark ein.",
+  "description": "Intelligenter Kurator-Agent auf Basis der Antigravity-CLI. Analysiert Instagram-Reels und -Videos vollautomatisiert im isolierten Helium-Browser-Profil, transkribiert Inhalte via getthescript.app, filtert Software-Tools heraus und legt Links samt präziser Zweck-Notizen („wofür welches Tool“) strukturiert in Spark-Browser-Ordnern ab. Bietet strikten Duplikatschutz und sicheren Dry-Run-Modus.",
+  "author": {
+    "name": "Stefan Kunc",
+    "handle": "@stefan",
+    "email": "stefan@imput.net"
+  },
+  "icon": "/brand/spark-logo.jpg",
+  "screenshots": [
+    "/brand/spark-logo.jpg"
+  ],
+  "permissions": [
+    "mcp:access",
+    "filesystem:read"
+  ],
+  "priceCents": 0,
+  "tags": [
+    "instagram",
+    "transcription",
+    "spark",
+    "tools",
+    "curator",
+    "antigravity",
+    "spark-mcp"
+  ],
+  "minConnectVersion": "0.6.0",
+  "installSpec": {
+    "slug": "link-curator",
+    "title": "Link-Kurator (Instagram → Spark)",
+    "agentId": "agent_link_curator",
+    "cliCommand": "agy run link-curator",
+    "cliProvider": "antigravity",
+    "instructions": "Du bist der Link-Kurator-Agent. Du transkribierst Instagram-Reels via getthescript.app im isolierten Browser-Profil und speicherst extrahierte Tools in Spark-Ordnern.",
+    "tools": [
+      "spark-mcp"
+    ],
+    "browserProfile": "agent_link_curator",
+    "defaultDryRun": true,
+    "featureFlag": "linkCurator"
+  }
+}

@@ -2,7 +2,7 @@
  * Connect Shell – Sidebar-Logik (geteilt von Helium-Extension, WebView2 und normaler Webseite)
  *
  * Oben: Modus-Leiste wie Connect (apps/app company-switcher.tsx + company-level-chips.tsx,
- * WPF MainWindow.xaml): Logo/Home · Focus(1) · Messages(2) · Browser(3) · Unternehmen(4).
+ * WPF MainWindow.xaml): Logo/Home · Focus(1) · Messages(2) · Browser(3) · Agents(5) · Unternehmen(4).
  * Ein Klick schaltet die Ansicht der Sidebar um UND öffnet die passende Connect-Route im
  * Connect-Tab (localhost:3101). Der Modus wird in Connect über localStorage
  * "connect.activeLevel" + Route /company/<id>?level=N gesetzt (wie in der Web-App).

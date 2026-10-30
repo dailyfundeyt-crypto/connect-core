@@ -20,7 +20,7 @@ import { customType } from "drizzle-orm/pg-core";
  * Use this everywhere instead of `jsonb` from `drizzle-orm/pg-core`.
  */
 export const jsonb = customType<{
-  data: Record<string, unknown>;
+  data: any;
   driverData: unknown;
 }>({
   dataType: () => "jsonb",

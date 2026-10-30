@@ -1,6 +1,8 @@
-import { IconArrowBackUp, IconChevronRight, IconExternalLink, IconLink, IconLock } from "@tabler/icons-react";
+import { IconArrowBackUp, IconChevronRight, IconExternalLink, IconLink, IconLock, IconPencil } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { BrainMarkdownBody, type BrainProperty, parseFrontmatter } from "@/components/brain/brain-markdown";
+import { RenameNoteDialog } from "@/components/brain/rename-note-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { brainBacklinksQueryOptions, brainFileQueryOptions, brainStatusQueryOptions } from "@/lib/brain/queries";
 
@@ -55,6 +57,7 @@ export function BrainNoteReader({
   const file = useQuery(brainFileQueryOptions(path));
   const backlinks = useQuery(brainBacklinksQueryOptions(path));
   const status = useQuery(brainStatusQueryOptions());
+  const [renaming, setRenaming] = useState(false);
   const isVault = path.startsWith("Vault/");
   const vaultPath = status.data?.available ? status.data.vaultPath : null;
   const vaultName = vaultPath?.split(/[\\/]/).filter(Boolean).pop();
@@ -75,12 +78,24 @@ export function BrainNoteReader({
   if (!file.data) return <p className="p-6 text-sm text-muted-foreground">Datei nicht gefunden.</p>;
 
   const { properties, body } = parseFrontmatter(file.data.content);
-  const titleProp = properties.find((p) => p.key === "title")?.values[0];
-  const h1 = /^\s*#\s+(.+?)\s*$/m.exec(body);
-  const firstLine = body.trimStart().split("\n")[0] ?? "";
-  // Die erste H1 wird zum Seitentitel, wie bei Notion; sonst Titel aus Frontmatter oder Dateiname.
-  const title = (h1 && firstLine.startsWith("#") && !firstLine.startsWith("##") ? h1[1] : titleProp) ?? crumbs[crumbs.length - 1];
-  const rest = h1 && firstLine.startsWith("# ") ? body.trimStart().slice(firstLine.length) : body;
+  const titleProp = properties.find((p) => p.key === "title")?.values[0]?.trim();
+  const firstNonEmptyLine = body.split(/\r?\n/).find((line) => line.trim().length > 0) ?? "";
+  const h1Match = /^#[ \t]+(.+?)[ \t]*$/.exec(firstNonEmptyLine);
+
+  // Einheitliche Titelregel: Frontmatter title zuerst, sonst erste H1, sonst Dateiname.
+  let title: string;
+  let rest: string;
+  if (titleProp) {
+    title = titleProp;
+    rest = body;
+  } else if (h1Match) {
+    title = h1Match[1].trim();
+    const h1Index = body.indexOf(firstNonEmptyLine);
+    rest = (body.slice(0, h1Index) + body.slice(h1Index + firstNonEmptyLine.length)).replace(/^\r?\n/, "");
+  } else {
+    title = crumbs[crumbs.length - 1];
+    rest = body;
+  }
 
   return (
     <article className="brain-reader px-1 pt-2 pb-10">
@@ -111,7 +126,19 @@ export function BrainNoteReader({
           {new Date(file.data.mtime).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}
         </span>
       </div>
-      <h1 className="!mt-0 !mb-3 !border-0 !text-[2.1rem] !leading-tight !font-bold">{title}</h1>
+      <h1 className="group/title !mt-0 !mb-3 !border-0 !text-[2.1rem] !leading-tight !font-bold" onDoubleClick={() => (isVault ? undefined : setRenaming(true))} title={isVault ? undefined : "Doppelklick: Titel ändern"}>
+        {title}
+        {isVault ? null : (
+          <button
+            className="ml-2 inline-flex size-7 items-center justify-center rounded-md align-middle text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/5 hover:text-foreground group-hover/title:opacity-100 focus-visible:opacity-100"
+            onClick={() => setRenaming(true)}
+            title="Titel ändern"
+            type="button"
+          >
+            <IconPencil className="size-4" />
+          </button>
+        )}
+      </h1>
       <PropertyChips properties={properties} />
       <BrainMarkdownBody files={files} fromPath={path} markdown={rest} onOpen={onOpen} />
 
@@ -144,6 +171,17 @@ export function BrainNoteReader({
           <p className="!m-0 text-xs text-muted-foreground">Keine Notiz verlinkt hierher.</p>
         )}
       </section>
+
+      {renaming ? (
+        <RenameNoteDialog
+          onOpenChange={setRenaming}
+          onSaved={(newPath) => {
+            if (newPath && newPath !== path) onOpen(newPath);
+          }}
+          open
+          request={{ create: null, rename: { currentTitle: title, path } }}
+        />
+      ) : null}
     </article>
   );
 }

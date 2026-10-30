@@ -1,398 +1,376 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import Avatar from "boring-avatars";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import * as React from "react";
 import useMeasure from "react-use-measure";
-import AgentOrb from "@/components/agents/orb/agent-orb";
-import { Composer } from "@/components/channels/composer";
-import { DesktopIllustration } from "@/components/computer/desktop-illustration";
-import { ComputerPlaceholder } from "@/components/computer/placeholder";
-import { Button } from "@/components/ui/button";
-import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions, needsOnboarding } from "@/lib/auth/queries";
-import { appConfig } from "@/lib/generated/application-config";
 import { completeOnboardingMutationOptions } from "@/lib/onboarding/mutations";
-import { connectGoogleDrive, fetchDriveBackupStatus } from "@/lib/drive-backup/api";
 import { queryClient } from "@/query-client";
-import { ArrowUpRight, Check, Github, Mail, MessageCircle, Twitter } from "lucide-react";
+import { getFlag } from "@/contracts/v06/flags";
+import { OnboardingFlow } from "@/v06/onboarding/OnboardingFlow";
+import {
+  OnboardingStepper,
+  type StepItem,
+  WelcomeStep,
+  ThemeStepWrapper,
+  CompanyStep,
+  AgentWizardStep,
+  StoreRecommendationsStep,
+  CompleteStep,
+} from "@/components/onboarding";
+import { getCompany, listCompanies } from "@/lib/companies/store";
+import { getT3Flag } from "@/lib/t3/contracts";
+import { MachineOnboardingStep } from "@/components/onboarding/machines/machine-onboarding-step";
 
 export const Route = createFileRoute("/_authed/onboarding")({
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     const user = await context.queryClient.ensureQueryData(
       currentUserQueryOptions(),
     );
-    // Somebody who has finished, or whose deployment tracks no onboarding, has no business here.
-    if (!user || !needsOnboarding(user)) {
+    // Erlaube Aufruf bei explizitem Restart (z. B. aus den Einstellungen ?restart=true)
+    const searchObj = location.search as Record<string, unknown> | undefined;
+    const isRestart =
+      searchObj?.restart === "true" ||
+      (typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("restart") === "true");
+
+    if (!user || (!needsOnboarding(user) && !isRestart)) {
       throw redirect({ to: "/" });
     }
   },
   component: RouteComponent,
 });
 
-function WelcomeStep() {
-  return (
-    <div className="w-full flex flex-col items-center justify-center">
-      <img
-        src="/brand/connect-logo.png"
-        alt="Connect"
-        className="size-16 rounded-2xl shadow-xl border border-border/60 mb-5"
-      />
-      <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
-        Welcome to Connect
-      </h1>
-      <p className="text-sm text-muted-foreground mt-2 text-center max-w-sm">
-        Your self-hosted AI coworker workspace with integrated real browser automation.
-      </p>
-      <div className="h-4" />
-      <div className="max-w-md w-full mx-auto pointer-events-none mt-10">
-        <Composer
-          compact
-          className="scale-90"
-          editorClassName="text-base"
-          initialValue="Hand off tasks to your team of agents"
-        />
-      </div>
-    </div>
-  );
+function RouteComponent() {
+  // Wenn Feature-Flag onboardingV2 aktiv ist, rendere den neuen 7-stufigen Ablauf
+  if (getFlag("onboardingV2")) {
+    return <OnboardingFlow />;
+  }
+
+  return <LegacyOnboardingComponent />;
 }
 
-function ComputerUseStep() {
-  return (
-    <div className="w-full flex flex-col items-center justify-center">
-      <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
-        Each agent has its own computer &amp; real browser
-      </h1>
-      <p className="text-sm text-muted-foreground mt-2 text-center max-w-md">
-        Autonomous web browsing, persistent sessions, and tool actions without iframe restrictions.
-      </p>
-      <div className="h-6" />
-      <div className="relative aspect-5/3 w-full max-w-lg rounded-2xl overflow-hidden border border-border shadow-2xl">
-        <ComputerPlaceholder className="absolute inset-0 h-full w-full" />
-        <DesktopIllustration />
-      </div>
-    </div>
-  );
-}
-
-/** What a roster card needs — placeholders carry these three fields and nothing more. */
-type RosterCard = Pick<AgentProfile, "id" | "name" | "avatarSeed">;
+/* ========================================================================= */
+/* Legacy Onboarding (Wird gerendert wenn FLAGS_V06.onboardingV2 = false)     */
+/* ========================================================================= */
 
 /**
- * Stand-ins for a deployment that has fewer than three public agents to show. Invented names on
- * purpose: they illustrate what a roster looks like without claiming any of these exist here.
+ * Die Schritte des alten Onboardings.
+ *
+ * Der Maschinen-Schritt (A26) kommt nur dazu, wenn das Flag `connect.t3.cuaMachines`
+ * gesetzt ist. Deshalb ist die Liste dynamisch und die Schritte werden über ihre
+ * **Id** adressiert, nicht über eine feste Nummer — sonst würde das Einschieben
+ * jeden folgenden Schritt verschieben.
  */
-const AGENTS_PLACEHOLDER: RosterCard[] = [
-  {
-    id: "placeholder-research",
-    name: "Research Analyst",
-    avatarSeed: "research-analyst",
-  },
-  { id: "placeholder-data", name: "Data Analyst", avatarSeed: "data-analyst" },
-  {
-    id: "placeholder-support",
-    name: "Support Agent",
-    avatarSeed: "support-agent",
-  },
+const BASE_ONBOARDING_STEPS: StepItem[] = [
+  { id: "welcome", title: "Willkommen", description: "Einführung in Connect" },
+  { id: "theme", title: "Darstellung", description: "Design & Farbmodus" },
+  { id: "company", title: "Unternehmen", description: "Firma wählen oder anlegen" },
+  { id: "agent", title: "Erster Agent", description: "AI-Coworker konfigurieren" },
+  { id: "tools", title: "Tools & Store", description: "Fähigkeiten & Module" },
 ];
 
-function RosterStep() {
-  const { data: agents } = useQuery(agentListQueryOptions());
-  const explore =
-    agents?.filter((a) => !a.mine && a.visibility === "public") ?? [];
-  // Always three cards: real public agents first, placeholders topping up a sparse deployment.
-  // slice past the end is just [], so a roster of three or more takes no placeholders at all.
-  const roster: Array<RosterCard & { example?: boolean }> = [
-    ...explore.slice(0, 3),
-    ...AGENTS_PLACEHOLDER.slice(explore.length).map((placeholder) => ({
-      ...placeholder,
-      example: true,
-    })),
-  ];
+/** Id des Maschinen-Schritts. */
+const MACHINE_STEP_ID = "machines";
 
-  return (
-    <div className="w-full flex flex-col items-center justify-center">
-      <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
-        Choose from a variety of agents or create your own
-      </h1>
-      <div className="h-8" />
-      <div className="w-full max-w-lg overflow-hidden grid grid-cols-1 md:grid-cols-2 gap-4">
-        {roster.map((a) => {
-          return (
-            <div
-              key={a.id}
-              // Dimmed and labelled, so an invented name never reads as a Bot this deployment has.
-              className={`bg-card p-4 rounded-lg flex flex-row gap-4 items-center ${a.example ? "opacity-70" : ""}`}
-            >
-              <Avatar name={a.avatarSeed} size={40} />
-              <div className="flex min-w-0 flex-col">
-                <h3 className="line-clamp-1 text-base font-medium tracking-tight">
-                  {a.name}
-                </h3>
-                {a.example ? (
-                  <span className="text-xs text-muted-foreground">Example</span>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-        <div className="bg-card p-4 rounded-lg flex flex-row gap-4 items-center">
-          <div className="rounded-full size-[40px] border border-foreground/30 border-dashed" />
-          <h3 className="line-clamp-1 text-base font-medium tracking-tight text-foreground/70">
-            Your own agent
-          </h3>
-        </div>
-      </div>
-    </div>
-  );
+/** Die Reihenfolge der Schritte inklusive Maschinen-Schritt. */
+function onboardingSteps(): StepItem[] {
+  const steps = [...BASE_ONBOARDING_STEPS];
+  if (getT3Flag("cuaMachines")) {
+    steps.push({
+      id: MACHINE_STEP_ID,
+      title: "Maschine",
+      description: "Lokale Maschine für Computer Use",
+    });
+  }
+  steps.push({ id: "complete", title: "Fertig", description: "Workspace betreten" });
+  return steps;
 }
 
-function CommunityStep() {
-  const { data: user } = useQuery(currentUserQueryOptions());
-  const actions = [
-    {
-      title: "Follow us on X",
-      description: "Get updates about Connect and new releases.",
-      href: "https://x.com/stefan_kunc",
-      icon: Twitter,
-    },
-    {
-      title: "Star Connect on GitHub",
-      description: "Follow the open-source project and its development.",
-      href: "https://github.com/dailyfundeyt-crypto/connect",
-      icon: Github,
-    },
-    {
-      title: "Join us on Slack",
-      description: "Meet other Connect users and get help.",
-      href: import.meta.env.VITE_CONNECT_SLACK_URL || "",
-      icon: MessageCircle,
-    },
-  ];
-
-  return (
-    <div className="w-full flex flex-col items-center justify-center">
-      <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
-        Join the Connect community
-      </h1>
-      <p className="mt-2 max-w-md text-center text-sm text-muted-foreground">
-        Follow the project, support open source, or connect with other users. These steps are optional.
-      </p>
-      <div className="h-8" />
-      <div className="grid w-full max-w-lg grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-4 sm:col-span-2">
-          <div className="flex items-start gap-3">
-            <span className="rounded-lg bg-primary/10 p-2 text-primary"><Mail className="size-4" /></span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-medium">Email verified</h2>
-                {user?.emailVerified ? (
-                  <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" /> Verified</span>
-                ) : null}
-              </div>
-              <p className="mt-1 break-all text-xs text-muted-foreground">
-                {user?.email ?? "Your sign-in provider manages email verification."}
-              </p>
-              {!user?.emailVerified ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Check the verification status with the provider you use to sign in.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        {actions.map(({ title, description, href, icon: Icon }) => (
-          <a
-            aria-disabled={!href || undefined}
-            className={`rounded-xl border border-border bg-card p-4 transition ${href ? "hover:border-primary/40 hover:bg-accent/40" : "cursor-not-allowed opacity-60"}`}
-            href={href || undefined}
-            key={title}
-            rel={href ? "noopener noreferrer" : undefined}
-            target={href ? "_blank" : undefined}
-          >
-            <div className="flex items-start justify-between">
-              <Icon className="size-4 text-primary" />
-              {href ? <ArrowUpRight className="size-4 text-muted-foreground" /> : <span className="text-xs text-muted-foreground">Link follows</span>}
-            </div>
-            <h2 className="mt-4 text-sm font-medium">{title}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-          </a>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const DRIVE_STEP_KEY = "connect.onboarding.step";
-
-/** Optional: Google Drive verbinden, damit alle Daten automatisch gesichert werden. Überspringbar. */
-function DriveStep() {
-  const status = useQuery({ queryKey: ["drive-backup", "status"], queryFn: fetchDriveBackupStatus, retry: false });
-  const [error, setError] = React.useState<string | null>(null);
-  const result = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("drive");
-  const connected = status.data?.connected;
-  return (
-    <div className="w-full flex flex-col items-center justify-center">
-      <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">Google Drive verbinden</h1>
-      <p className="text-sm text-muted-foreground mt-2 text-center max-w-md">
-        Connect sichert deine Unternehmen, Agents, Chats, Einstellungen und das Brain verschlüsselt in deinem Google Drive
-        (Ordner „Connect Backup“), automatisch bei jeder Änderung. Connect sieht dort nur seine eigenen Dateien.
-      </p>
-      <div className="h-8" />
-      {connected ? (
-        <p className="text-emerald-500 text-sm font-medium">
-          ✓ Verbunden{status.data?.email ? ` mit ${status.data.email}` : ""}. Die erste Sicherung läuft.
-        </p>
-      ) : (
-        <Button
-          disabled={!status.data?.configured}
-          onClick={() => {
-            setError(null);
-            window.sessionStorage.setItem(DRIVE_STEP_KEY, String(STEPS.length - 1));
-            connectGoogleDrive("onboarding").catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-          }}
-          size="lg"
-          variant="outline"
-        >
-          Google Drive verbinden ↗
-        </Button>
-      )}
-      {result === "failed" ? (
-        <p className="mt-3 text-destructive text-sm">
-          Verbinden hat nicht geklappt: {new URLSearchParams(window.location.search).get("reason") ?? "unbekannt"}
-        </p>
-      ) : null}
-      {error ? <p className="mt-3 text-destructive text-sm">{error}</p> : null}
-      {status.data && !status.data.configured ? (
-        <p className="mt-3 text-muted-foreground text-xs">Auf diesem Server ist die Drive-Sicherung nicht eingerichtet.</p>
-      ) : null}
-      <p className="mt-6 text-muted-foreground text-xs">Optional. Du kannst das jederzeit unter Einstellungen › Sicherung nachholen.</p>
-    </div>
-  );
-}
-
-const STEPS: Array<() => React.ReactNode> = [
-  () => <WelcomeStep />,
-  () => <ComputerUseStep />,
-  () => <RosterStep />,
-  () => <CommunityStep />,
-  () => <DriveStep />,
-];
-
-/** A pane arrives from the side the journey is moving toward, and leaves out the other. */
 const variants = {
   initial: (direction: number) => ({ x: `${110 * direction}%`, opacity: 0 }),
   active: { x: "0%", opacity: 1 },
   exit: (direction: number) => ({ x: `${-110 * direction}%`, opacity: 0 }),
 };
 
-function RouteComponent() {
-  const navigate = useNavigate();
-  const complete = useMutation(completeOnboardingMutationOptions(queryClient));
+const STORAGE_STEP_KEY = "connect.onboarding.v2.stepIndex";
 
-  // Browser state on purpose: the step is not persisted while the wizard is being designed.
-  // Back from Google's consent screen: resume on the Drive step instead of the start.
-  const [step, setStep] = React.useState(() => {
+function LegacyOnboardingComponent() {
+  const navigate = useNavigate();
+  const completeMutation = useMutation(completeOnboardingMutationOptions(queryClient));
+
+  /*
+   * Die Schritteliste hängt am Flag `connect.t3.cuaMachines`: mit Flag kommt der
+   * Maschinen-Schritt dazu, ohne Flag ist der Ablauf exakt wie vorher.
+   *
+   * Sie steht bewusst vor dem State, weil der Start-Schritt aus ihrer Länge
+   * gelesen wird.
+   */
+  const steps = React.useMemo(() => onboardingSteps(), []);
+
+  // State
+  const [stepIndex, setStepIndex] = React.useState<number>(() => {
     if (typeof window === "undefined") return 0;
-    const saved = Number(window.sessionStorage.getItem(DRIVE_STEP_KEY));
-    window.sessionStorage.removeItem(DRIVE_STEP_KEY);
-    const fromGoogle = new URLSearchParams(window.location.search).has("drive");
-    return fromGoogle || (Number.isInteger(saved) && saved > 0) ? STEPS.length - 1 : 0;
+    const saved = window.sessionStorage.getItem(STORAGE_STEP_KEY);
+    const n = Number(saved);
+    return Number.isInteger(n) && n >= 0 && n < steps.length ? n : 0;
   });
+
   const [direction, setDirection] = React.useState(1);
-  // The way out: set once the completion is saved, it fades the whole page and then navigates.
+  const [completedSteps, setCompletedSteps] = React.useState<number[]>([]);
+  const [theme, setTheme] = React.useState<"dark" | "light" | "system">("dark");
+  const [accentColor, setAccentColor] = React.useState("teal");
+  const [companyId, setCompanyId] = React.useState<string | undefined>();
+  const [agent, setAgent] = React.useState<{ id: string; name: string; role: string }>({
+    id: "nexus",
+    name: "Nexus",
+    role: "General Workspace Copilot",
+  });
+  const [selectedTools, setSelectedTools] = React.useState<string[]>([
+    "browser_use",
+    "brain_memory",
+    "cli_bridge",
+    "drive_backup",
+    "store_extensions",
+  ]);
+
   const [leaving, setLeaving] = React.useState(false);
   const [ref, bounds] = useMeasure();
 
-  const last = step === STEPS.length - 1;
+  const currentStepId = steps[stepIndex]?.id;
+  const isCompleteStep = currentStepId === "complete";
 
-  const go = (to: number) => {
-    setDirection(to > step ? 1 : -1);
-    setStep(to);
+  // Load existing state from /api/onboarding/state on mount
+  React.useEffect(() => {
+    fetch("/api/onboarding/state")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        if (data.themePreference) {
+          setTheme(data.themePreference);
+        }
+        if (data.activeCompanyId) {
+          setCompanyId(data.activeCompanyId);
+        }
+        if (data.step) {
+          const idx = steps.findIndex((s) => s.id === data.step);
+          if (idx > 0 && idx < steps.length) {
+            setStepIndex(idx);
+          }
+        }
+        if (Array.isArray(data.completedSteps)) {
+          const indices = data.completedSteps
+            .map((s: string) => steps.findIndex((step) => step.id === s))
+            .filter((i: number) => i >= 0);
+          setCompletedSteps((prev) => [...new Set([...prev, ...indices])]);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not fetch onboarding state from server:", err);
+      });
+  }, []);
+
+  // Sync state to server & sessionStorage
+  const syncState = (nextIndex: number, markCompleted = false) => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(STORAGE_STEP_KEY, String(nextIndex));
+    }
+
+    const nextCompleted = markCompleted
+      ? [...new Set([...completedSteps, stepIndex])]
+      : completedSteps;
+
+    fetch("/api/onboarding/state", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        step: steps[nextIndex]?.id || "welcome",
+        completedSteps: nextCompleted.map((i: number) => steps[i]?.id).filter(Boolean),
+        isCompleted: nextIndex === steps.length - 1 && markCompleted,
+        themePreference: theme,
+        activeCompanyId: companyId,
+        data: {
+          accentColor,
+          agent,
+          selectedTools,
+        },
+      }),
+    }).catch(() => {
+      /* ignore sync error */
+    });
   };
 
+  const goToStep = (targetIndex: number) => {
+    if (targetIndex === stepIndex) return;
+    setDirection(targetIndex > stepIndex ? 1 : -1);
+    setStepIndex(targetIndex);
+    syncState(targetIndex);
+  };
+
+  const handleNext = () => {
+    const nextIndex = Math.min(stepIndex + 1, steps.length - 1);
+    setCompletedSteps((prev) => [...new Set([...prev, stepIndex])]);
+    setDirection(1);
+    setStepIndex(nextIndex);
+    syncState(nextIndex, true);
+  };
+
+  const handleBack = () => {
+    const prevIndex = Math.max(stepIndex - 1, 0);
+    setDirection(-1);
+    setStepIndex(prevIndex);
+    syncState(prevIndex);
+  };
+
+  const handleSkip = () => {
+    handleNext();
+  };
+
+  const handleToggleTool = (toolId: string) => {
+    setSelectedTools((prev) =>
+      prev.includes(toolId) ? prev.filter((id) => id !== toolId) : [...prev, toolId],
+    );
+  };
+
+  const handleCompleteAll = () => {
+    syncState(stepIndex, true);
+    completeMutation.mutate(undefined, {
+      onSuccess: () => {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.removeItem(STORAGE_STEP_KEY);
+        }
+        setLeaving(true);
+      },
+    });
+  };
+
+  const currentCompanyName = React.useMemo(() => {
+    if (!companyId) {
+      const all = listCompanies();
+      return all[0]?.name || "Standard-Unternehmen";
+    }
+    const c = getCompany(companyId);
+    return c?.name || "Standard-Unternehmen";
+  }, [companyId]);
+
   return (
-    // Outside `_app` on purpose: no sidebar and no chrome until onboarding is done.
-    // The fade runs only after the completion is saved, so a failed save never fades a page the
-    // person still needs — and navigation waits for the fade, so the home screen never pops in
-    // over a half-faded wizard.
     <motion.div
       animate={{ opacity: leaving ? 0 : 1 }}
-      className={`min-h-svh overflow-hidden flex flex-col items-center justify-center w-full ${leaving ? "pointer-events-none" : ""}`}
+      className={`min-h-svh overflow-hidden flex flex-col items-center justify-center w-full py-8 px-4 sm:px-6 ${
+        leaving ? "pointer-events-none" : ""
+      }`}
       initial={false}
       onAnimationComplete={() => {
         if (leaving) {
           navigate({ to: "/" });
         }
       }}
-      transition={{ duration: 0.5, ease: "easeInOut" }}
+      transition={{ duration: 0.4, ease: "easeInOut" }}
     >
-      <div className="mx-auto w-full max-w-2xl px-4">
-        <MotionConfig transition={{ duration: 0.5, type: "spring", bounce: 0 }}>
-          {/* The frame follows each pane's height, so the buttons glide instead of jumping. */}
+      <div className="mx-auto w-full max-w-2xl">
+        <OnboardingStepper
+          steps={steps}
+          currentStepIndex={stepIndex}
+          completedStepIndices={completedSteps}
+          onSelectStep={goToStep}
+          onSkip={handleSkip}
+          canSkip={stepIndex > 0 && stepIndex < steps.length - 1}
+        />
+
+        <MotionConfig transition={{ duration: 0.35, type: "spring", bounce: 0 }}>
           <motion.div
             animate={{ height: bounds.height > 0 ? bounds.height : "auto" }}
             className="overflow-hidden"
           >
-            <div ref={ref}>
-              <AnimatePresence
-                custom={direction}
-                initial={false}
-                mode="popLayout"
-              >
+            <div ref={ref} className="px-1">
+              <AnimatePresence custom={direction} initial={false} mode="popLayout">
                 <motion.div
                   animate="active"
                   custom={direction}
                   exit="exit"
                   initial="initial"
-                  key={step}
+                  key={stepIndex}
                   variants={variants}
                 >
-                  {STEPS[step]()}
+                  {/* Step 1: Willkommen */}
+                  {currentStepId === "welcome" && (
+                    <WelcomeStep onContinue={handleNext} />
+                  )}
+
+                  {/* Step 2: Darstellung */}
+                  {currentStepId === "theme" && (
+                    <ThemeStepWrapper
+                      theme={theme}
+                      onSelectTheme={setTheme}
+                      accentColor={accentColor}
+                      onSelectAccent={setAccentColor}
+                      onContinue={handleNext}
+                      onBack={handleBack}
+                    />
+                  )}
+
+                  {/* Step 3: Firma anlegen/wählen */}
+                  {currentStepId === "company" && (
+                    <CompanyStep
+                      selectedCompanyId={companyId}
+                      onSelectCompany={setCompanyId}
+                      onContinue={handleNext}
+                      onBack={handleBack}
+                    />
+                  )}
+
+                  {/* Step 4: Ersten Agent erstellen */}
+                  {currentStepId === "agent" && (
+                    <AgentWizardStep
+                      onAgentCreated={(created) => setAgent(created)}
+                      onContinue={handleNext}
+                      onBack={handleBack}
+                    />
+                  )}
+
+                  {/* Step 5: Tools & Store-Empfehlungen */}
+                  {currentStepId === "tools" && (
+                    <StoreRecommendationsStep
+                      selectedTools={selectedTools}
+                      onToggleTool={handleToggleTool}
+                      onContinue={handleNext}
+                      onBack={handleBack}
+                    />
+                  )}
+
+                  {/*
+                   * Step: Maschine (A26) — nur mit Flag `connect.t3.cuaMachines`.
+                   * Der Schritt ist optional: er lässt sich überspringen, damit das
+                   * Onboarding nie an einer fehlenden Maschine hängen bleibt.
+                   */}
+                  {currentStepId === MACHINE_STEP_ID && (
+                    <MachineOnboardingStep
+                      onBack={handleBack}
+                      onContinue={handleNext}
+                    />
+                  )}
+
+                  {/* Letzter Step: Fertig */}
+                  {isCompleteStep && (
+                    <CompleteStep
+                      theme={theme}
+                      companyName={currentCompanyName}
+                      agentName={agent.name}
+                      agentRole={agent.role}
+                      toolsCount={selectedTools.length}
+                      isSaving={completeMutation.isPending}
+                      onComplete={handleCompleteAll}
+                      onBack={handleBack}
+                    />
+                  )}
                 </motion.div>
               </AnimatePresence>
 
-              {complete.error ? (
-                <p className="mt-4 text-destructive text-sm" role="alert">
-                  {complete.error.message}
+              {completeMutation.error ? (
+                <p className="mt-4 text-center text-xs text-destructive" role="alert">
+                  {completeMutation.error.message}
                 </p>
               ) : null}
-
-              <motion.div
-                className="mt-20 flex flex-col items-center justify-center max-w-xs gap-4 w-full mx-auto"
-                layout
-              >
-                <Button
-                  className="w-full"
-                  disabled={complete.isPending}
-                  onClick={() => {
-                    if (last) {
-                      complete.mutate(undefined, {
-                        onSuccess: () => setLeaving(true),
-                      });
-                    } else {
-                      go(step + 1);
-                    }
-                  }}
-                  size="lg"
-                >
-                  {complete.isPending
-                    ? "Saving…"
-                    : last
-                      ? "Get started"
-                      : "Continue"}
-                </Button>
-                {step !== 0 && (
-                  <Button
-                    className="w-full"
-                    onClick={() => go(step - 1)}
-                    variant="secondary"
-                    size="lg"
-                  >
-                    Back
-                  </Button>
-                )}
-              </motion.div>
             </div>
           </motion.div>
         </MotionConfig>
@@ -400,3 +378,5 @@ function RouteComponent() {
     </motion.div>
   );
 }
+
+export default RouteComponent;

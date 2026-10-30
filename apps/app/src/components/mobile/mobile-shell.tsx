@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
+import { ROUTES } from "@connect/contracts";
 import { MobileHome } from "./mobile-home";
 import "./mobile.css";
 
@@ -18,8 +19,8 @@ export function isMobileShellPath(pathname: string): boolean {
     pathname.startsWith("/channel/") ||
     pathname.startsWith("/agent/") ||
     // helium-social: Connect Social auf dem Handy bildschirmfüllend im dunklen Rahmen
-    pathname === "/social" ||
-    pathname.startsWith("/social/")
+    pathname === ROUTES.social ||
+    pathname.startsWith(`${ROUTES.social}/`)
   );
 }
 

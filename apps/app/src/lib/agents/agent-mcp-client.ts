@@ -179,7 +179,7 @@ export async function listAgentBrowserTabs(
 
 /* ------------------------------------------------------------------ CLI live stream (Stufe 1.3) */
 
-export type CliProvider = "codex" | "claude" | "antigravity";
+export type CliProvider = "codex" | "claude" | "antigravity" | "freebuff" | "gemini";
 
 export type CliRunMeta = {
   runId: string;
@@ -205,7 +205,9 @@ export type CliStreamEvent =
   | { kind: "meta"; meta: CliRunMeta | null }
   | { kind: "delta"; delta: CliDelta }
   | { kind: "end"; meta: CliRunMeta }
-  | { kind: "error"; error: string };
+  | { kind: "error"; error: string }
+  /** Status-Hinweis der CLI (z.B. "Antigravity bereit — 20 Browser-Tools"). Nicht Teil der Antwort. */
+  | { kind: "notice"; notice: string };
 
 /**
  * SSE-Stream eines CLI-Runs öffnen. Liefert ein AsyncIterable, das jedes
@@ -249,6 +251,13 @@ export async function* streamAgentCli(
       return null;
     }
     const raw = currentData.join("\n");
+    /*
+     * Wichtig: den Event-Namen VOR dem Zuruecksetzen festhalten. Vorher stand hier
+     * `currentEvent = null;` und die Vergleiche darunter fragten `currentEvent === "meta"` —
+     * das war immer `false`, also wurde **jedes** SSE-Event verworfen. Der Chat bekam
+     * dadurch nie eine Antwort, egal was der Server sendete.
+     */
+    const eventName = currentEvent;
     currentEvent = null;
     currentData = [];
     if (!raw) return null;
@@ -258,17 +267,20 @@ export async function* streamAgentCli(
     } catch {
       return null;
     }
-    if (currentEvent === "meta") {
+    if (eventName === "meta") {
       const obj = parsed as { meta: CliRunMeta | null };
       return { kind: "meta", meta: obj.meta };
     }
-    if (currentEvent === "end") {
+    if (eventName === "end") {
       return { kind: "end", meta: (parsed as { meta: CliRunMeta }).meta };
     }
-    if (currentEvent === "error") {
+    if (eventName === "error") {
       return { kind: "error", error: String((parsed as { error: string }).error ?? "Unbekannter Stream-Fehler.") };
     }
-    if (currentEvent === "delta") {
+    if (eventName === "notice") {
+      return { kind: "notice", notice: String((parsed as { notice: string }).notice ?? "") };
+    }
+    if (eventName === "delta") {
       return { kind: "delta", delta: parsed as CliDelta };
     }
     return null;

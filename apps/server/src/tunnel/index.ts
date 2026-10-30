@@ -20,7 +20,8 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadTunnelConfig, type TunnelConfig } from "./config";
-import { lockedPage, pairFailedPage, pairPage } from "./pages";
+import { lockedPage, pairExpiredPage, pairFailedPage, pairPage } from "./pages";
+import { createPcLogin } from "./pc-login";
 import { createTunnelProcess } from "./process";
 import qrcode from "./qrcode-vendor.js";
 import { createTunnelStore, type PairedDevice } from "./store";
@@ -28,6 +29,50 @@ import { createTunnelStore, type PairedDevice } from "./store";
 const DEVICE_COOKIE = "__Host-connect_device";
 const PAIR_TTL_MS = 10 * 60_000;
 const DEVICE_MAX_AGE_S = 400 * 24 * 3600;
+/** helium-gateway: Vercel-Gateway, auf das die PC-App bei Tunnel-Wechsel/-Ausfall zurueckspringt. */
+const GATEWAY_URL = (() => {
+  const value = (process.env.CONNECT_GATEWAY_URL ?? "").trim() || "https://connect-kunc-preview.vercel.app/gateway";
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" ? parsed.toString() : "https://connect-kunc-preview.vercel.app/gateway";
+  } catch {
+    return "https://connect-kunc-preview.vercel.app/gateway";
+  }
+})();
+
+/** Laeuft in der PC-App (nur unter *.trycloudflare.com): prueft den Tunnel; bei 2 Fehlern zurueck zum Gateway, das die neue Adresse kennt. */
+function watchScript(): Response {
+  const body = `(() => {
+  if (!/\\.trycloudflare\\.com$/i.test(location.hostname)) return;
+  // helium-pairfix: nie auf einer Einmal-Link-Adresse stehen bleiben (Reload wuerde den Token erneut senden).
+  try { if (/^\\/(pair|__connect\\/(pc-)?pair)\\/?$/.test(location.pathname)) history.replaceState(history.state, "", "/"); } catch (e) {}
+  const GATEWAY = ${JSON.stringify(GATEWAY_URL)};
+  let fails = 0, busy = false, retry = null;
+  async function ping() {
+    if (busy || navigator.onLine === false) return;
+    busy = true;
+    let ok = false;
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 8000);
+      const r = await fetch("/__connect/ping?t=" + Date.now(), { cache: "no-store", credentials: "same-origin", signal: ctl.signal });
+      clearTimeout(t);
+      ok = r.ok && (await r.text()).indexOf("connect-tunnel-ok") >= 0;
+    } catch (e) { ok = false; }
+    busy = false;
+    if (ok) { fails = 0; return; }
+    fails++;
+    if (fails >= 2) { location.replace(GATEWAY + (GATEWAY.indexOf("?") >= 0 ? "&" : "?") + "from=tunnel"); return; }
+    clearTimeout(retry);
+    retry = setTimeout(ping, 3000);
+  }
+  setInterval(ping, 15000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ping(); });
+  window.addEventListener("online", () => setTimeout(ping, 1000));
+})();
+`;
+  return new Response(body, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" } });
+}
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const PUBLIC_STATIC = /^\/(manifest\.webmanifest|favicon\.(ico|svg|png)|apple-touch-icon[\w-]*\.png|icon[\w-]*\.(png|svg)|icons\/[\w.-]+\.(png|svg|webp))$/;
 
@@ -94,10 +139,29 @@ function deviceLabel(userAgent: string) {
   return `${kind} (${date})`;
 }
 
+/** PC-Login (Laptop per QR + Handy-Freigabe): "Laptop (Windows) 23.10.2026". */
+function laptopLabel(userAgent: string) {
+  const ua = userAgent.toLowerCase();
+  const os = ua.includes("windows") ? "Windows" : ua.includes("mac os") ? "macOS" : ua.includes("cros") ? "ChromeOS" : ua.includes("linux") ? "Linux" : "Browser";
+  const date = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }).format(new Date());
+  return `Laptop (${os}) ${date}`;
+}
+
+/** Gateway-Geraet: "Handy (Android) 23.10.2026" bzw. "Browser (Windows) 23.10.2026". */
+function gatewayLabel(userAgent: string) {
+  const ua = userAgent.toLowerCase();
+  const mobile = /android|iphone|ipad|mobile/.test(ua);
+  const os = ua.includes("android") ? "Android" : /iphone|ipad/.test(ua) ? "iOS" : ua.includes("windows") ? "Windows" : ua.includes("mac os") ? "macOS" : ua.includes("cros") ? "ChromeOS" : ua.includes("linux") ? "Linux" : "Browser";
+  const date = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }).format(new Date());
+  return `${mobile ? "Handy" : "Browser"} (${os}) ${date}`;
+}
+
 export function createTunnelGate(options: TunnelGateOptions) {
   const config: TunnelConfig = loadTunnelConfig(options.port);
   const store = createTunnelStore(config.dataDir);
   const tunnel = createTunnelProcess(config, store);
+  // PC-Login: Tunnel-URL in Supabase melden + Einmal-Tokens vom Laptop pruefen (siehe pc-login.ts).
+  const pcLogin = createPcLogin({ dataDir: config.dataDir, state: () => tunnel.state(), onChange: (listener) => tunnel.onChange(listener) });
   const auth = options.auth as AuthLike;
   const pairTokens = new Map<string, { userId: string; expiresAt: number }>();
   let failedPairs: number[] = [];
@@ -195,6 +259,25 @@ export function createTunnelGate(options: TunnelGateOptions) {
     return store.verify(value ? decodeURIComponent(value) : null);
   }
 
+  // helium-pairfix: Rohwert des Geraete-Cookies (zum Verlaengern der Laufzeit, unveraendert zurueckgesetzt).
+  function rawDeviceCookie(request: Request): string | null {
+    return parseCookies(request.headers.get("cookie")).find(([name]) => name === DEVICE_COOKIE)?.[1] ?? null;
+  }
+  const deviceCookieHeader = (encodedValue: string) =>
+    `${DEVICE_COOKIE}=${encodedValue}; Path=/; Max-Age=${DEVICE_MAX_AGE_S}; HttpOnly; Secure; SameSite=Lax`;
+  function validOwnerDevice(request: Request): PairedDevice | null {
+    const device = deviceFrom(request);
+    return device && (!ownerId || device.userId === ownerId) ? device : null;
+  }
+  /** Saubere App-Adresse ohne Token; ein gueltiges Cookie wird dabei verlaengert (gleicher Wert). */
+  function cleanRedirect(device?: PairedDevice | null, request?: Request): Response {
+    const headers: Record<string, string> = { location: "/", "cache-control": "no-store", "referrer-policy": "no-referrer" };
+    const raw = request ? rawDeviceCookie(request) : null;
+    if (device && raw) headers["set-cookie"] = deviceCookieHeader(raw);
+    return new Response(null, { status: 303, headers });
+  }
+  const expiredPage = (from: string) => html(pairExpiredPage(GATEWAY_URL, from), 410);
+
   const publicDevice = (d: PairedDevice) => ({ id: d.id, label: d.label, createdAt: d.createdAt, lastSeenAt: d.lastSeenAt, userAgent: d.userAgent });
 
   function qrSvg(text: string) {
@@ -234,6 +317,7 @@ export function createTunnelGate(options: TunnelGateOptions) {
         binary: Boolean(config.bin),
         fixedUrl: config.mode === "named" || config.mode === "external",
         devices: store.devices().filter(mine).length,
+        pcLogin: pcLogin.status(),
       });
     }
     if (path === "/api/tunnel/pair" && request.method === "POST") {
@@ -271,8 +355,9 @@ export function createTunnelGate(options: TunnelGateOptions) {
       const token = url.searchParams.get("t") ?? "";
       const entry = pairTokens.get(token);
       if (!entry || entry.expiresAt < now) {
+        if (validOwnerDevice(request)) return cleanRedirect(validOwnerDevice(request), request);
         failedPairs.push(now);
-        return html(pairFailedPage("Der QR-Code ist abgelaufen oder wurde schon benutzt."), 410);
+        return expiredPage("pair-expired");
       }
       return html(pairPage(token, deviceLabel(request.headers.get("user-agent") ?? "")));
     }
@@ -286,8 +371,9 @@ export function createTunnelGate(options: TunnelGateOptions) {
     const entry = pairTokens.get(token);
     pairTokens.delete(token); // Einmal-Token: in jedem Fall verbraucht
     if (!entry || entry.expiresAt < now) {
+      if (validOwnerDevice(request)) return cleanRedirect(validOwnerDevice(request), request);
       failedPairs.push(now);
-      return html(pairFailedPage("Der QR-Code ist abgelaufen oder wurde schon benutzt."), 410);
+      return expiredPage("pair-expired");
     }
     const userAgent = request.headers.get("user-agent") ?? "";
     const name = String(form?.get("name") ?? "").trim() || deviceLabel(userAgent);
@@ -304,28 +390,113 @@ export function createTunnelGate(options: TunnelGateOptions) {
     });
   }
 
+  // ---------------------------------------------------------------- Tunnel: Laptop-Anmeldung (PC-Login)
+  async function pcPair(request: Request, url: URL): Promise<Response> {
+    const now = Date.now();
+    failedPairs = failedPairs.filter((t) => now - t < 10 * 60_000);
+    if (failedPairs.length > 30) return html(pairFailedPage("Zu viele Versuche. Bitte in ein paar Minuten erneut."), 429);
+    if (request.method !== "GET") return html(pairFailedPage("Ungültige Anfrage."), 405);
+    if (!ownerId) return html(pairFailedPage("Auf diesem PC ist kein Besitzer eingerichtet (CONNECT_SINGLE_USER_ID)."), 503);
+    const token = url.searchParams.get("token") ?? "";
+    const userAgent = request.headers.get("user-agent") ?? "";
+    // helium-pairfix: Geraet schon gekoppelt? Dann fuehrt ein verbrauchter/abgelaufener Link nie in eine Fehlerseite.
+    const existing = deviceFrom(request);
+    const result = await pcLogin.consume(token, userAgent);
+    if (!result.ok) {
+      if (existing && existing.userId === ownerId) {
+        store.touch(existing);
+        console.info(`[tunnel] Einmal-Link schon benutzt, Geraet ${existing.id} hat gueltiges Cookie -> App`);
+        return cleanRedirect(existing, request);
+      }
+      failedPairs.push(now);
+      console.info("[tunnel] Einmal-Link ungueltig/benutzt, kein Geraete-Cookie -> Gateway");
+      return expiredPage("pair-expired");
+    }
+    // helium-gateway: bekanntes Geraet wiederverwenden statt bei jedem Besuch/Tunnel-Wechsel ein neues anzulegen.
+    let device: PairedDevice | null = null;
+    let cookieValue: string | null = null;
+    let how = "neu";
+    if (existing && existing.userId === ownerId) {
+      device = existing;
+      store.touch(existing);
+      how = "Cookie vorhanden";
+    } else if (result.browserKeyHash) {
+      const match = store
+        .devices()
+        .filter((d) => d.browserKeyHash === result.browserKeyHash && d.userId === ownerId && d.userAgent === userAgent.slice(0, 300))
+        .sort((a, b) => String(b.lastSeenAt ?? "").localeCompare(String(a.lastSeenAt ?? "")))[0];
+      const reissued = match ? store.reissue(match.id) : null;
+      if (reissued) {
+        device = reissued.device;
+        cookieValue = reissued.cookieValue;
+        how = "gleicher Browser, neues Geheimnis";
+      }
+    }
+    if (!device) {
+      const label = result.via === "gateway" ? gatewayLabel(userAgent) : laptopLabel(userAgent);
+      const added = store.addDevice({ label, userId: ownerId, userAgent, via: result.via === "gateway" ? "gateway" : "pc-login", browserKeyHash: result.browserKeyHash });
+      device = added.device;
+      cookieValue = added.cookieValue;
+    }
+    await sessionCookieFor(device).catch((error) => console.warn("[tunnel] Sitzung fuer Laptop:", error));
+    await pcLogin.paired(result.requestId, device.id);
+    console.info(`[tunnel] ${result.via === "gateway" ? "Gateway" : "Handy-Freigabe"}: ${device.id} (${device.label}) – ${how}`);
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location: "/",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        ...(cookieValue
+          ? { "set-cookie": deviceCookieHeader(encodeURIComponent(cookieValue)) }
+          : rawDeviceCookie(request)
+            ? { "set-cookie": deviceCookieHeader(rawDeviceCookie(request) as string) }
+            : {}),
+      },
+    });
+  }
+
   // ---------------------------------------------------------------- Einstieg
   async function handle(request: Request): Promise<Response | null> {
     const url = new URL(request.url);
+    // helium-cliremote: Geraete-Kennung nur vom Gate selbst (nie vom Client uebernehmen).
+    request.headers.delete("x-connect-tunnel-device");
     const tunnelRequest = config.guard && isTunnelRequest(request);
     if (!tunnelRequest) {
       if (url.pathname.startsWith("/api/tunnel/") || url.pathname === "/api/tunnel") return localApi(request, url);
+      if (url.pathname === "/__connect/watch.js") return watchScript();
       return null;
     }
     const path = url.pathname;
     if (path === "/__connect/ping") return new Response("connect-tunnel-ok", { headers: { "cache-control": "no-store" } });
+    if (path === "/__connect/watch.js") return watchScript();
     if (path === "/robots.txt") return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain" } });
     if (path === "/__connect/pair") return pair(request, url);
+    if (path === "/__connect/pc-pair" || (path === "/pair" && url.searchParams.has("token"))) return pcPair(request, url);
     if (request.method === "GET" && PUBLIC_STATIC.test(path)) {
       request.headers.delete("cookie");
       request.headers.set("host", localHost);
+      return null;
+    }
+    // Connect-MCP API über Tunnel: Auth erfolgt per Bearer-Token im Connect-MCP-Router
+    if (path.startsWith("/api/connect-mcp")) {
+      request.headers.set("host", localHost);
+      const origin = request.headers.get("origin");
+      if (origin && origin !== "null") request.headers.set("origin", config.localOrigin);
       return null;
     }
     const device = deviceFrom(request);
     if (!device) {
       const isApi = path.startsWith("/api/") || request.headers.get("upgrade")?.toLowerCase() === "websocket";
       if (isApi) return json({ error: "Nicht gekoppelt. Bitte am PC in Connect › Handy verbinden den QR-Code scannen." }, 401);
-      return html(lockedPage(), 401);
+      // helium-gateway: Weg zurueck ueber das Gateway (kennt immer die aktuelle Tunnel-Adresse).
+      const gatewayLink = `<p style="text-align:center;margin:18px 0 0"><a href="${GATEWAY_URL}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#111827;color:#fff;text-decoration:none;font-weight:600">Über Connect anmelden</a></p>`;
+      // helium-stale: abgelaufene/fehlende Kopplung -> automatisch ueber das Gateway neu verbinden
+      // (meta refresh, weil die CSP dieser Seite keine Skripte erlaubt).
+      const lockedRaw = lockedPage();
+      const autoGateway = `<meta http-equiv="refresh" content="2;url=${GATEWAY_URL}?from=locked">`;
+      const page = lockedRaw.includes("</head>") ? lockedRaw.replace("</head>", `${autoGateway}</head>`) : autoGateway + lockedRaw;
+      return html(page.includes("</body>") ? page.replace("</body>", `${gatewayLink}</body>`) : page + gatewayLink, 401);
     }
     if (path === "/api/tunnel" || path.startsWith("/api/tunnel/")) return json({ error: "Nur am PC verfügbar." }, 403);
     const method = request.method.toUpperCase();
@@ -363,6 +534,7 @@ export function createTunnelGate(options: TunnelGateOptions) {
         request.headers.set("referer", `${config.localOrigin}${r.pathname}${r.search}`);
       } catch {}
     }
+    request.headers.set("x-connect-tunnel-device", device.id);
     store.touch(device);
     return null;
   }
@@ -372,8 +544,12 @@ export function createTunnelGate(options: TunnelGateOptions) {
     async start() {
       if (config.mode !== "off") console.info(`[tunnel] Modus ${config.mode}, Daten ${config.dataDir}`);
       await tunnel.start().catch((error) => console.warn("[tunnel] Start fehlgeschlagen:", error));
+      if (config.mode !== "off") pcLogin.start();
     },
-    stop: () => tunnel.stop(),
+    stop: () => {
+      pcLogin.stop();
+      return tunnel.stop();
+    },
     config,
   };
 }

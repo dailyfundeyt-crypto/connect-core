@@ -439,7 +439,7 @@ function NotesOrVaultPane({
          */}
         <div className="flex min-h-0 flex-1 items-center justify-center p-8">
           <p className="max-w-sm text-center text-sm text-muted-foreground">
-            Wähle links eine Notiz aus der Plannung oder lege oben eine neue an.
+            Wähle links eine Notiz aus dem Spark Brain oder lege oben eine neue an.
           </p>
         </div>
       </div>

@@ -53,6 +53,22 @@ type Props = {
   driving: boolean;
   /** Called with a human-readable reason when the stream cannot be established. */
   onProblem?: (problem: string | null) => void;
+  /**
+   * helium-appcast: anderer Stream-Pfad mit demselben Nachrichtenformat, z. B.
+   * `/api/app-accounts/:id/screencast` fuer die Live-Vorschau einer Codex-Instanz.
+   */
+  streamPath?: string;
+  /** Tastatur weiterleiten (Standard: wie `driving`). Aus, solange ein eigenes Eingabefeld fokussiert ist. */
+  keyboard?: boolean;
+  /** Ungefilterter Sender fuer eigene Nachrichten (z. B. `prompt`, `scroll`) ueber denselben Socket. */
+  controlRef?: { current: ((message: Record<string, unknown>) => void) | null };
+  /** Meldet Server-Nachrichten, die kein Frame sind (z. B. `target`, `sent`). */
+  onMessage?: (message: { type: string; [key: string]: unknown }) => void;
+  /**
+   * helium-ui-fullpreview: Bild in den verfuegbaren Platz einpassen (Seitenverhaeltnis bleibt,
+   * so gross wie moeglich, Rest schwarz). Ohne `fit` wie bisher volle Breite, Hoehe automatisch.
+   */
+  fit?: boolean;
 };
 
 type FrameMessage = {
@@ -61,7 +77,19 @@ type FrameMessage = {
   height: number;
 };
 
-export function LiveScreen({ computerId, driving, onProblem }: Props) {
+export function LiveScreen({
+  computerId,
+  driving,
+  onProblem,
+  streamPath,
+  keyboard,
+  controlRef,
+  onMessage,
+  fit,
+}: Props) {
+  const keysOn = driving && (keyboard ?? true);
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   /** Keydowns handled locally whose matching keyup must not leak to the remote browser. */
@@ -73,14 +101,43 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
   /** Monotonic guard so a slow older decode cannot replace a newer frame. */
   const latestFrameId = useRef(0);
   const [connected, setConnected] = useState(false);
+  /** helium-ui-fullpreview: Groesse des Platzes und des Frames fuer das Einpassen. */
+  const fitBoxRef = useRef<HTMLDivElement | null>(null);
+  const [fitBox, setFitBox] = useState<{ width: number; height: number } | null>(null);
+  const [frameDims, setFrameDims] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    if (!fit) return;
+    const box = fitBoxRef.current;
+    if (!box || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      const rect = box.getBoundingClientRect();
+      setFitBox((prev) =>
+        prev && Math.abs(prev.width - rect.width) < 1 && Math.abs(prev.height - rect.height) < 1
+          ? prev
+          : { width: rect.width, height: rect.height },
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [fit]);
 
   useEffect(() => {
     // The server's own address, so no proxy has to carry the upgrade. The scheme still follows
     // the page: wss when the app is served over https.
     const socket = new WebSocket(
-      socketUrl(`/api/computers/${encodeURIComponent(computerId)}/stream`),
+      socketUrl(
+        streamPath ?? `/api/computers/${encodeURIComponent(computerId)}/stream`,
+      ),
     );
     socketRef.current = socket;
+    if (controlRef) {
+      controlRef.current = (message) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+      };
+    }
     let closed = false;
 
     const drawFrame = async (frame: FrameMessage, frameId: number) => {
@@ -161,7 +218,11 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         onProblem?.(message.error ?? "The screen could not be shown.");
         return;
       }
-      if (message.type !== "frame" || !message.data) return;
+      if (message.type !== "frame") {
+        onMessageRef.current?.(message);
+        return;
+      }
+      if (!message.data) return;
       // Live-run JSON only checks `typeof type === "string"` upstream. Non-finite or negative
       // dimensions would poison frameSize and every coordinate scaled from it; a huge payload
       // would hit `atob` before any bound. Both are dropped as corrupt frames.
@@ -193,6 +254,9 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
         width: message.width ?? 1280,
         height: message.height ?? 800,
       };
+      setFrameDims((prev) =>
+        prev && prev.width === width && prev.height === height ? prev : { width, height },
+      );
       const frame = { data: message.data, width, height };
       latestFrame.current = frame;
       const frameId = ++latestFrameId.current;
@@ -210,9 +274,10 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
       document.removeEventListener("visibilitychange", drawLatestFrame);
       socket.close();
       socketRef.current = null;
+      if (controlRef) controlRef.current = null;
     };
     // The socket is per Bot; switching Bot must close this stream and open the next one.
-  }, [computerId, onProblem]);
+  }, [computerId, onProblem, streamPath, controlRef]);
 
   const send = useCallback(
     (message: Record<string, unknown>) => {
@@ -288,7 +353,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
    * page.
    */
   useEffect(() => {
-    if (!driving) return;
+    if (!keysOn) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") return; // Escape still closes the view.
       if (isPasteShortcut(event)) {
@@ -341,7 +406,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
       window.removeEventListener("paste", onPaste);
       localKeyUps.current.clear();
     };
-  }, [driving, send]);
+  }, [keysOn, send]);
 
   /**
    * The wheel, forwarded while driving, from a listener that is allowed to stop it here.
@@ -370,10 +435,20 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
     return () => canvas.removeEventListener("wheel", onWheel);
   }, [driving, at, send]);
 
-  return (
+  let fitStyle: React.CSSProperties | undefined;
+  if (fit && fitBox && frameDims && fitBox.width > 0 && fitBox.height > 0) {
+    const scale = Math.min(fitBox.width / frameDims.width, fitBox.height / frameDims.height);
+    fitStyle = {
+      width: `${Math.max(1, Math.floor(frameDims.width * scale))}px`,
+      height: `${Math.max(1, Math.floor(frameDims.height * scale))}px`,
+    };
+  }
+
+  const canvasElement = (
     <canvas
       ref={canvasRef}
-      className={`block h-auto w-full ${driving ? "cursor-crosshair" : ""}`}
+      style={fitStyle}
+      className={`block ${fit ? (fitStyle ? "" : "max-h-full max-w-full") : "h-auto w-full"} ${driving ? "cursor-crosshair" : ""}`}
       // Only forward input during takeover.
       {...(driving
         ? {
@@ -390,5 +465,12 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
       }
       data-connected={connected}
     />
+  );
+
+  if (!fit) return canvasElement;
+  return (
+    <div ref={fitBoxRef} className="flex h-full w-full items-center justify-center overflow-hidden" data-testid="live-screen-fit">
+      {canvasElement}
+    </div>
   );
 }

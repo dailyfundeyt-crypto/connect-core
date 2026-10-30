@@ -3,6 +3,33 @@ import { client, tryClient } from "@/lib/client";
 
 export type AgentVisibility = "public" | "private";
 
+export type AgentSkill = {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  prompt?: string;
+  source?: "builtin" | "custom" | "system";
+  createdAt?: string;
+};
+
+export type AgentWebsite = {
+  id: string;
+  url: string;
+  purpose: string; // „wofür“ / Zweck
+  enabled: boolean;
+  createdAt?: string;
+};
+
+export type AgentSubagent = {
+  id: string;
+  name: string;
+  url: string; // Link / Portal
+  description: string; // Beschreibung / Spezialisierung
+  enabled: boolean;
+  createdAt?: string;
+};
+
 /**
  * A coworker as the browser sees it.
  *
@@ -47,13 +74,24 @@ export type AgentProfile = {
    */
   mine: boolean;
   /** Stufe 1.1+2+3+4: Engine-Konfiguration (CLI, Browser-Profile, Manus, browser-use, Freebuff). */
-  engine: {
+  engine?: {
     kind: "antigravity" | "codex" | "claude" | "browser_profile" | "manus" | "browser_use" | "freebuff";
     model?: string;
     allowWrite?: boolean;
     startUrl?: string;
     profileName?: string;
   } | null;
+  headline?: string | null;
+  role?: string | null;
+  description?: string | null;
+  chosenCli?: string | null;
+  accountEmail?: string | null;
+  skills?: AgentSkill[] | null;
+  sparkPermissions?: Record<string, unknown> | null;
+  browserProfile?: string | null;
+  websiteList?: AgentWebsite[] | null;
+  subagents?: AgentSubagent[] | null;
+  mcpList?: string[] | unknown[] | null;
 };
 
 /**
@@ -192,4 +230,76 @@ export async function testAgentConnection(
   } catch {
     return { ok: false, reason: "The connection could not be tested." };
   }
+}
+
+export type RegisteredCodexAccount = {
+  appId: string;
+  appName: string;
+  n: number;
+  name: string;
+  isOriginal?: boolean;
+  enabled?: boolean;
+  email?: string;
+  userDataDir?: string | null;
+  codexHome?: string | null;
+  note?: string;
+};
+
+export type RegisteredCodexManifest = {
+  version: number;
+  sourceFile: string;
+  exists: boolean;
+  accounts: RegisteredCodexAccount[];
+  availableEmails: Array<{ email: string; label: string; appId: string; appName: string }>;
+};
+
+export type ManagedCliKind = "antigravity" | "codex" | "claude" | "freebuff" | "hermes";
+
+export function codexAccountsQueryOptions(kind?: ManagedCliKind | "all" | null) {
+  const useKind = kind && kind !== "all" ? kind : null;
+  return queryOptions({
+    queryKey: ["agent-mcp", "codex-accounts", useKind ?? "all"] as const,
+    queryFn: async (): Promise<RegisteredCodexManifest> => {
+      const url = useKind
+        ? `/api/agent-mcp/codex-accounts?kind=${encodeURIComponent(useKind)}`
+        : "/api/agent-mcp/codex-accounts";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        return {
+          version: 1,
+          sourceFile: "",
+          exists: false,
+          accounts: [],
+          availableEmails: [{ email: "dailyfunde.yt@gmail.com", label: "Google Default (dailyfunde.yt@gmail.com)", appId: "antigravity", appName: "Antigravity" }],
+        };
+      }
+      return res.json() as Promise<RegisteredCodexManifest>;
+    },
+  });
+}
+
+export type AgentCliConfig = {
+  agentId: string;
+  accountEmail: string | null;
+  defaultGoogleAccount: string;
+  paths: {
+    agentBase: string;
+    workspace: string;
+    codexHome: string;
+    claudeConfig: string;
+    antigravityConfig: string;
+    browserProfile: string;
+    googleAccount: string;
+  };
+};
+
+export function agentCliConfigQueryOptions(agentId: string) {
+  return queryOptions({
+    queryKey: ["agent-mcp", agentId, "cli-config"] as const,
+    queryFn: async (): Promise<AgentCliConfig | null> => {
+      const res = await fetch(`/api/agent-mcp/${encodeURIComponent(agentId)}/cli-config`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json() as Promise<AgentCliConfig>;
+    },
+  });
 }

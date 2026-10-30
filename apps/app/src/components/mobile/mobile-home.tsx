@@ -8,6 +8,7 @@ import {
   IconMessagePlus,
   IconMessages,
   IconArrowUp,
+  IconPencil,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconPlus,
@@ -19,7 +20,13 @@ import {
   IconWorld,
   IconX,
   IconUsersGroup,
+  IconServer,
 } from "@tabler/icons-react";
+import { ROUTES, isFeatureEnabled } from "@connect/contracts";
+import { FLAGS_V06 } from "@/contracts/v06/flags";
+import { getSocialNavItem, isSocialPageVisible } from "@/v06/mobile/mobileNav";
+import { CompanyAppsView } from "@/v06/mobile/CompanyAppsView";
+import { CompanyBrowserView } from "@/v06/mobile/CompanyBrowserView";
 import { SocialApp } from "@/components/social/social-app";
 import { getCompanyApp } from "@/company-apps/registry";
 import {
@@ -66,6 +73,7 @@ import {
   getLevel3Browser,
   labAppsByGroup,
   labFolderTree,
+  renameTabGroup,
   subscribeLevel3Browser,
   toolIconUrl,
 } from "@/lib/companies/level3-tools";
@@ -102,16 +110,33 @@ const MAIN_AGENT_KEY = "connect.mobile.mainAgent";
 const COLLAPSED_KEY = "connect.mobile.collapsedGroups";
 const PAGE_KEY = "connect.mobile.page";
 
-const PAGES = [
+const socialNavItem = getSocialNavItem(FLAGS_V06.mobileV2);
+
+const ALL_PAGES = [
   { id: "focus", label: "Fokus", icon: IconFocusCentered },
   { id: "chats", label: "Chats", icon: IconMessages },
   { id: "browser", label: "Browser", icon: IconWorld },
   { id: "companies", label: "Unternehmen", icon: IconBuildingStore },
-  // helium-social: Feed wie bei X (Connect Social)
-  { id: "social", label: "Analysis", icon: IconUsersGroup },
+  // v06 mobileV2 (A14): Platz von 'Analysis' öffnet 'Connect Sozial' (Route ROUTES_V06.social)
+  {
+    id: "social",
+    label: socialNavItem.label,
+    icon: IconUsersGroup,
+    route: socialNavItem.route,
+  },
 ] as const;
 
-type PageId = (typeof PAGES)[number]["id"];
+export type PageId = (typeof ALL_PAGES)[number]["id"];
+
+export const PAGES: ReadonlyArray<(typeof ALL_PAGES)[number]> = ALL_PAGES.filter((p) => {
+  if (p.id === "social") {
+    return isSocialPageVisible({
+      mobileV2: FLAGS_V06.mobileV2,
+      legacySocial2: isFeatureEnabled("social2"),
+    });
+  }
+  return true;
+});
 
 type Section = {
   id: string;
@@ -580,7 +605,15 @@ type BrowserRow = {
   notePath?: string;
 };
 
-type BrowserSection = { id: string; title: string; rows: BrowserRow[] };
+type BrowserSection = {
+  id: string;
+  title: string;
+  rows: BrowserRow[];
+  /** Echte Gruppen-ID (nur bei Gruppen, nicht bei "Weitere Links"/"Tabs der Agenten"). */
+  groupId?: string;
+  /** Eigenname der Gruppe (ohne "Eltern > Kind"-Pfad). */
+  groupLabel?: string;
+};
 
 function hostLabel(url: string | undefined): string {
   return siteKey(url) ?? (url || "").replace(/^https?:\/\//, "");
@@ -633,6 +666,9 @@ export function MobileHome() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     readJson<Record<string, boolean>>(COLLAPSED_KEY, {}),
   );
+  // Gruppen-Umbenennen im Handy-Browser (Bleist-Icon neben dem Gruppennamen).
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const pagerRef = useRef<HTMLDivElement>(null);
   const skipScrollSync = useRef(false);
@@ -789,7 +825,13 @@ export function MobileHome() {
       // helium-mobilefix: alle Gruppen wie am PC (Reihenfolge + Untergruppen), auch leere.
       const { roots, ungrouped } = labFolderTree(getLevel3Browser(companyId));
       for (const group of flattenLabFolders(roots)) {
-        out.push({ id: `browser:${group.id}`, title: group.title, rows: group.apps.map(toRow) });
+        out.push({
+          id: `browser:${group.id}`,
+          title: group.title,
+          groupId: group.id,
+          groupLabel: group.label,
+          rows: group.apps.map(toRow),
+        });
       }
       if (ungrouped.length > 0) {
         out.push({
@@ -799,8 +841,11 @@ export function MobileHome() {
         });
       }
     }
+    // Prompt 7.3: Nur Webseiten/Tabs der im Bau-Bereich gewählten Firma
+    const companyAgentIds = new Set(activeCompany?.agentIds ?? []);
+    const companyAgents = agents.filter((agent) => companyAgentIds.has(agent.id));
     const tabRows: BrowserRow[] = [];
-    for (const agent of agents) {
+    for (const agent of companyAgents) {
       for (const tab of getAgentTabs(agent.id).tabs) {
         const sources = [tab.favicon, labAppIconCandidates({ icon: "", url: tab.url }, toolIconUrl)[0]]
           .filter((v): v is string => Boolean(v));
@@ -812,8 +857,25 @@ export function MobileHome() {
           url: tab.url,
         });
       }
+      for (const site of agent.websiteList ?? []) {
+        if (site && site.enabled !== false && site.url) {
+          tabRows.push({
+            key: `website:${agent.id}:${site.id || site.url}`,
+            title: site.purpose || hostLabel(site.url),
+            subtitle: `${agent.name} · Website`,
+            sources: labAppIconCandidates({ icon: "", url: site.url }, toolIconUrl),
+            url: site.url,
+          });
+        }
+      }
     }
-    if (tabRows.length > 0) out.push({ id: "browser:agent-tabs", title: "Tabs der Agenten", rows: tabRows });
+    if (tabRows.length > 0) {
+      out.push({
+        id: "browser:agent-tabs",
+        title: `Seiten & Tabs (${activeCompany?.name || "Firma"})`,
+        rows: tabRows,
+      });
+    }
     return out;
   }, [tick, activeCompany, agents]);
 
@@ -941,6 +1003,27 @@ export function MobileHome() {
   useEffect(() => {
     void localAppsInfo();
   }, []);
+
+  /**
+   * Gruppen-Umbenennen im Handy-Browser.
+   *
+   * Das Feld startet mit dem aktuellen Namen (nicht leer) und wird mit Enter
+   * bestaetigt bzw. beim Verlassen gespeichert -- wie am PC. Ein leerer Name
+   * wird verworfen, damit keine namenlose Gruppe entsteht.
+   */
+  const startGroupRename = (groupId: string, label: string) => {
+    setRenamingGroupId(groupId);
+    setRenameDraft(label);
+  };
+
+  const commitGroupRename = (groupId: string, label: string) => {
+    const next = renameDraft.trim();
+    setRenamingGroupId(null);
+    if (!next || next === label) return;
+    const companyId = activeCompany?.id;
+    if (!companyId) return;
+    renameTabGroup(companyId, groupId, next);
+  };
 
   const pressTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
@@ -1224,7 +1307,22 @@ export function MobileHome() {
           )}
         </section>
 
-        {/* Browser */}
+        {/* Browser: mobileV2 nutzt CompanyBrowserView (ohne Firmen-Chips, nur aktive Firma) */}
+        {FLAGS_V06.mobileV2 ? (
+          <CompanyBrowserView
+            activeCompany={activeCompany}
+            collapsed={collapsed}
+            onChangeRenameDraft={setRenameDraft}
+            onCommitRename={commitGroupRename}
+            onOpenRow={openRow}
+            onStartRename={startGroupRename}
+            onToggleSection={toggleSection}
+            renameDraft={renameDraft}
+            renamingGroupId={renamingGroupId}
+            search={search}
+            sections={browserSections}
+          />
+        ) : (
         <section aria-label="Browser" className="connect-mobile-page pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
           <div className="px-5 pb-1 pt-5">
             <h2 className="text-[26px] font-semibold tracking-tight">Browser</h2>
@@ -1232,7 +1330,10 @@ export function MobileHome() {
               Deine Links aus Helium{activeCompany?.name ? ` · ${activeCompany.name}` : ""}
             </p>
           </div>
-          <MobileBrowserCompanyChips activeId={activeCompany?.id} companies={companies} onSelect={setActiveCompanyId} />
+          {/* Prompt 7.3: Nur Webseiten der gewählten Firma listen; fremde Firmen-Menüs ausblenden (mobileV2) */}
+          {!FLAGS_V06.mobileV2 ? (
+            <MobileBrowserCompanyChips activeId={activeCompany?.id} companies={companies} onSelect={setActiveCompanyId} />
+          ) : null}
           {filteredBrowser.length === 0 ? (
             <div className="connect-mobile-glass mx-5 mt-5 rounded-3xl px-5 py-10 text-center">
               <IconLayoutGrid className="mx-auto size-8 text-white/35" />
@@ -1247,19 +1348,56 @@ export function MobileHome() {
               const isCollapsed = !needle && collapsed[section.id] === true;
               return (
                 <section className="pb-1" key={section.id}>
-                  <button
-                    aria-expanded={!isCollapsed}
-                    className="flex items-center gap-1.5 px-5 pb-1 pt-4 text-[15px] font-medium tracking-wide text-white/55 active:text-white/80"
-                    onClick={() => toggleSection(section.id)}
-                    type="button"
-                  >
-                    {section.title}
-                    <span className="text-[13px] font-normal text-white/30">{section.rows.length}</span>
-                    <IconChevronDown
-                      className={cn("size-[17px] transition-transform duration-200", isCollapsed && "-rotate-90")}
-                      stroke={1.75}
-                    />
-                  </button>
+                  <div className="flex items-center gap-1 pr-5">
+                    <button
+                      aria-expanded={!isCollapsed}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 px-5 pb-1 pt-4 text-[15px] font-medium tracking-wide text-white/55 active:text-white/80"
+                      onClick={() => toggleSection(section.id)}
+                      type="button"
+                    >
+                      {section.title}
+                      <span className="text-[13px] font-normal text-white/30">{section.rows.length}</span>
+                      <IconChevronDown
+                        className={cn("size-[17px] transition-transform duration-200", isCollapsed && "-rotate-90")}
+                        stroke={1.75}
+                      />
+                    </button>
+                    {/*
+                     * Gruppen umbenennen: es gab im Handy-Browser keinen Weg,
+                     * eine Gruppe umzubenennen -- nur am PC. Das Bleistift-Icon
+                     * oeffnet ein Feld mit dem aktuellen Namen.
+                     */}
+                    {section.groupId ? (
+                      renamingGroupId === section.groupId ? (
+                        <input
+                          aria-label="Gruppenname"
+                          autoFocus
+                          className="mt-4 h-8 min-w-0 flex-1 rounded-lg border border-white/20 bg-white/10 px-2 text-[15px] text-white outline-none placeholder:text-white/40 focus:border-white/40"
+                          onBlur={() => commitGroupRename(section.groupId as string, section.groupLabel ?? section.title)}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              commitGroupRename(section.groupId as string, section.groupLabel ?? section.title);
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              setRenamingGroupId(null);
+                            }
+                          }}
+                          value={renameDraft}
+                        />
+                      ) : (
+                        <button
+                          aria-label={`Gruppe ${section.groupLabel ?? section.title} umbenennen`}
+                          className="mt-4 flex size-8 shrink-0 items-center justify-center rounded-lg text-white/40 active:bg-white/10 active:text-white/80"
+                          onClick={() => startGroupRename(section.groupId as string, section.groupLabel ?? section.title)}
+                          type="button"
+                        >
+                          <IconPencil className="size-4" stroke={1.75} />
+                        </button>
+                      )
+                    ) : null}
+                  </div>
                   {isCollapsed ? null : section.rows.length === 0 ? (
                     <p className="px-5 pb-2 pt-1 text-[14px] text-white/30">Noch keine Links in dieser Gruppe.</p>
                   ) : (
@@ -1300,8 +1438,35 @@ export function MobileHome() {
           <MobileBrainNotes needle={needle} onOpenNote={setNotePath} />
         </section>
 
-        {/* Unternehmen */}
-        <section aria-label="Unternehmen" className="connect-mobile-page pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
+        )}
+
+        {/* Unternehmen: mobileV2 nutzt CompanyAppsView (nur Firmen-Apps, Auto-Open bei genau 1 App) */}
+        {FLAGS_V06.mobileV2 ? (
+          <CompanyAppsView
+            activeCompany={activeCompany}
+            getIntegratedApp={getCompanyApp}
+            isTabActive={PAGES[pageIndex]?.id === "companies"}
+            onOpenApp={(app, opts) => {
+              if (app.kind === "integrated" && activeCompany) {
+                setCompanyAppsId(null);
+                setAppTarget(null);
+                setAppFromDefault(false);
+                void navigate({
+                  to: "/company/$companyId",
+                  params: { companyId: activeCompany.id },
+                  search: { level: 4, profile: false },
+                  replace: opts?.replace ?? false,
+                });
+                return;
+              }
+              if (app.url && activeCompany) {
+                setCompanyAppsId(activeCompany.id);
+                openAppLink({ url: app.url, title: `${activeCompany.name} · ${app.name}` }, setAppTarget);
+              }
+            }}
+          />
+        ) : (
+          <section aria-label="Unternehmen" className="connect-mobile-page pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
           <div className="px-5 pb-2 pt-5">
             <h2 className="text-[22px] font-semibold tracking-tight">Unternehmen</h2>
             <p className="mt-1 text-[14px] text-white/45">
@@ -1414,11 +1579,17 @@ export function MobileHome() {
             </ul>
           )}
         </section>
+        )}
 
-        {/* Connect Social (helium-social): Feed, Suche, Firmen folgen */}
-        <section aria-label="Analysis" className="connect-mobile-page pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
-          <SocialApp variant="embedded" />
-        </section>
+        {/* Connect Sozial (Prompt 7.1 / A14 mobileV2 / helium-social): Feed wie bei X */}
+        {isSocialPageVisible({ mobileV2: FLAGS_V06.mobileV2, legacySocial2: isFeatureEnabled("social2") }) ? (
+          <section
+            aria-label={FLAGS_V06.mobileV2 ? "Connect Sozial" : "Analysis"}
+            className="connect-mobile-page pb-[calc(2.5rem+env(safe-area-inset-bottom))]"
+          >
+            <SocialApp variant="embedded" />
+          </section>
+        ) : null}
       </div>
 
       {/* Keine Navigationsleiste: Seiten nur per Wischen. Dezente Punkte zeigen nur die Position. */}
@@ -1456,6 +1627,14 @@ export function MobileHome() {
           onClick={() => {
             setPlusOpen(false);
             void navigate({ to: "/market" });
+          }}
+        />
+        <SheetItem
+          icon={<IconServer className="size-5 text-emerald-500" />}
+          label="Swarm-Dashboard"
+          onClick={() => {
+            setPlusOpen(false);
+            void navigate({ to: "/swarm" as any });
           }}
         />
       </BottomSheet>

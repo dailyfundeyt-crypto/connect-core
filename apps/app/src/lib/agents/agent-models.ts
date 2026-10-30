@@ -19,7 +19,15 @@ export type AgentModelId =
 
 export type AgentModelFamily =
   | "antigravity"
-  | "connect";
+  | "connect"
+  | "manus"
+  | "chatgpt"
+  | "claude"
+  | "grok"
+  | "cursor"
+  | "lovable"
+  | "qwen"
+  | "cloud";
 
 export type AgentModelOption = {
   id: AgentModelId;
@@ -40,6 +48,15 @@ export const CONNECT_MODEL_IDS: AgentModelId[] = AGENT_MODELS.map((m) => m.id);
 export const MODEL_POOLS: Record<AgentModelFamily, AgentModelId[]> = {
   antigravity: ["auto", "agy-default", "agy-pro", "agy-fast"],
   connect: ["auto"],
+  manus: ["auto"],
+  chatgpt: ["auto"],
+  claude: ["auto"],
+  grok: ["auto"],
+  cursor: ["auto"],
+  lovable: ["auto"],
+  qwen: ["auto"],
+  /** Cloud-Agent: das Modell steht in der Anbieter-Konfiguration auf dem Server. */
+  cloud: ["auto"],
 };
 
 export type ModelFamilyMeta = {
@@ -51,7 +68,7 @@ export type ModelFamilyMeta = {
 };
 
 /**
- * Two production tiers + Beta:
+ * Production tiers + Beta:
  *   Model One  — Antigravity CLI (agy, lokal) | Manus API (cloud) | ZGPT Terminal
  *   Model Two  — Hermes (lokal)
  * Global Settings → Model Provider is the chat router (Plan 047).
@@ -66,6 +83,11 @@ export const MODEL_FAMILIES: ModelFamilyMeta[] = [
     id: "connect",
     label: "Model Two · Hermes",
     hint: "Local Provider — Connect-API / AG-UI",
+  },
+  {
+    id: "cloud",
+    label: "Cloud-Agent",
+    hint: "Muse-Inbox, Grok Bot per Webhook oder OpenAI-kompatible API",
   },
 ];
 
@@ -86,14 +108,36 @@ export function isBetaModelFamily(id: AgentModelFamily): boolean {
 const FAMILY_DEFAULT_MODEL: Record<AgentModelFamily, AgentModelId> = {
   antigravity: "agy-default",
   connect: "auto",
+  manus: "auto",
+  chatgpt: "auto",
+  claude: "auto",
+  grok: "auto",
+  cursor: "auto",
+  lovable: "auto",
+  qwen: "auto",
+  cloud: "auto",
 };
 
 const FAMILY_TO_CLI: Partial<Record<AgentModelFamily, CliTarget>> = {
   antigravity: "antigravity",
+  manus: "manus",
+  chatgpt: "chatgpt",
+  claude: "claude",
+  grok: "grok",
+  cursor: "cursor",
+  lovable: "lovable",
 };
 
 const CLI_TO_FAMILY: Record<CliTarget, AgentModelFamily> = {
   antigravity: "antigravity",
+  manus: "manus",
+  codex: "chatgpt",
+  chatgpt: "chatgpt",
+  claude: "claude",
+  grok: "grok",
+  cursor: "cursor",
+  lovable: "lovable",
+  freebuff: "antigravity",
 };
 
 const MODEL_KEY = "connect.agent-models";

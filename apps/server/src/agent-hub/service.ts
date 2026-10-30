@@ -4,6 +4,8 @@
  * key and audit store everything else uses.
  */
 import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { agents } from "../db/schema/core";
 import type { AuditStore } from "../audit";
 import {
   createCredentialAdminService,
@@ -315,7 +317,31 @@ class AgentHub {
   /** The model a built-in agent runs on, or null for the deployment default (old global BOT_* setting). */
   async resolveModel(agentId: string): Promise<AgentModelOverride | null> {
     const settings = await this.modelSettings(agentId);
-    if (!settings || settings.provider === "default" || !settings.model) {
+    const [agentRow] = await this.deps.database
+      .select({
+        accountEmail: agents.accountEmail,
+        chosenCli: agents.chosenCli,
+        configuration: agents.configuration,
+      })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .catch(() => []);
+    const accountEmail = agentRow?.accountEmail ?? undefined;
+    const cfg = (agentRow?.configuration && typeof agentRow.configuration === "object" ? agentRow.configuration : {}) as Record<string, unknown>;
+    const cfgCli = (cfg.cli as { kind?: string } | undefined)?.kind || (cfg.engine as { kind?: string } | undefined)?.kind;
+    const effectiveCli = (agentRow?.chosenCli || cfgCli || "").toLowerCase().trim();
+
+    // Die für den Bot im CLI-Bereich eingestellte CLI ist die Quelle der Wahrheit
+    let effectiveProvider = settings?.provider;
+    let effectiveModel = settings?.model;
+    if (effectiveCli === "antigravity" || effectiveCli === "codex" || effectiveCli === "claude" || effectiveCli === "freebuff") {
+      effectiveProvider = `${effectiveCli}-cli` as ModelProvider;
+      if (!effectiveModel || effectiveModel === "auto") {
+        effectiveModel = effectiveCli === "codex" ? "gpt-5.5" : "auto";
+      }
+    }
+
+    if (!effectiveProvider || effectiveProvider === "default" || !effectiveModel) {
       // Hermes-Standard: ohne eigenes Modell und ohne echten OPENAI_API_KEY (Platzhalter "sk-local...")
       // lief jeder Hermes-Agent in "Incorrect API key" und antwortete nie. Dann unsichtbar die
       // Codex-CLI mit dem ChatGPT-Login dieses PCs nehmen (kein API-Key, kein Konsolenfenster).
@@ -323,52 +349,52 @@ class AgentHub {
       const placeholder = !envKey || /^sk-local|placeholder/i.test(envKey);
       if (placeholder && process.env.CONNECT_HERMES_DEFAULT_CLI !== "off") {
         const cliModel = process.env.CONNECT_HERMES_DEFAULT_MODEL?.trim() || "gpt-5.6-terra";
-        return { model: createCliModel({ kind: "codex", model: cliModel, agentId }), apiKey: "cli-login", label: `codex-cli/${cliModel}` };
+        return { model: createCliModel({ kind: "codex", model: cliModel, agentId, accountEmail }), apiKey: "cli-login", label: `codex-cli/${cliModel}` };
       }
       return null;
     }
-    const label = `${settings.provider}/${settings.model}`;
+    const label = `${effectiveProvider}/${effectiveModel}`;
     let key: string | null = null;
-    if (settings.credentialId) {
+    if (settings?.credentialId) {
       try {
         key = await this.readSecret(settings.credentialId);
       } catch (error) {
         return { error: `Der API-Key dieses Agents ist nicht mehr gültig (${errorText(error)}). Bitte unter Einstellungen → Modell neu eintragen.`, label };
       }
     }
-    const baseURL = settings.baseUrl || DEFAULT_BASE_URLS[settings.provider];
-    switch (settings.provider) {
+    const baseURL = settings?.baseUrl || (effectiveProvider in DEFAULT_BASE_URLS ? DEFAULT_BASE_URLS[effectiveProvider as keyof typeof DEFAULT_BASE_URLS] : undefined);
+    switch (effectiveProvider) {
       // Anbieter-CLI mit dem eigenen Konto-Login (unsichtbar im Hintergrund, kein API-Key).
       case "codex-cli":
-        return { model: createCliModel({ kind: "codex", model: settings.model, agentId }), apiKey: "cli-login", label };
+        return { model: createCliModel({ kind: "codex", model: effectiveModel, agentId, accountEmail }), apiKey: "cli-login", label };
       case "claude-cli":
-        return { model: createCliModel({ kind: "claude", model: settings.model, agentId }), apiKey: "cli-login", label };
+        return { model: createCliModel({ kind: "claude", model: effectiveModel, agentId, accountEmail }), apiKey: "cli-login", label };
       /**
-       * Antigravity: Go-Binary `agy`, Browser-Use ist eingebaut. Der
-       * Agent klickt selbst, sobald der Prompt Web-Aktionen braucht —
-       * kein zusätzliches Tool nötig. Modell `auto` überlässt der CLI
-       * die Default-Wahl.
+       * Antigravity: Go-Binary `agy`, Browser-Use ist über agent-browser-use
+       * und CDP/Playwright im Agent-Helium-Profil angebunden.
        */
       case "antigravity-cli":
-        return { model: createCliModel({ kind: "antigravity", model: settings.model, agentId }), apiKey: "cli-login", label };
+        return { model: createCliModel({ kind: "antigravity", model: effectiveModel, agentId, accountEmail }), apiKey: "cli-login", label };
+      case "freebuff-cli" as any:
+        return { model: createCliModel({ kind: "freebuff", model: effectiveModel, agentId, accountEmail }), apiKey: "cli-login", label };
       case "ollama-local":
-        return { model: await openAiChatModel(baseURL ?? "", key || "ollama", settings.model, "ollama"), apiKey: key || "ollama", label };
+        return { model: await openAiChatModel(baseURL ?? "", key || "ollama", effectiveModel, "ollama"), apiKey: key || "ollama", label };
       case "ollama-cloud":
         if (!key) return { error: "Für Ollama Cloud fehlt der API-Key dieses Agents. Trage ihn unter Agent-Einstellungen → Modell ein (Key von ollama.com/settings/keys).", label };
-        return { model: await openAiChatModel(baseURL ?? "", key, settings.model, "ollama-cloud"), apiKey: key, label };
+        return { model: await openAiChatModel(baseURL ?? "", key, effectiveModel, "ollama-cloud"), apiKey: key, label };
       case "openai-compatible":
         if (!baseURL) return { error: "Für diesen Agent fehlt die Basis-URL des Modells.", label };
-        return { model: await openAiChatModel(baseURL, key || "none", settings.model, "compatible"), apiKey: key || "none", label };
+        return { model: await openAiChatModel(baseURL, key || "none", effectiveModel, "compatible"), apiKey: key || "none", label };
       case "openai": {
         const apiKey = key || process.env.OPENAI_API_KEY?.trim() || null;
         if (!apiKey) return { error: "Für OpenAI fehlt ein API-Key (eigener Key im Agent oder OPENAI_API_KEY).", label };
-        if (settings.baseUrl) return { model: await openAiChatModel(settings.baseUrl, apiKey, settings.model, "openai"), apiKey, label };
-        return { model: `openai/${settings.model}`, apiKey, label };
+        if (baseURL) return { model: await openAiChatModel(baseURL, apiKey, effectiveModel, "openai"), apiKey, label };
+        return { model: `openai/${effectiveModel}`, apiKey, label };
       }
       case "anthropic": {
         const apiKey = key || process.env.ANTHROPIC_API_KEY?.trim() || null;
         if (!apiKey) return { error: "Für Anthropic fehlt ein API-Key (eigener Key im Agent oder ANTHROPIC_API_KEY).", label };
-        return { model: `anthropic/${settings.model}`, apiKey, label };
+        return { model: `anthropic/${effectiveModel}`, apiKey, label };
       }
       default:
         return null;

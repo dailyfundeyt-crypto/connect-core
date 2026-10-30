@@ -55,6 +55,13 @@ export type AgentBrowserSession = {
 
 /** A "starting" session older than this is treated as aborted (e.g. page reload / HMR). */
 const STALE_STARTING_MS = 30_000;
+const MAX_START_ATTEMPTS = 3;
+const START_COOLDOWN_MS = 45_000;
+const startAttempts = new Map<string, { failures: number; lastFailedAt: number }>();
+
+export function resetAgentBrowserStartAttempts(agentId: string) {
+  startAttempts.delete(agentId);
+}
 
 const SESSION_KEY = "connect.agent-browser-session";
 const EVENT = "connect-agent-browser-changed";
@@ -168,6 +175,17 @@ export async function ensureAgentBrowserStarted(
     sameAnchor
   ) {
     return current;
+  }
+
+  // Wiederholte Startfehler begrenzen: max 3 Fehlversuche mit Cooldown
+  const attempts = startAttempts.get(agentId);
+  if (attempts && attempts.failures >= MAX_START_ATTEMPTS) {
+    const elapsed = Date.now() - attempts.lastFailedAt;
+    if (elapsed < START_COOLDOWN_MS) {
+      return current;
+    }
+    // Nach Pause 1 neuen Versuch erlauben
+    attempts.failures = MAX_START_ATTEMPTS - 1;
   }
 
   const startingMsg =
@@ -314,12 +332,15 @@ export async function ensureAgentBrowserStarted(
           (mode === "manus"
             ? "Manus-Profil nicht erreichbar — Connect Desktop nötig."
             : "Chrome-Profil nicht erreichbar — Connect Desktop nötig, oder Sandbox wählen.");
+        const prev = startAttempts.get(agentId) ?? { failures: 0, lastFailedAt: 0 };
+        startAttempts.set(agentId, { failures: prev.failures + 1, lastFailedAt: Date.now() });
         return patchSession(agentId, {
           mode,
           status: "error",
           message: startHint(detail),
         });
       }
+      startAttempts.delete(agentId);
       return patchSession(agentId, {
         mode,
         status: "running",
@@ -331,6 +352,8 @@ export async function ensureAgentBrowserStarted(
         startedAt: new Date().toISOString(),
       });
     } catch {
+      const prev = startAttempts.get(agentId) ?? { failures: 0, lastFailedAt: 0 };
+      startAttempts.set(agentId, { failures: prev.failures + 1, lastFailedAt: Date.now() });
       return patchSession(agentId, {
         mode,
         status: "error",

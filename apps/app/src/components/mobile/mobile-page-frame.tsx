@@ -21,6 +21,7 @@ import "./mobile-page-frame.css";
 const MOBILE_BG = "#07080c";
 
 const TITLES: Array<[RegExp, string]> = [
+  [/^\/social/, "Connect Sozial"],
   [/^\/company\/new\/?$/, "Neue Firma"],
   [/^\/company\//, "Unternehmen"],
   [/^\/settings\/brain/, "Brain"],
@@ -34,6 +35,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/routines/, "Routinen"],
   [/^\/skills/, "Skills"],
   [/^\/bot/, "Bot"],
+  [/^\/swarm/, "Swarm"],
 ];
 
 export function mobilePageTitle(pathname: string): string {

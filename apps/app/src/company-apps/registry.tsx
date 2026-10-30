@@ -2,6 +2,9 @@ import {
   Component,
   lazy,
   Suspense,
+  useEffect,
+  useMemo,
+  useState,
   type ComponentType,
   type ReactNode,
 } from "react";
@@ -13,6 +16,7 @@ import type {
   CompanyAppProps,
   LoadedCompanyApp,
 } from "./types";
+export type { LoadedCompanyApp, CompanyAppManifest, CompanyAppProps };
 import type { AuthenticatedUser } from "@/lib/auth/queries";
 
 type ManifestModule = { manifest: CompanyAppManifest };
@@ -54,7 +58,103 @@ export function listCompanyApps(): LoadedCompanyApp[] {
 }
 
 export const COMPANY_APP_OPEN_EVENT = "connect:open-company-app";
+export const COMPANY_APP_CLOSE_EVENT = "connect:close-company-app";
 export const COMPANY_APP_SELECTION_KEY = "connect.messages.companyApp";
+
+export function readSelectedCompanyAppId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(COMPANY_APP_SELECTION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function writeSelectedCompanyAppId(appId: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (appId) {
+      window.localStorage.setItem(COMPANY_APP_SELECTION_KEY, appId);
+    } else {
+      window.localStorage.removeItem(COMPANY_APP_SELECTION_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function openCompanyApp(appId: string) {
+  writeSelectedCompanyAppId(appId);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(COMPANY_APP_OPEN_EVENT, { detail: { appId } }),
+    );
+  }
+}
+
+export function closeCompanyApp() {
+  writeSelectedCompanyAppId(null);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(COMPANY_APP_CLOSE_EVENT));
+  }
+}
+
+export function getCompanyAppById(appId: string | null | undefined): LoadedCompanyApp | null {
+  if (!appId) return null;
+  const id = normalize(appId);
+  return (
+    loadedApps.find(
+      ({ manifest }) =>
+        normalize(manifest.id) === id ||
+        (manifest.id === "connect-sozial" && id === "dailyfun") ||
+        (manifest.id === "flux" && (id === "tool-flux" || id === "company-flux")) ||
+        (manifest.id === "analysis" && id === "tool-analysis"),
+    ) ?? null
+  );
+}
+
+export function useActiveCompanyApp(): {
+  activeAppId: string | null;
+  activeApp: LoadedCompanyApp | null;
+  openApp: (appId: string) => void;
+  closeApp: () => void;
+} {
+  const [appId, setAppId] = useState<string | null>(() => readSelectedCompanyAppId());
+
+  useEffect(() => {
+    const handleOpen = (e: Event) => {
+      const custom = e as CustomEvent<{ appId?: string }>;
+      const nextId = custom.detail?.appId ?? readSelectedCompanyAppId();
+      if (nextId) setAppId(nextId);
+    };
+    const handleClose = () => {
+      setAppId(null);
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === COMPANY_APP_SELECTION_KEY) {
+        setAppId(readSelectedCompanyAppId());
+      }
+    };
+
+    window.addEventListener(COMPANY_APP_OPEN_EVENT, handleOpen);
+    window.addEventListener(COMPANY_APP_CLOSE_EVENT, handleClose);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(COMPANY_APP_OPEN_EVENT, handleOpen);
+      window.removeEventListener(COMPANY_APP_CLOSE_EVENT, handleClose);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  const activeApp = useMemo(() => getCompanyAppById(appId), [appId]);
+
+  return {
+    activeAppId: activeApp ? activeApp.manifest.id : null,
+    activeApp,
+    openApp: openCompanyApp,
+    closeApp: closeCompanyApp,
+  };
+}
 
 export function CompanyAppWorkspace({
   app,

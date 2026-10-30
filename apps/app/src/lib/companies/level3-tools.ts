@@ -945,11 +945,68 @@ export function moveTabGroupIntoGroup(
     cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
   }
 
-  return setLevel3Browser(companyId, {
-    tabGroups: groups.map((g) =>
-      g.id === groupId ? { ...g, parentId, collapsed: false } : g,
-    ),
-  });
+  const dragged = byId.get(groupId);
+  if (!dragged) return prev;
+
+  // The flat array is the display order for every level, so the folder is re-inserted
+  // behind the last existing child of its new parent. Without that it would keep its old
+  // slot and could appear before the children it was dropped next to.
+  const without = groups.filter((g) => g.id !== groupId);
+  let insertAt = without.findIndex((g) => g.id === parentId) + 1;
+  for (let i = 0; i < without.length; i += 1) {
+    if (without[i].parentId === parentId) insertAt = i + 1;
+  }
+  without.splice(insertAt, 0, { ...dragged, parentId, collapsed: false });
+
+  return setLevel3Browser(companyId, { tabGroups: without });
+}
+
+/**
+ * Move `groupId` next to `targetId` -- as a sibling, not as a child.
+ *
+ * The dragged folder keeps the target's parent, so dragging a subfolder onto the edge of
+ * another subfolder swaps it inside that parent instead of lifting it to the top level.
+ */
+export function moveTabGroupAsSibling(
+  companyId: string,
+  groupId: string,
+  targetId: string,
+  placeAfter: boolean,
+): Level3BrowserState {
+  const prev = getLevel3Browser(companyId);
+  const groups = normalizeGroups(prev.tabGroups);
+  if (groupId === targetId) return prev;
+  const dragged = groups.find((g) => g.id === groupId);
+  const target = groups.find((g) => g.id === targetId);
+  if (!dragged || !target) return prev;
+
+  const without = groups.filter((g) => g.id !== groupId);
+  const at = without.findIndex((g) => g.id === targetId);
+  if (at < 0) return prev;
+  const moved: LabTabGroup = { ...dragged, parentId: target.parentId };
+  without.splice(placeAfter ? at + 1 : at, 0, moved);
+
+  return setLevel3Browser(companyId, { tabGroups: without });
+}
+
+/**
+ * Detach a folder from its parent and put it at the end of the top level.
+ *
+ * This is the "drop below the last folder" case: a folder that lives inside another one
+ * becomes a top-level folder again and stays where it was dropped.
+ */
+export function moveTabGroupToRootEnd(
+  companyId: string,
+  groupId: string,
+): Level3BrowserState {
+  const prev = getLevel3Browser(companyId);
+  const groups = normalizeGroups(prev.tabGroups);
+  const dragged = groups.find((g) => g.id === groupId);
+  if (!dragged) return prev;
+
+  const without = groups.filter((g) => g.id !== groupId);
+  without.push({ ...dragged, parentId: undefined });
+  return setLevel3Browser(companyId, { tabGroups: without });
 }
 
 /**
@@ -1070,6 +1127,55 @@ export function reorderTabGroups(
   for (const g of byId.values()) {
     if (!orderedIds.includes(g.id)) next.push(g);
   }
+  return setLevel3Browser(companyId, { tabGroups: next });
+}
+
+/**
+ * Move a folder within its own level -- up, down, to the top or to the bottom.
+ *
+ * "Within its own level" means among the folders that share its parent: a folder inside
+ * "Tool Stack" moves among the other folders inside "Tool Stack", never out of it and
+ * never in front of a top-level folder. The folders of the other levels keep their
+ * positions, so nothing else in the tree shifts.
+ */
+export function reorderTabGroupWithinSiblings(
+  companyId: string,
+  groupId: string,
+  mode: "start" | "up" | "down" | "end",
+): Level3BrowserState {
+  const prev = getLevel3Browser(companyId);
+  const groups = normalizeGroups(prev.tabGroups);
+  const target = groups.find((g) => g.id === groupId);
+  if (!target) return prev;
+
+  const sameLevel = (g: LabTabGroup) =>
+    (g.parentId ?? undefined) === (target.parentId ?? undefined);
+  const siblings = groups.filter(sameLevel);
+  const index = siblings.findIndex((g) => g.id === groupId);
+  if (index < 0) return prev;
+
+  let nextIndex = index;
+  if (mode === "start") nextIndex = 0;
+  else if (mode === "end") nextIndex = siblings.length - 1;
+  else if (mode === "up") nextIndex = Math.max(0, index - 1);
+  else if (mode === "down") nextIndex = Math.min(siblings.length - 1, index + 1);
+  if (nextIndex === index) return prev;
+
+  const reordered = [...siblings];
+  const [moved] = reordered.splice(index, 1);
+  reordered.splice(nextIndex, 0, moved);
+
+  // Rebuild the flat list: the slots of this level are filled with the new order,
+  // every other level keeps its folders where they were.
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  let cursor = 0;
+  const next = groups.map((g) => {
+    if (!sameLevel(g)) return g;
+    const replacement = reordered[cursor];
+    cursor += 1;
+    return byId.get(replacement.id) ?? g;
+  });
+
   return setLevel3Browser(companyId, { tabGroups: next });
 }
 
@@ -1265,6 +1371,37 @@ export function labFolderTree(state: Level3BrowserState): {
     }
   }
   return { roots, ungrouped };
+}
+
+/**
+ * The ids of `groupId` and all of its descendants.
+ *
+ * Used to grey out the folders a folder cannot be dropped into -- a folder cannot become
+ * a child of itself, and it cannot become a child of one of its own subfolders, because
+ * that would detach the subtree from the tree and the sidebar would stop showing it.
+ */
+export function tabGroupDescendantIds(
+  state: Level3BrowserState,
+  groupId: string,
+): string[] {
+  const groups = normalizeGroups(state.tabGroups);
+  const childrenOf = new Map<string, string[]>();
+  for (const g of groups) {
+    if (!g.parentId) continue;
+    const list = childrenOf.get(g.parentId) ?? [];
+    list.push(g.id);
+    childrenOf.set(g.parentId, list);
+  }
+  const out: string[] = [];
+  const walk = (id: string) => {
+    for (const child of childrenOf.get(id) ?? []) {
+      if (out.includes(child)) continue;
+      out.push(child);
+      walk(child);
+    }
+  };
+  walk(groupId);
+  return out;
 }
 
 /** Open an app icon in the Lab browser (and leave ★ product view). */

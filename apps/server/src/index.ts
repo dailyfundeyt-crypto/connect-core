@@ -16,6 +16,18 @@ import { createHandoffRunner } from "./agents/handoff-runner";
 import { signHandoffDeliveryRun } from "./agents/handoff-signing";
 import { handoffTool } from "./agents/handoff-tool";
 import { createAgentProfileStore } from "./agents/profile-store";
+import {
+  getAgentTerminalLogs,
+  getAgentTerminalStatus,
+  resizeAgentTerminal,
+  restartAgentTerminal,
+  sendAgentTerminalInput,
+  startAgentTerminal,
+  subscribeAgentTerminal,
+} from "./agent-hub/agent-terminal-manager";
+import { auditCli } from "./agent-hub/remote-fs";
+import { openCastSession, previewPortFor, type CastSession } from "./cli-bridge/accounts/app-cast";
+import { getAccount as getAppAccount } from "./cli-bridge/accounts/storage";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import { createApp } from "./app";
@@ -88,8 +100,10 @@ import { createDatabase } from "./db/client";
 import { intelligenceChannelMappings } from "./db/schema";
 import { brainTools, callBrainTool } from "./brain/tools";
 import { heliumBrowserTools } from "./helium-sync";
+import { agentBrowserTools } from "./agents/agent-browser-tools";
 import { agentHub, agentHubTools, initAgentHub } from "./agent-hub/service";
 import { startPcBridgeWorker } from "./pc-bridge";
+import { startUsageCollectors, stopUsageCollectors } from "./usage/collectors";
 import { setAgentModelResolver } from "./copilot";
 import { createHostAccessBroker } from "./host-access/broker";
 import { hostAccessTools } from "./host-access/tools";
@@ -323,7 +337,10 @@ const bootAuditStore = createAuditStore(database);
 initAgentHub({ database, encryptionKey: config.keyEncryptionKey, credentialStore, auditStore: bootAuditStore });
 setAgentModelResolver(async (agentId) => (await agentHub()?.resolveModel(agentId)) ?? null);
 // Handy-Brücke: der PC holt Aufträge vom Handy über eine ausgehende Verbindung ab (pc-bridge.env).
-if (!serverless) startPcBridgeWorker();
+if (!serverless) {
+  startPcBridgeWorker();
+  startUsageCollectors();
+}
 // One store: the gateway writes through it, a route reads it, and the sweep below takes the old ones out.
 const pageFrameStore = createPageFrameStore(database);
 // Housekeeping on a schedule: audit rows when asked for, screenshots always, one timer. See audit-retention.ts.
@@ -617,7 +634,9 @@ const loadToolsForActor =
     }),
     // Brain tools only for agents pinned in Brain/agents.json; every call is checked there again.
     ...(await brainTools({ botId }).catch(() => [])),
-    // Browser-Tab-Agenten (ProfilmenÃ¼ â€º Connect-Chrome): Helium-Tabs Ã¼ber die Erweiterung Connect Sync.
+    // Agent-eigener Helium-Browser (isoliertes Profil mit cyanem Rahmen via CDP/Playwright)
+    ...agentBrowserTools(botId),
+    // Browser-Tab-Agenten (Profilmenü › Connect-Chrome): Helium-Tabs über die Erweiterung Connect Sync.
     ...(serverless ? [] : heliumBrowserTools()),
     // MCP servers attached to this Bot in Agent → Einstellungen → MCP (Agent Hub).
     ...(await agentHubTools(botId)),
@@ -1399,16 +1418,57 @@ const streamPathBotId = (pathname: string): string | null => {
 type StreamData = { upstream: string; inward?: WebSocket };
 
 /**
- * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
- * the computer stream, and it pushes channel activity through Hono's adapter. So this one
- * dispatches on what the upgrade attached, a proxy socket carries `upstream`, a Hono socket does
- * not, rather than either feature quietly taking the slot and breaking the other on connect.
+ * Agent-Terminal: WebSocket zum PTY-Prozess des Agenten.
+ * Routen: `/api/terminal/:agentId/ws` oder `/api/agent-hub/terminal/:agentId/ws`
+ */
+const terminalPathAgentId = (pathname: string): string | null => {
+  const match = pathname.match(/^\/api\/(?:agent-hub\/)?terminal\/([^/]+)\/ws$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+};
+
+type TerminalSocketData = {
+  kind: "terminal";
+  agentId: string;
+  unsubscribe?: () => void;
+};
+
+/**
+ * Bun takes exactly one WebSocket handler for the server, and three features need one:
+ * 1. App proxies the computer stream (`upstream`)
+ * 2. Hono pushes channel activity (`channelSocket`)
+ * 3. Agent CLI Terminal (`TerminalSocketData`)
  */
 type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-type SocketData = StreamData | ChannelSocket["data"];
+/** helium-appcast: Live-Vorschau einer Multi-Login-App (CDP-Screencast + Eingaben). */
+type AppCastSocketData = {
+  kind: "appcast";
+  accountId: string;
+  port: number;
+  session?: CastSession;
+  queued?: string[];
+  ended?: boolean;
+};
+
+const appCastPathId = (pathname: string): string | null => {
+  const m = /^\/api\/app-accounts\/([^/]+)\/screencast$/.exec(pathname);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return null;
+  }
+};
+
+type SocketData = StreamData | ChannelSocket["data"] | TerminalSocketData | AppCastSocketData;
 
 const isProxiedStream = (data: SocketData): data is StreamData =>
   typeof (data as StreamData).upstream === "string";
+
+const isTerminalSocket = (data: SocketData): data is TerminalSocketData =>
+  Boolean(data && typeof data === "object" && (data as { kind?: unknown }).kind === "terminal");
+
+const isAppCastSocket = (data: SocketData): data is AppCastSocketData =>
+  Boolean(data && typeof data === "object" && (data as { kind?: unknown }).kind === "appcast");
 
 // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
 const asChannelSocket = (ws: { data: SocketData }) =>
@@ -1426,6 +1486,66 @@ if (!serverless) serve<SocketData>({
     const gated = tunnelGate ? await tunnelGate.handle(request) : null;
     if (gated) return gated;
     const url = new URL(request.url);
+
+    const terminalAgentId = terminalPathAgentId(url.pathname);
+    if (
+      terminalAgentId !== null &&
+      request.headers.get("upgrade")?.toLowerCase() === "websocket"
+    ) {
+      const actor = await resolveRequestActor(request).catch(() => null);
+      if (!actor) {
+        return new Response("Sign in first.", { status: 401 });
+      }
+      auditCli(request, actor as { id?: string; email?: string }, "terminal.ws", { agentId: terminalAgentId });
+      try {
+        await startAgentTerminal(terminalAgentId);
+      } catch (err) {
+        console.error("[terminal-ws] Konnte Agent-Terminal nicht starten:", err);
+      }
+      const upgraded = server.upgrade(request, {
+        data: {
+          kind: "terminal" as const,
+          agentId: terminalAgentId,
+        },
+      });
+      if (upgraded) {
+        return undefined as unknown as Response;
+      }
+      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    }
+
+    // helium-appcast: Live-Vorschau einer Codex-/Antigravity-/Manus-Instanz. Nur angemeldet,
+    // jede Verbindung im CLI-Audit. Der CDP-Port selbst bleibt auf 127.0.0.1.
+    const appCastId = appCastPathId(url.pathname);
+    if (
+      appCastId !== null &&
+      request.headers.get("upgrade")?.toLowerCase() === "websocket"
+    ) {
+      const actor = await resolveRequestActor(request).catch(() => null);
+      if (!actor) {
+        return new Response("Sign in first.", { status: 401 });
+      }
+      const account = getAppAccount(appCastId);
+      if (!account) {
+        return new Response("Unbekanntes App-Profil.", { status: 404 });
+      }
+      const castPort = await previewPortFor(account);
+      if (!castPort) {
+        return new Response("Diese App laeuft nicht mit Live-Vorschau.", { status: 409 });
+      }
+      auditCli(request, actor as { id?: string; email?: string }, "appcast.ws", {
+        accountId: account.id,
+        app: account.app,
+      });
+      const upgraded = server.upgrade(request, {
+        data: { kind: "appcast" as const, accountId: account.id, port: castPort },
+      });
+      if (upgraded) {
+        return undefined as unknown as Response;
+      }
+      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    }
+
     const streamBotId = streamPathBotId(url.pathname);
     if (
       streamBotId !== null &&
@@ -1489,6 +1609,12 @@ if (!serverless) serve<SocketData>({
      * idle limit while it loads or thinks. Closed at 10 s, the person saw "network error" and the
      * answer was lost mid-run. The runtime's stream keeps the request open only while a run lasts.
      */
+    // helium-cliremote: Terminal-Live-Stream (SSE) nicht nach 10 s Leerlauf schliessen.
+    if (/^\/api\/agent-hub\/terminal\/[^/]+\/stream$/.test(url.pathname)) {
+      try {
+        server.timeout(request, 0);
+      } catch {}
+    }
     if (localChatStore && url.pathname.startsWith("/api/copilotkit/")) {
       try {
         server.timeout(request, 0);
@@ -1498,6 +1624,64 @@ if (!serverless) serve<SocketData>({
   },
   websocket: {
     open(ws) {
+      if (isAppCastSocket(ws.data)) {
+        const castData = ws.data;
+        castData.queued = [];
+        openCastSession(
+          castData.port,
+          (message) => {
+            try {
+              ws.send(message);
+            } catch {}
+          },
+          () => {
+            castData.ended = true;
+            try {
+              ws.close();
+            } catch {}
+          },
+        )
+          .then((session) => {
+            if (castData.ended) {
+              session.close();
+              return;
+            }
+            castData.session = session;
+            for (const queued of castData.queued ?? []) session.handle(queued);
+            castData.queued = [];
+          })
+          .catch((error) => {
+            try {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  error: error instanceof Error ? error.message : "Vorschau nicht erreichbar.",
+                }),
+              );
+              ws.close();
+            } catch {}
+          });
+        return;
+      }
+      if (isTerminalSocket(ws.data)) {
+        const terminalData = ws.data;
+        const agentId = terminalData.agentId;
+        try {
+          const session = getAgentTerminalStatus(agentId);
+          ws.send(JSON.stringify({ type: "status", session }));
+          const initialLogs = getAgentTerminalLogs(agentId, 300);
+          if (initialLogs.length > 0) {
+            ws.send(JSON.stringify({ type: "output", data: initialLogs.join("\n") + "\n" }));
+          }
+        } catch {}
+
+        terminalData.unsubscribe = subscribeAgentTerminal(agentId, (chunk) => {
+          try {
+            ws.send(JSON.stringify({ type: "output", data: chunk }));
+          } catch {}
+        });
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.open(asChannelSocket(ws));
         return;
@@ -1517,6 +1701,50 @@ if (!serverless) serve<SocketData>({
       inward.onerror = () => ws.close();
     },
     message(ws, raw) {
+      if (isAppCastSocket(ws.data)) {
+        const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+        if (text.length > 200_000) return;
+        if (ws.data.session) ws.data.session.handle(text);
+        else if ((ws.data.queued?.length ?? 0) < 50) ws.data.queued?.push(text);
+        return;
+      }
+      if (isTerminalSocket(ws.data)) {
+        const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+        try {
+          const payload = JSON.parse(text) as {
+            type?: string;
+            data?: string;
+            cols?: number;
+            rows?: number;
+          };
+          if (payload.type === "input" && typeof payload.data === "string") {
+            sendAgentTerminalInput(ws.data.agentId, payload.data, true);
+            return;
+          }
+          if (
+            payload.type === "resize" &&
+            typeof payload.cols === "number" &&
+            typeof payload.rows === "number"
+          ) {
+            resizeAgentTerminal(ws.data.agentId, payload.cols, payload.rows);
+            return;
+          }
+          if (payload.type === "restart") {
+            void restartAgentTerminal(ws.data.agentId);
+            return;
+          }
+          if (payload.type === "ping") {
+            try {
+              ws.send(JSON.stringify({ type: "pong" }));
+            } catch {}
+            return;
+          }
+        } catch {
+          // Rohe Eingabe direkt als Tastenanschlag senden
+          sendAgentTerminalInput(ws.data.agentId, text, true);
+        }
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.message(asChannelSocket(ws), raw);
         return;
@@ -1524,6 +1752,19 @@ if (!serverless) serve<SocketData>({
       if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
     },
     close(ws, code, reason) {
+      if (isAppCastSocket(ws.data)) {
+        ws.data.ended = true;
+        try {
+          ws.data.session?.close();
+        } catch {}
+        return;
+      }
+      if (isTerminalSocket(ws.data)) {
+        try {
+          ws.data.unsubscribe?.();
+        } catch {}
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.close(asChannelSocket(ws), code, reason);
         return;
@@ -1552,6 +1793,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       // Started only where handing work between Bots is switched on, so it is often not there.
       workOfferedListener?.stop() ?? Promise.resolve(),
       Promise.resolve(retentionSweeps.stop()),
+      Promise.resolve(stopUsageCollectors()),
     ]).finally(() => process.exit(0));
   });
 }

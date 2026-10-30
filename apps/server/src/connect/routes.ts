@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
@@ -6,10 +7,21 @@ import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import { connectMedia, connectWorkspaceKv } from "../db/schema";
 import { decodeWorkspaceValue, mergeWorkspaceValue, sameWorkspaceValue, type MergeConflict } from "./workspace-merge";
+import { mintT3PairingLink, t3AgentsStatus } from "./t3-agents";
+import { cdpGlideCursor, injectAgentVisuals, waitForCdp } from "../agent-hub/agent-cdp";
+import {
+  canonicalCdpPort,
+  ensureProfileBrowser,
+  liveCdpPort,
+  openUrlInProfileTab,
+  resolveProfileCdp,
+} from "../agent-hub/browser-launch-guard";
 
 const MAX_MEDIA_BYTES = 32 * 1024 * 1024;
 const DEPLOYMENT_MODE_KEY = "connect.deployment-mode";
 const GLOBAL_KEYS = new Set([DEPLOYMENT_MODE_KEY]);
+/** Siehe cloud-agents/store.ts — diese Zeilen sind nie Teil eines Workspaces. */
+const SERVER_ONLY_PREFIX = "server:";
 
 /**
  * Bun's SQL binder sends JS numbers as Postgres integers. jsonb columns need an
@@ -129,7 +141,13 @@ export function createConnectWorkspaceRoutes(
     if (!hasUserScoped) {
       const now = new Date();
       for (const row of rows) {
-        if (GLOBAL_KEYS.has(row.key) || row.key.startsWith("u:")) continue;
+        if (
+          GLOBAL_KEYS.has(row.key) ||
+          row.key.startsWith("u:") ||
+          // Server-interne Zeilen (z. B. verschlüsselte Cloud-Agent-Keys) gehen nie an den Browser.
+          row.key.startsWith(SERVER_ONLY_PREFIX)
+        )
+          continue;
         workspace[row.key] = row.value;
         await database
           .insert(connectWorkspaceKv)
@@ -321,13 +339,43 @@ export function createConnectWorkspaceRoutes(
    * must show Connect Desktop when this fails (needsDesktop: true).
    */
   /**
-   * ProfilmenÃ¼ â€º Connect-Chrome: Browser-Tab-Agenten einschalten. Ist kein Browser mit Connect Sync
+   * Profilmenü › Connect-Chrome: Browser-Tab-Agenten einschalten. Ist kein Browser mit Connect Sync
    * verbunden, startet Connect-Chrome (eigenes Connect-Profil, nicht Stefans Helium) mit der Erweiterung.
    */
   app.get("/browser-agents", async (context) => {
     const { agentsEnabled, heliumStatus } = await import("../helium-sync");
     return context.json({ agentsEnabled: agentsEnabled(), ...heliumStatus() });
   });
+  /**
+   * Agents — T3 Code. Status of the local T3 server, for the Agents area.
+   * Reads T3's runtime file and probes the origin; never returns its secrets.
+   */
+  app.get("/agents/t3", async (context) =>
+    context.json(
+      await t3AgentsStatus({ preferHost: context.req.header("host") }),
+    ),
+  );
+
+  /**
+   * Agents — mint a one-time T3 pairing link.
+   *
+   * The browser embeds T3's own web app, which expects a trusted pairing
+   * credential on first open. The link is minted by T3's CLI and handed to the
+   * browser in the iframe URL; Connect never stores the token.
+   */
+  app.post("/agents/t3/pair", async (context) => {
+    if (process.env.CONNECT_SERVERLESS === "1") {
+      return context.json(
+        { ok: false, error: "Nur in der Connect App am PC." },
+        400,
+      );
+    }
+    const result = await mintT3PairingLink({
+      preferHost: context.req.header("host"),
+    });
+    return context.json(result, result.ok ? 200 : 502);
+  });
+
   app.post("/browser-agents", async (context) => {
     if (process.env.CONNECT_SERVERLESS === "1") return context.json({ ok: false, error: "Nur in der Connect App am PC." }, 400);
     const actor = context.get("actor");
@@ -591,24 +639,27 @@ export function createConnectWorkspaceRoutes(
     const kind = context.req.query("profileKind") === "manus" ? "manus" : "default";
     const targetId = context.req.query("targetId")?.trim() || undefined;
     const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
-    const port = cdpPortFor(profileDir);
-    // If nothing is listening on the CDP port at all, no browser window was
-    // ever launched for this profile. The client should NOT keep polling in a
-    // tight loop — instead the user has to take an action (start the bot's
-    // browser via the picker, or close the panel). We mark this case with
-    // `needsDesktop: true` so the client can break the loop.
-    const portOpen = await cdpPortOpen(port);
-    if (!portOpen) {
+    // loopfix: echten Port der laufenden Instanz verwenden (DevToolsActivePort / Kommandozeile).
+    // Früher: fester Port zu, also bei JEDEM Poll (~850 ms) neu gestartet => Chrome reichte den
+    // Start an die laufende Instanz weiter => ein neues about:blank-Fenster pro Poll.
+    // Jetzt: Start nur über den Guard (1 Start/15 s, Schutzschalter), nie bei laufender Instanz.
+    const guarded = await ensureProfileBrowser(profileDir, {
+      label: "Agent-Browser",
+      spawn: (p) => spawnConnectChromeRaw("about:blank", profileDir, p),
+      waitMs: 3500,
+    });
+    if (!guarded.ok) {
       return context.json(
         {
           ok: false,
-          needsDesktop: true,
-          error:
-            "Helium-Profil noch nicht gestartet — klicke im Browser-Menü auf „Start", oder wechsle den Runtime (Ubuntu-Sandbox / Manus / Cloud).",
+          needsDesktop: false,
+          stopped: Boolean(guarded.tripped || guarded.running),
+          error: guarded.error,
         },
         503,
       );
     }
+    const port = guarded.port;
     const shot = await cdpScreenshot(port, targetId);
     if (!shot.ok || !shot.bytes) {
       return context.json({ ok: false, error: shot.error ?? "Keine Vorschau." }, 503);
@@ -628,8 +679,14 @@ export function createConnectWorkspaceRoutes(
     const agentId = context.req.query("agentId")?.trim() ?? "";
     const kind = context.req.query("profileKind") === "manus" ? "manus" : "default";
     const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
+    // loopfix: nie selbst starten (das macht höchstens /screenshot über den Guard).
+    const live = await resolveProfileCdp(profileDir);
+    if (!live.port) {
+      return context.json({ ok: false, error: live.running ? "Agent-Browser läuft ohne erreichbaren Debug-Port." : "Agent-Browser nicht gestartet.", tabs: [] }, 503);
+    }
+    const port = live.port;
     try {
-      const tabs = await cdpPageTargets(cdpPortFor(profileDir));
+      const tabs = await cdpPageTargets(port);
       return context.json({
         ok: true,
         tabs: tabs.map(({ id, title, url }) => ({ id, title, url })),
@@ -651,7 +708,7 @@ export function createConnectWorkspaceRoutes(
     const kind = body?.profileKind === "manus" ? "manus" : "default";
     const targetId = typeof body?.targetId === "string" ? body.targetId.trim() : undefined;
     const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
-    const res = await cdpCall(cdpPortFor(profileDir), "Page.bringToFront", {}, targetId);
+    const res = await cdpCall(await liveCdpPort(profileDir), "Page.bringToFront", {}, targetId);
     return context.json(res.ok ? { ok: true } : { ok: false, error: res.error }, res.ok ? 200 : 503);
   });
 
@@ -683,7 +740,31 @@ export function createConnectWorkspaceRoutes(
       return context.json({ ok: false, error: "Agent oder Browser-Tab fehlt." }, 400);
     }
     const { profileDir } = connectChromeProfileDir(actor.id, agentId, kind);
-    const port = cdpPortFor(profileDir);
+    const port = await liveCdpPort(profileDir);
+
+    if (action === "move") {
+      const x = typeof body?.x === "number" ? body.x : NaN;
+      const y = typeof body?.y === "number" ? body.y : NaN;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
+        return context.json({ ok: false, error: "Ungültige Zeigerposition." }, 400);
+      }
+      const metrics = await cdpCall(port, "Page.getLayoutMetrics", {}, targetId);
+      const viewport = (metrics.result?.cssLayoutViewport ?? metrics.result?.layoutViewport) as
+        | { clientWidth?: number; clientHeight?: number }
+        | undefined;
+      const width = Number(viewport?.clientWidth) || 1280;
+      const height = Number(viewport?.clientHeight) || 800;
+      const point = { x: Math.round(x * width), y: Math.round(y * height) };
+      await cdpCall(port, "Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: point.x,
+        y: point.y,
+      }, targetId);
+      void cdpCall(port, "Runtime.evaluate", {
+        expression: `if (window.__updateCursor) window.__updateCursor(${point.x}, ${point.y});`,
+      }, targetId).catch(() => undefined);
+      return context.json({ ok: true });
+    }
 
     if (action === "click" || action === "scroll") {
       const x = typeof body?.x === "number" ? body.x : NaN;
@@ -714,6 +795,7 @@ export function createConnectWorkspaceRoutes(
       }
       const button = body?.button === "right" || body?.button === "middle" ? body.button : "left";
       const clickCount = body?.clickCount === 2 ? 2 : 1;
+      await cdpGlideCursor(port, point.x, point.y, true, 200, targetId);
       const pressed = await cdpCall(port, "Input.dispatchMouseEvent", {
         type: "mousePressed", ...point, button, clickCount,
         buttons: button === "left" ? 1 : button === "right" ? 2 : 4,
@@ -789,6 +871,18 @@ function connectChromeProfileDir(
 ): { profileDir: string; safeAgent: string } {
   const safeUser = actorId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "default";
   const safeAgent = agentRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+
+  // Phase E Schritt 18: Wenn für den Agenten ein isoliertes ConnectAgents-Profil existiert, nimm dieses
+  if (safeAgent) {
+    const localAppData =
+      process.env.LOCALAPPDATA ??
+      join(process.env.HOME ?? process.env.USERPROFILE ?? ".", "AppData", "Local");
+    const agentHeliumDir = join(localAppData, "ConnectAgents", safeAgent, "helium");
+    if (existsSync(agentHeliumDir)) {
+      return { profileDir: agentHeliumDir, safeAgent };
+    }
+  }
+
   const base =
     process.env.CONNECT_CHROME_PROFILE?.trim() ||
     `${process.env.HOME || process.env.USERPROFILE || "/tmp"}/.connect-chrome-profile/${safeUser}`;
@@ -803,14 +897,9 @@ function connectChromeProfileDir(
 }
 
 /** Deterministic CDP port per profile: CONNECT_CHROME_CDP_PORT (default 9333) + 0..199. */
+// loopfix: gemeinsame Implementierung mit agent-cdp.ts (browser-launch-guard.ts).
 function cdpPortFor(profileDir: string): number {
-  const basePort = Number(process.env.CONNECT_CHROME_CDP_PORT) || 9333;
-  let h = 2166136261;
-  for (const ch of profileDir.toLowerCase()) {
-    h ^= ch.charCodeAt(0);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return basePort + (h % 200);
+  return canonicalCdpPort(profileDir);
 }
 
 type CdpResult = { ok: boolean; result?: Record<string, unknown>; url?: string; error?: string };
@@ -897,6 +986,7 @@ async function cdpScreenshot(
   port: number,
   targetId?: string,
 ): Promise<CdpShot> {
+  void injectAgentVisuals(port, targetId).catch(() => undefined);
   const res = await cdpCall(port, "Page.captureScreenshot", { format: "jpeg", quality: 60 }, targetId);
   if (!res.ok || !res.result) return { ok: false, error: res.error ?? "CDP-Fehler" };
   const data = typeof res.result.data === "string" ? res.result.data : "";
@@ -932,21 +1022,62 @@ function connectSyncExtensionArgs(): string[] {
   return found ? [`--load-extension=${found}`] : [];
 }
 
+/**
+ * loopfix: Geschützter Start. Läuft das Profil schon, wird KEIN Prozess gestartet (früher:
+ * "--new-window url" an die laufende Instanz => neues Fenster), sondern die URL per CDP im
+ * vorhandenen Tab geöffnet. Rate-Limit + Schutzschalter siehe browser-launch-guard.ts.
+ */
 async function launchConnectChrome(
   url: string,
   profileDir: string,
 ): Promise<ChromeLaunch> {
+  const res = await ensureProfileBrowser(profileDir, {
+    label: "Connect-Browser",
+    spawn: (port) => spawnConnectChromeRaw(url, profileDir, port),
+  });
+  if (!res.ok) return { ok: false, detail: res.error };
+  if (res.reused && url && url !== "about:blank") {
+    const opened = await openUrlInProfileTab(res.port, url, profileDir);
+    if (!opened.ok) return { ok: false, detail: opened.error ?? "Navigation fehlgeschlagen" };
+  }
+  return { ok: true, binary: res.reused ? "running" : "helium" };
+}
+
+/** Roh-Start OHNE Schutz – nur über ensureProfileBrowser aufrufen. */
+async function spawnConnectChromeRaw(
+  url: string,
+  profileDir: string,
+  port: number,
+): Promise<ChromeLaunch> {
+  const normalized = profileDir.toLowerCase().replace(/\\/g, "/");
+  const stefanHeliumUserData = (
+    process.env.LOCALAPPDATA
+      ? join(process.env.LOCALAPPDATA, "imput", "Helium", "User Data")
+      : "c:/users/kunc gmbh/appdata/local/imput/helium/user data"
+  )
+    .toLowerCase()
+    .replace(/\\/g, "/");
+
+  if (normalized === stefanHeliumUserData || normalized.startsWith(stefanHeliumUserData + "/")) {
+    console.error("[connect-routes] SICHERHEITSBLOCK: Stefans eigenes Helium-Profil darf NIE berührt werden!", profileDir);
+    return {
+      ok: false,
+      detail: "SICHERHEITSABBRUCH: Stefans eigenes Helium-Profil darf NIE verwendet werden!",
+    };
+  }
+
   const args = [
     `--user-data-dir=${profileDir}`,
     "--no-first-run",
+    "--hide-crash-restore-bubble", // loopfix: kein "Seiten wiederherstellen?" (koennte alte Fenster zurueckholen)
     "--no-default-browser-check",
     // CDP for the live preview: loopback only, one port per profile (see cdpPortFor).
-    `--remote-debugging-port=${cdpPortFor(profileDir)}`,
+    `--remote-debugging-port=${port}`,
     "--remote-debugging-address=127.0.0.1",
     // Connect Sync: Tabs dieses Browsers an Connect melden (Browser-Tab-Agenten, Mein Helium).
     ...connectSyncExtensionArgs(),
-    "--new-window",
-    url,
+    // loopfix: kein --new-window (öffnete bei laufender Instanz jedes Mal ein neues Fenster).
+    url || "about:blank",
   ];
 
   const candidates = resolveChromeBinaries();
@@ -958,29 +1089,13 @@ async function launchConnectChrome(
       continue;
     }
     if (process.platform === "win32") {
-      // Bun kills its direct children when the server exits/restarts (bun --watch). Hand the
-      // launch to Start-Process so the agent's own browser window survives server restarts.
-      // PowerShell splittet Argumente mit Leerzeichen falsch, deshalb gehen wir
-      // über cmd.exe mit manuell gequoteten Argumenten. `cmd /c` startet den
-      // Prozess asynchron, das Server-Loop blockt nicht.
-      const cmdQuoted = args
-        .map((a) => (a.includes(" ") || a.includes('"') ? `"${a.replace(/"/g, '\\"')}"` : a))
-        .join(" ");
-      const cmdLine = `start "" "${binary}" ${cmdQuoted}`;
       try {
-        const proc = Bun.spawn(
-          ["cmd.exe", "/d", "/c", cmdLine],
-          {
-            stdout: "ignore",
-            stderr: "pipe",
-            stdin: "ignore",
-            windowsHide: false,
-          } as Parameters<typeof Bun.spawn>[1],
-        );
-        void proc.exited.catch(() => undefined);
-        // start im cmd.exe detached den Prozess — wir warten kurz, ob es
-        // überhaupt eine Fehlermeldung gab
-        await new Promise((r) => setTimeout(r, 200));
+        const proc = Bun.spawn([binary, ...args], {
+          stdout: "ignore",
+          stderr: "ignore",
+          stdin: "ignore",
+        });
+        proc.unref();
         return { ok: true, binary };
       } catch (err) {
         errors.push(`${binary}: ${err instanceof Error ? err.message : String(err)}`);
@@ -1050,6 +1165,14 @@ async function chromeBinaryExists(binary: string): Promise<boolean> {
 
 function resolveChromeBinaries(): string[] {
   const fromEnv = process.env.CONNECT_CHROME_BIN?.trim();
+  const winCandidates = [
+    "C:\\Users\\Kunc GmbH\\AppData\\Local\\imput\\Helium\\Application\\chrome.exe",
+    "C:\\Users\\Kunc GmbH\\Downloads\\OpenBot-v2-Helium\\apps\\connect-app\\helium\\chrome.exe",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+  ];
   const linux = [
     "google-chrome-stable",
     "google-chrome",
@@ -1067,6 +1190,7 @@ function resolveChromeBinaries(): string[] {
   ];
   const ordered = [
     ...(fromEnv ? [fromEnv] : []),
+    ...(process.platform === "win32" ? winCandidates : []),
     ...winHost,
     ...linux,
   ];

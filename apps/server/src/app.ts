@@ -12,6 +12,8 @@ import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
 import { createBrainRoutes } from "./brain/routes";
+import { createBrainRootRoutes } from "./brain/brain-root-routes";
+import { brainRootFromEnv } from "./brain/store";
 import { createModelOneRoutes } from "./model-one/routes";
 import { createDriveBackupRoutes } from "./drive-backup/routes";
 import { DriveBackupService } from "./drive-backup/service";
@@ -46,6 +48,7 @@ import { desktopAuthPage } from "./auth/native-browser";
 import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
+  loadAttachmentForTurn,
 } from "./channels/attachments";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
@@ -57,6 +60,18 @@ import { createCliBridgeRoutes } from "./cli-bridge/routes";
 import { installLocalPcBridgeRoutes, installPcBridgeRoutes, pcQuery } from "./pc-bridge";
 import { createHeliumSyncRoutes } from "./helium-sync";
 import { installLocalSocialRoutes, localSocialBackend } from "./social";
+import { postgresKv } from "./cloud-agents/kv-postgres";
+import { createCloudAgentRoutes } from "./cloud-agents/routes";
+import {
+  CloudAgentService,
+  startCloudAgentPoller,
+} from "./cloud-agents/service";
+import { CloudAgentStore } from "./cloud-agents/store";
+import {
+  CloudTaskService,
+  CloudTaskStore,
+  startCloudTaskScheduler,
+} from "./cloud-agents/tasks";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
@@ -64,17 +79,50 @@ import type { ComponentStore } from "./components/store";
 import { createConnectWorkspaceRoutes } from "./connect/routes";
 import { installEmbedCheck, installLocalAppProxy, localAppRefererRedirect } from "./connect/local-apps";
 import { installLocalMusicRoutes } from "./music/local-music";
+import { registerLaneRoutes } from "./lanes";
+import { FLAGS_V06, getFlag, type FlagV06Key } from "./contracts/v06/flags";
+import { allT3Flags } from "./t3-bridge/contracts";
+import { registerMultiLoginRoutes } from "./v06/multilogin/routes";
+import { registerUnifiedSessionRoutes } from "./v06/unified-session/routes";
+import { registerBrowserProfilesRoutes } from "./v06/browser-profiles";
+import { registerSparkMcpRoutes } from "./v06/spark-mcp/routes";
+import { registerSparkOverviewRoutes } from "./v06/spark-overview/routes";
+import { registerConnectMcpRoutes } from "./v06/connect-mcp/routes";
+import { registerEmailAgentsRoutes } from "./v06/email-agents";
+import { registerStoreRoutes } from "./v06/store";
+import { registerSocialRoutes } from "./v06/social";
+import { registerOnboardingRoutes } from "./v06/onboarding/routes";
+import { registerProjectSwarmRoutes } from "./v06/project-swarm";
+import { registerPcAppsRoutes } from "./v06/pc-apps/routes";
+import { registerFutureSimRoutes } from "./v06/future-sim";
+import { createTunnelAllowlistGuard, isTunnelRequest } from "./v06/security/tunnelAllowlist";
+import { createRateLimiter } from "./v06/security/rateLimit";
+import { registerHeliumTabsRoutes } from "./pc-bridge/helium-tabs-fix";
+import { handleUsageRoot } from "./usage/root-route";
+import { mountT3Backend, mountT3Usage } from "./t3-bridge";
+import { registerSocialMediaRoutes } from "./social/media-upload";
+import { createHitodamaStateRouter } from "./desktop/hitodama-state";
+import { registerStoreCompatRoutes } from "./routes/store-compat";
+import { createManusKeySyncRouter } from "./services/manus-key-sync";
+import { registerCouncilFallbackRoutes } from "./routes/council-fallback";
+import { registerMarketplaceRedirectRoutes } from "./routes/marketplace-redirect";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PageFrameStore } from "./computer/page-frames";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
 import { configuredAuthProviders, type DeploymentConfig } from "./config";
-import type { CredentialAdminService, CredentialInput } from "./credentials";
+import {
+  type CredentialAdminService,
+  type CredentialInput,
+  decryptSecret,
+  encryptSecret,
+} from "./credentials";
 import { eq } from "drizzle-orm";
 import type { Database } from "./db/client";
 import { connectWorkspaceKv } from "./db/schema";
 import { withoutStatement } from "./db/query-failure";
 import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
+import { createDesktopRouter } from "./desktop/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { createIntelligenceClient } from "./intelligence-client";
@@ -342,6 +390,19 @@ export function createApp(
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   mountDesktopConnectionFailure(app, desktopHostToken);
+
+  // v06 Security: Tunnel Allowlist Guard & Global Rate Limiter (A31)
+  app.use("*", createTunnelAllowlistGuard({
+    isTunnelRequest: (c) => {
+      if (!c.req.path.startsWith("/api/")) return false;
+      return isTunnelRequest(c);
+    },
+  }));
+  app.use("/api/*", createRateLimiter({
+    max: 120,
+    windowMs: 60_000,
+    skip: (c) => c.req.path === "/api/health" || c.req.path === "/health",
+  }));
 
   app.get("/health", (context) => context.json({ status: "ok" }));
   // /api/health wird vom Connect-Sozial (Dailyfun) Online-Gate verwendet,
@@ -1225,6 +1286,9 @@ export function createApp(
   // Settings › Brain: read-only view of the local Brain folder (loopback only, off when serverless).
   app.route("/api/brain", createBrainRoutes(requireUser));
 
+  // Agent 2 (Spark Brain – Daten-Pfad): Wurzelordner anzeigen/prüfen/umstellen (use|copy) inkl. Audit-Logging.
+  app.route("/api/brain", createBrainRootRoutes(requireUser, brainRootFromEnv(), attachmentDatabase));
+
   // Model One: zentraler Orchestrator-Endpoint (Antigravity-CLI + Subagent-Browser).
   app.route("/api/model-one", createModelOneRoutes(requireUser));
 
@@ -1333,13 +1397,12 @@ export function createApp(
   // Auth: Bearer-Token aus `connect_mcp_tokens`-Tabelle, optional
   // Single-User-Override (Dev-Loopback ohne Sign-In).
   //
-  // Format: JSON-RPC 2.0 (`/jsonrpc`), GET `/manifest` und `/health`.
-  //
-  // Connect Social liefert die Unternehmensprofile (nur lokal in der App verfuegbar).
+  // Connect Social liefert die Unternehmensprofile (nur lokal in der App verfügbar).
   // Der Social-Backend wird einmal erzeugt und an beide Stellen gereicht: an die
   // Social-Routen und an die Connect-MCP-Tools (company_profiles.*).
   const socialBackend = process.env.CONNECT_SERVERLESS === "1" ? null : localSocialBackend();
 
+  // Format: JSON-RPC 2.0 (`/jsonrpc`), GET `/manifest` und `/health`.
   if (attachmentDatabase) {
     // Tool-Registry wird gebaut, wenn Profile-Store + AgentMcp-Deps da sind.
     // Commit 2: agents-Tools. Commits 3-4 erweitern um browser/mini-apps/knowledge.
@@ -1375,19 +1438,11 @@ export function createApp(
      * Damit sich ein MCP-Client wie bei jedem anderen MCP-Server anmelden kann:
      * der Browser meldet sich mit dem Google-Konto an, und das Access-Token ist
      * an genau dieses Konto gebunden. Damit liefert der MCP-Server die Firmen
-<<<<<<< Updated upstream
-     * und Agenten dieses Kontos ├ö├ç├Â ein anderes Google-Konto sieht andere Daten.
+     * und Agenten dieses Kontos — ein anderes Google-Konto sieht andere Daten.
      *
-     * Aktiv nur, wenn eine Anmeldung wirklich mÔö£├églich ist: im Single-User-Modus
-     * gÔö£├▒be es nichts zu bestÔö£├▒tigen, und eine Freigabe-Seite ohne echte IdentitÔö£├▒t
-     * wÔö£├▒re eine TÔö£├▒uschung. Der OAuth-Flow ist deshalb an `auth` gebunden.
-=======
-     * und Agenten dieses Kontos ÔÇö ein anderes Google-Konto sieht andere Daten.
-     *
-     * Aktiv nur, wenn eine Anmeldung wirklich m├Âglich ist: im Single-User-Modus
-     * g├ñbe es nichts zu best├ñtigen, und eine Freigabe-Seite ohne echte Identit├ñt
-     * w├ñre eine T├ñuschung. Der OAuth-Flow ist deshalb an `auth` gebunden.
->>>>>>> Stashed changes
+     * Aktiv nur, wenn eine Anmeldung wirklich möglich ist: im Single-User-Modus
+     * gäbe es nichts zu bestätigen, und eine Freigabe-Seite ohne echte Identität
+     * wäre eine Täuschung. Der OAuth-Flow ist deshalb an `auth` gebunden.
      */
     const mcpOAuthEnabled = Boolean(auth) && !config.singleUser;
     const mcpPublicUrl =
@@ -1420,11 +1475,7 @@ export function createApp(
     app.route("/api/connect-mcp", mcpOAuthRoutes);
 
     /*
-<<<<<<< Updated upstream
-     * Die Metadaten liegen zusÔö£├▒tzlich am Host-Root: ein MCP-Client schlÔö£├▒gt
-=======
-     * Die Metadaten liegen zus├ñtzlich am Host-Root: ein MCP-Client schl├ñgt
->>>>>>> Stashed changes
+     * Die Metadaten liegen zusätzlich am Host-Root: ein MCP-Client schlägt
      * `https://<host>/.well-known/oauth-protected-resource` nach, nicht den
      * Pfad mit `/api/connect-mcp` davor. Ohne diese Doppelung findet ein
      * Standard-Client keinen Authorization-Server und meldet "kein Login
@@ -1460,6 +1511,14 @@ export function createApp(
       ...(config.keyEncryptionKey
         ? { encryptionKey: config.keyEncryptionKey }
         : {}),
+    }),
+  );
+
+  // Connect Desktop (Hitodama PC-Steuerung, Diktat, Circle to ask, Routinen, Todos, Safety)
+  app.route(
+    "/api/desktop",
+    createDesktopRouter({
+      database: attachmentDatabase,
     }),
   );
 
@@ -1581,6 +1640,55 @@ export function createApp(
 
   if (routineStore) {
     app.route("/api/routines", createRoutineRoutes(routineStore, requireUser));
+  }
+
+  /*
+   * Cloud-Agents (Muse-Inbox, Grok-Bot-Webhook, OpenAI-kompatibel). Keys liegen verschlüsselt in
+   * `connect_workspace_kv` unter `server:`-Schlüsseln, die der Workspace-Sync nie ausliefert; der
+   * Poller fragt wartende Antworten alle 30 s beim Anbieter ab.
+   */
+  if (attachmentDatabase) {
+    const cloudDatabase = attachmentDatabase;
+    const encryptionKey = config.keyEncryptionKey;
+    const cloudAgents = new CloudAgentService({
+      store: new CloudAgentStore(postgresKv(cloudDatabase)),
+      ...(encryptionKey
+        ? {
+            secrets: {
+              encrypt: (plaintext: string) => encryptSecret(encryptionKey, plaintext),
+              decrypt: (cipher: string) => decryptSecret(encryptionKey, cipher),
+            },
+          }
+        : {}),
+      loadAttachment: async (actorId, threadId, attachmentId) => {
+        const file = await loadAttachmentForTurn(
+          cloudDatabase,
+          { actorId, threadId },
+          attachmentId,
+        );
+        return file
+          ? {
+              filename: file.name,
+              mimeType: file.mimeType,
+              bytes: new Uint8Array(file.bytes),
+            }
+          : null;
+      },
+    });
+    startCloudAgentPoller(cloudAgents);
+    /*
+     * Geplante Aufgaben: alle 30 s fällige Aufgaben beanspruchen und über `cloudAgents.send`
+     * zustellen — derselbe Weg wie eine Chat-Nachricht (Muse-Inbox, Grok-Webhook, OpenAI-Chat).
+     */
+    const cloudTasks = new CloudTaskService(
+      new CloudTaskStore(postgresKv(cloudDatabase)),
+      cloudAgents,
+    );
+    startCloudTaskScheduler(cloudTasks);
+    app.route(
+      "/api/cloud-agents",
+      createCloudAgentRoutes(cloudAgents, requireUser, canUseBot, cloudTasks, auditStore),
+    );
   }
 
   if (componentStore) {
@@ -1830,11 +1938,135 @@ export function createApp(
    * otherwise answer an unmatched `/api` call with the app's HTML, which is the failure that reads
    * as "the API returned HTML" and takes an hour to place.
    *
-   * Absent in development: Vite serves the app and proxies `/api` here, so `APP_DIST_DIR` is unset
-   * and none of this mounts.
+  /*
+   * A37: T3-Usage vor den allgemeinen Lane-Routen mounten. Deren Wildcard-Router
+   * beantwortet `/api/usage` sonst mit 404, bevor die Bridge überhaupt greifen kann.
+   * Ist `bridge` aus, wird hier nichts registriert — der Altzustand bleibt.
    */
+  mountT3Usage(app, { requireUser, database: attachmentDatabase });
+
+  /*
+   * Register Swarm lane routes (v2 & v3 fully integrated).
+   * Each lane registers its endpoints in its own file under `apps/server/src/lanes/lane-XX.ts`.
+   */
+  registerLaneRoutes(app, attachmentDatabase);
+
+  /*
+   * Wave 1 (v06) Wiring – Integrations-Agent A11
+   */
+  // 1. GET /api/v06/flags (Liefert Status aller v06 Flags)
+  app.get("/api/v06/flags", (context) => {
+    const flags: Record<string, boolean> = {};
+    for (const key of Object.keys(FLAGS_V06) as FlagV06Key[]) {
+      flags[key] = getFlag(key);
+    }
+    return context.json(flags);
+  });
+
+  /*
+   * T3-Flags (A40). Immer gemountet — analog zu /api/v06/flags — auch wenn
+   * alle T3-Flags aus sind. Der Browser kann CONNECT_FLAGS_T3 nicht lesen;
+   * ohne diesen Endpunkt bleibt window.__CONNECT_FLAGS_T3 leer und jede
+   * fertige T3-Oberfläche unsichtbar (kompilierte Defaults: alles aus).
+   *
+   * Die Route liegt bewusst NEBEN dem T3-Mount, nicht darunter: der Mount
+   * kehrt ohne gesetztes Flag sofort zurück, der Browser muss den Stand
+   * aber trotzdem abfragen können.
+   */
+  app.get("/api/t3/flags", (context) => context.json(allT3Flags()));
+
+  // 2. Multi-Login Apps Registry (A04)
+  registerMultiLoginRoutes(app as any);
+
+  // 3. Unified Session & Handoff (A22): every route is authenticated and
+  // resolves channel -> runtime agent on the server before touching a PTY.
+  if (attachmentDatabase) {
+    registerUnifiedSessionRoutes(app as any, {
+      database: attachmentDatabase,
+      requireUser,
+    });
+  }
+
+  // 4. Browser Profiles & Tab Groups (A09)
+  registerBrowserProfilesRoutes(app as any, {
+    database: attachmentDatabase,
+    requireUser,
+  });
+
+  // 5. Spark-MCP Backend (A08)
+  registerSparkMcpRoutes(app as any, attachmentDatabase);
+
+  /*
+   * Wave 2 (v06) Wiring – Integrations-Agent A22
+   */
+  // 6. Spark-Übersicht & Cluster-Graph (A17)
+  registerSparkOverviewRoutes(app as any, { database: attachmentDatabase, requireUser: requireUser as any });
+
+  // 7. Connect-MCP Server & Swarm-Grants (A18)
+  registerConnectMcpRoutes(app as any, attachmentDatabase);
+
+  // 8. E-Mail-Agenten Backend & Outbox (A19)
+  registerEmailAgentsRoutes(app as any, { database: attachmentDatabase, requireUser });
+
+  // 9. Store Backend (A20)
+  registerStoreRoutes(app as any, { requireUser });
+
+  // 10. Connect-Sozial Backend (A21)
+  registerSocialRoutes(app as any, { requireUser });
+
+  /*
+   * Wave 3 (v06) Wiring – Integrations-Agent A33
+   */
+  // 11. Onboarding v2 (A25)
+  registerOnboardingRoutes(app as any, { requireUser, database: attachmentDatabase });
+
+  // 12. Projekt-Schwarm & DAG-Tasks (A27)
+  registerProjectSwarmRoutes(app as any, { requireUser });
+
+  // 13. PC-Apps in Gruppen (A28)
+  registerPcAppsRoutes(app as any, { requireUser });
+
+  // 14. Zukunfts-Simulation (A30)
+  registerFutureSimRoutes(app as any, { requireUser });
+
+  // 15. A32 Bugfixes: Helium Tabs, Usage Root, Social Media, Desktop Hitodama, Store Compat, Manus Sync, Council Fallback, Market Redirect
+  registerHeliumTabsRoutes(app as any, requireUser);
+  app.get("/api/usage", handleUsageRoot);
+  registerSocialMediaRoutes(app as any);
+  app.route("/api/desktop", createHitodamaStateRouter());
+  registerStoreCompatRoutes(app as any);
+  app.route("/api/services/manus", createManusKeySyncRouter());
+  registerCouncilFallbackRoutes(app as any);
+  registerMarketplaceRedirectRoutes(app as any);
+
+  /*
+   * A37: T3-Bridge gebündelt mounten. Die Funktion prüft ihre Flags selbst und
+   * kehrt ohne gesetztes Flag sofort zurück — kein Sidecar, keine Route, kein
+   * geändertes Verhalten.
+   */
+  mountT3Backend(app, {
+    auth,
+    singleUser: config.singleUser,
+    database: attachmentDatabase,
+    agentProfileStore,
+    requireUser,
+  });
+
   if (config.appDistDir) {
     const root = config.appDistDir;
+    // helium-stale: HTML und Service Worker nie aus einem (heuristischen) HTTP-Cache. Eine alte index.html
+    // zeigte sonst auf nicht mehr vorhandene Bundles und die App blieb auf der Intro-Karte haengen.
+    app.use("/*", async (context, next) => {
+      await next();
+      const type = context.res.headers.get("content-type") ?? "";
+      if (context.req.path === "/sw.js" || type.includes("text/html")) {
+        try {
+          context.res.headers.set("cache-control", "no-cache, no-store, must-revalidate");
+        } catch {
+          /* unveraenderliche Header: dann eben ohne */
+        }
+      }
+    });
     app.use("/*", serveStatic({ root }));
     /*
      * A single-page app owns its routing, so a path with no file behind it is not missing: it is a
@@ -1849,10 +2081,18 @@ export function createApp(
      */
     app.get("*", async (context) => {
       if (context.req.path.startsWith("/api")) return context.notFound();
+      // helium-stale: fehlende Bundles/Dateien sind 404, nicht die index.html. Sonst bekommt ein
+      // <script type="module"> HTML (MIME-Fehler), React startet nie und die Intro-Karte bleibt stehen.
+      if (context.req.path.startsWith("/assets/") || /\.(?:m?js|css|map|wasm|woff2?|ttf|json)$/i.test(context.req.path)) {
+        return new Response("Not found", {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
       const index = Bun.file(`${root}/index.html`);
       if (!(await index.exists())) return context.notFound();
       return new Response(index, {
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache, no-store, must-revalidate" },
       });
     });
   }

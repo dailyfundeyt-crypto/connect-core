@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { EASE_OUT } from "@/lib/motion";
 import { useMobileShell } from "@/lib/mobile/use-mobile-shell";
+import { BotPane } from "@/components/agents/bot-pane";
+import { getT3Flag } from "@/lib/t3/contracts";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,6 +32,20 @@ const CONTENT_ENTRANCE_SECONDS = 0.18;
 const CONTENT_ENTRANCE_DELAY_SECONDS = 0.12;
 const CONTENT_ENTRANCE_OFFSET = "translateY(8px)";
 
+/**
+ * Liest die Agent-Id aus der Adresse, ohne den Router zu brauchen.
+ *
+ * Das Panel wird auch ohne `RouterProvider` gerendert (Tests, eingebettete Flächen).
+ * Deshalb wird die Route nicht über einen Router-Hook gelesen — ein Hook hier würde
+ * in diesen Fällen werfen. Die Pfadlektüre ist bewusst simpel: die Route
+ * `/agent/<id>` ist die einzige, auf der ein Bot seine eigene Leiste hat.
+ */
+function readAgentIdFromLocation(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const match = window.location.pathname.match(/\/agent\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
 export function DetailPanel({
   open,
   onClose,
@@ -47,6 +63,37 @@ export function DetailPanel({
   detailWidth?: number;
   children: ReactNode;
 }) {
+  /*
+   * Bot-Panel (A27, Idee I11) — Details / Bibliothek / Computer.
+   *
+   * Das Panel steht hinter dem Flag `mascot`. Ist es aus, bleibt das Detailpanel
+   * exakt wie heute: der Aufrufer liefert den Inhalt, hier ändert sich nichts.
+   *
+   * Die Route `/agent/$agentId` ist der einzige Ort, an dem ein Bot seine eigene
+   * Leiste hat. Deshalb wird der Agent aus den Route-Parametern gelesen — das Panel
+   * zeigt genau den Bot, dessen Unterhaltung offen ist.
+   */
+  const routeAgentId = readAgentIdFromLocation();
+  const botPaneEnabled = getT3Flag("mascot") && Boolean(routeAgentId);
+  /*
+   * Der Inhalt des Panels.
+   *
+   * Reihenfolge der Wahrheit:
+   * 1. Der Aufrufer liefert `detail` (z. B. das laufende Bild beim „Zusehen") — das gewinnt
+   *    immer. Das Bot-Panel darf eine bestehende Live-Ansicht nicht verdrängen.
+   * 2. Sonst das Bot-Panel (A27): Details / Bibliothek / Computer.
+   * 3. Ohne Flag exakt wie vorher: der Inhalt des Aufrufers.
+   *
+   * Der Name kommt bewusst nicht über eine eigene Query hier: `BotPane` holt sich die
+   * Agent-Daten in seinem Details-Tab selbst. Eine zweite Query an derselben Stelle
+   * wäre doppelt — und würde `DetailPanel` an einen QueryClient binden, den es
+   * bislang nicht brauchte.
+   */
+  const panelContent =
+    detail ??
+    (botPaneEnabled ? (
+      <BotPane agentId={routeAgentId as string} name="Bot" />
+    ) : null);
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
   const shouldReduceMotion = useReducedMotion();
   // Handy (helium-mobile4): Details als bildschirmfüllende Seite im Tech-Look statt 400px-Leiste.
@@ -97,7 +144,7 @@ export function DetailPanel({
               {title ?? "Details"}
             </SheetTitle>
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {open ? detail : null}
+              {open ? panelContent : null}
             </div>
           </SheetContent>
         </Sheet>
@@ -153,7 +200,7 @@ export function DetailPanel({
                   ease: EASE_OUT,
                 }}
               >
-                {detail}
+                {panelContent}
               </motion.div>
             ) : null}
           </div>

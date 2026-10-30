@@ -27,6 +27,7 @@ import { registerVoiceTarget } from "@/lib/voice/notch-bridge";
 import { getAllSavedTabs } from "@/lib/browser/tab-mention";
 import { subscribeAgentTabs } from "@/lib/agents/agent-browser-tabs";
 import { newId } from "../../lib/new-id";
+import type { UnifiedMessageLike } from "@/v06/unified-cli/unifiedCli";
 
 export function ConversationView({
   messages,
@@ -49,6 +50,7 @@ export function ConversationView({
   voiceAgentId,
   header,
   initialVisible,
+  cliMessages,
 }: {
   messages: readonly Message[];
   busy?: boolean;
@@ -116,6 +118,8 @@ export function ConversationView({
   header?: (info: { hiddenCount: number; showMore: () => void }) => ReactNode;
   /** oneconv: rows drawn at first; the rest come back through `header`. */
   initialVisible?: number;
+  /** Terminal messages persisted for this same channel conversation. */
+  cliMessages?: readonly UnifiedMessageLike[];
 }) {
   const [voiceOpen, setVoiceOpen] = useState(false);
 
@@ -516,6 +520,7 @@ export function ConversationView({
             .map((command) => command.name)
             .join(",")}
           messages={messages}
+          {...(cliMessages ? { cliMessages } : {})}
           onRemoveQueued={(id) => {
             apply({ id, type: "remove" });
           }}

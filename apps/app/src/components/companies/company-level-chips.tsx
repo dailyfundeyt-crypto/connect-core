@@ -3,6 +3,7 @@ import {
   IconChevronLeft,
   IconMessages,
   IconBolt,
+  IconRobot,
 } from "@tabler/icons-react";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -13,19 +14,28 @@ import {
   MODE_NAMES,
   setActiveLevel,
   subscribeLevel,
+  visibleCompanyLevels,
 } from "@/lib/companies/level";
 import { listCompanies } from "@/lib/companies/store";
 import { notifyDesktopLevel } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
 
-/** Focus · Messages · Browser */
+/** Focus · Messages · Browser · Agents */
 const MODE_ICONS = {
   1: IconBolt,
   2: IconMessages,
   3: IconBrowser,
+  5: IconRobot,
 } as const;
 
-const MODES = [1, 2, 3] as const;
+/**
+ * Die Modi, die oben in der Leiste stehen.
+ *
+ * Modus 5 („Agents — T3 Code“) verschwindet, sobald `connect.t3.hideAgentsMode` gesetzt ist
+ * (Stefan: der T3-Modus soll oben weg). Die restlichen Modi und ihre Reihenfolge bleiben
+ * unverändert. Die Dateien hinter Modus 5 bleiben bestehen — es ist nur der Einstieg weg.
+ */
+const MODES = visibleCompanyLevels();
 
 /**
  * Mode emblems in the sidebar header rail.
@@ -67,16 +77,15 @@ export function CompanyLevelChips({
 
   const levelFromRoute =
     params.companyId && search.level != null ? search.level : undefined;
+  const routeLevel: CompanyLevel | undefined =
+    levelFromRoute === 2 ||
+    levelFromRoute === 3 ||
+    levelFromRoute === 4 ||
+    levelFromRoute === 5
+      ? (levelFromRoute as CompanyLevel)
+      : undefined;
   const level: CompanyLevel =
-    storedLevel === 1
-      ? 1
-      : levelFromRoute === 2 ||
-          levelFromRoute === 3 ||
-          levelFromRoute === 4
-        ? (levelFromRoute as CompanyLevel)
-        : storedLevel === 2 || storedLevel === 3 || storedLevel === 4
-          ? storedLevel
-          : 2;
+    storedLevel === 1 ? 1 : (routeLevel ?? storedLevel);
 
   return (
     <div

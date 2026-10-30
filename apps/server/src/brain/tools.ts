@@ -27,6 +27,7 @@ import {
   coreOf,
 } from "./store";
 import { askHuman } from "./maps";
+import { sparkLearnBrainTools } from "./learn/mcp-tools";
 
 const MAX_READ_CHARS = 60_000;
 const MAX_WRITE_CHARS = 20_000;
@@ -264,6 +265,14 @@ export async function brainTools(context: BrainToolContext): Promise<GrantedTool
         }),
     },
   ];
+
+  try {
+    const sparkTools = await sparkLearnBrainTools(context);
+    tools.push(...sparkTools);
+  } catch {
+    // Non-blocking fallback if spark-learn tools fail to load
+  }
+
   return tools;
 }
 

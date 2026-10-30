@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useNavigate, useParams, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { COMPANY_APP_OPEN_EVENT } from "@/company-apps/registry";
+import { COMPANY_APP_OPEN_EVENT, openCompanyApp } from "@/company-apps/registry";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -161,21 +161,15 @@ export function useCompanySwitcher() {
   const openProfile = () => {
     const id = active?.id;
     if (!id) return;
-    // Firmenprofil = dailyfun (https://github.com/dailyfundeyt-crypto/dailyfun)
-    // als rechtes Panel im Messages-Workspace. Wir bleiben auf der aktuellen
-    // Route (oder gehen zur Messages-View), falls der User auf einer anderen
-    // Connect-Seite war, und dispatchen das COMPANY_APP_OPEN_EVENT, damit die
-    // Messages-View die dailyfun-App als Panel einblendet.
-    if (location.pathname !== "/") {
-      void navigate({ to: "/" });
-    }
-    window.dispatchEvent(
-      new CustomEvent(COMPANY_APP_OPEN_EVENT, { detail: { appId: "dailyfun" } }),
-    );
+    // Lane-2-Handoff (Integration 2026-10-22): Firmenprofil in Connect Sozial.
+    // ROUTES.socialCompany (/social/company/:companyId) ist noch keine eigene Route;
+    // /social?tab=company&companyId=<id> ist das Laufzeit-Aequivalent.
+    void navigate({ to: "/social", search: { tab: "company", companyId: id } as never });
   };
 
   const newCompany = () => void navigate({ to: "/company/new" });
-  const manageCompanies = () => void navigate({ to: "/settings", hash: "companies" });
+  // Lane-2-Handoff (Integration 2026-10-22): kanonische Route ROUTES.settingsCompanies
+  const manageCompanies = () => void navigate({ to: "/settings/companies" });
 
   const labels = {
     title: de ? "Firmen" : "Companies",

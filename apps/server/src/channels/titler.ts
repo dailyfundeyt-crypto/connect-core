@@ -31,7 +31,7 @@ export function createChannelTitler(options: TitlerOptions) {
 
   return async (excerpt: string): Promise<string | null> => {
     const apiKey = await options.resolveApiKey();
-    if (!apiKey) return null;
+    if (!apiKey || /^sk-local/i.test(apiKey) || /placeholder/i.test(apiKey)) return null;
 
     const response = await call(
       chatCompletionsUrl(options.environment ?? process.env),

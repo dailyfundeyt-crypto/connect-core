@@ -57,13 +57,14 @@ self.CONNECT_SHELL_CONFIG = {
   },
 
   // Modus-Leiste oben (gleiche Reihenfolge wie Connect / Connect Desktop):
-  //   Logo = Home, 1 Focus, 2 Messages, 3 Browser, 4 Unternehmen
+  //   Logo = Home, 1 Focus, 2 Messages, 3 Browser, 5 Agents, 4 Unternehmen
   // level => Connect-Modus (localStorage "connect.activeLevel", Route /company/<id>?level=N)
   modes: [
     { id: "home", title: "Connect – Home", icon: "logo" },
     { id: "focus", level: 1, title: "Focus – schnelle Aufgaben", icon: "icons/zap.svg" },
     { id: "messages", level: 2, title: "Messages – deine AIs & Kanäle", icon: "icons/messages-square.svg" },
     { id: "browser", level: 3, title: "Browser – Apps & Tabs zum Bauen", icon: "icons/app-window.svg" },
+    { id: "agents", level: 5, title: "Agents – T3 Code für deine Agenten", icon: "icons/bot.svg" },
     { id: "company", level: 4, title: "Unternehmen – feste Firmen-URL", icon: "icons/building-2.svg" },
   ],
 
@@ -83,6 +84,9 @@ self.CONNECT_SHELL_CONFIG = {
     ],
     browser: [
       { title: "Browser (Lab) öffnen", level: 3, icon: "icons/app-window.svg" },
+    ],
+    agents: [
+      { title: "T3 Code öffnen", level: 5, icon: "icons/bot.svg" },
     ],
   },
 

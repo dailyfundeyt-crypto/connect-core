@@ -6,7 +6,7 @@ function shell(title: string, body: string) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="#09090b">
 <title>${esc(title)}</title><style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;
 background:radial-gradient(120% 80% at 50% 0%,#1e1b4b 0%,#09090b 60%);color:#e4e4e7;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:24px}
 .card{width:100%;max-width:400px;background:rgba(24,24,27,.72);border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:28px 22px;backdrop-filter:blur(16px);text-align:center}
 .logo{width:56px;height:56px;margin:0 auto 14px;border-radius:16px;background:linear-gradient(135deg,#38bdf8,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:24px;color:#fff}
@@ -46,4 +46,16 @@ export function pairFailedPage(message: string) {
     `<h1>Kopplung fehlgeschlagen</h1><p class="err">${esc(message)}</p>
 <p>Am PC in Connect › Handy verbinden einen neuen QR-Code anzeigen und erneut scannen.</p>`,
   );
+}
+
+/** helium-pairfix: statt Sackgasse -> nach 2 s automatisch ueber das Gateway neu anmelden (CSP: kein Skript, daher meta refresh). */
+export function pairExpiredPage(gatewayUrl: string, from: string) {
+  const target = `${gatewayUrl}${gatewayUrl.includes("?") ? "&" : "?"}from=${encodeURIComponent(from)}`;
+  return shell(
+    "Connect – neu anmelden",
+    `<h1>Anmelde-Link schon verwendet</h1>
+<p>Dieser Einmal-Link wurde bereits benutzt oder ist abgelaufen. Kein Problem: Du wirst gleich automatisch über Connect neu angemeldet.</p>
+<p style="margin-top:18px"><a href="${esc(target)}" style="display:inline-block;padding:12px 18px;border-radius:12px;background:#fff;color:#09090b;text-decoration:none;font-weight:600">Über Connect anmelden</a></p>
+<p class="small">Weiterleitung in 2 Sekunden …</p>`,
+  ).replace("</head>", `<meta http-equiv="refresh" content="2;url=${esc(target)}"></head>`);
 }

@@ -51,7 +51,7 @@ async function postJson<T>(
  * Navigiert den Sidecar-Browser zu einer URL.
  * Wird vor dem eigentlichen Task aufgerufen, falls startUrl gesetzt ist.
  */
-export async function navigateBrowserUse(url: string): Promise<void> {
+export async function navigateBrowserUse(url: string, agentId?: string): Promise<void> {
   try {
     await postJson<{ ok: boolean; title?: string }>(
       "/navigate",
@@ -59,6 +59,11 @@ export async function navigateBrowserUse(url: string): Promise<void> {
       30_000,
     );
   } catch (err) {
+    if (agentId) {
+      const { browserUseOpen } = await import("../agents/agent-browser-use");
+      const res = await browserUseOpen(agentId, url);
+      if (res.ok) return;
+    }
     throw new Error(
       `browser-use navigate fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -108,6 +113,16 @@ export async function runBrowserUse(input: {
     out += payload.result?.trim() || "(keine finale Antwort erhalten)";
     return out;
   } catch (err) {
+    // Phase E Schritt 18: Fallback auf lokale C:\Users\Kunc GmbH\Browser use Integration
+    try {
+      const { browserUseRunTask } = await import("../agents/agent-browser-use");
+      const taskRes = await browserUseRunTask(input.agentId, input.prompt);
+      if (taskRes.ok) {
+        return `[Browser-Use-Engine (C:\\Users\\Kunc GmbH\\Browser use)]\n\n${taskRes.output || "Task erfolgreich ausgeführt."}`;
+      }
+    } catch {
+      /* ignore fallback error */
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return `[Browser-Use-Engine]\n\nSidecar nicht erreichbar (${getBaseUrl()}). Browser-Use-Sidecar starten: 'browser-use --port 8765'.\n\n${input.prompt}\n\nFehler: ${msg}`;
   }

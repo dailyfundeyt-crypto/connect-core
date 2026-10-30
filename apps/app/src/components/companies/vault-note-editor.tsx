@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconBrain, IconCheck, IconLoader2 } from "@tabler/icons-react";
+import { IconBrain, IconCheck, IconLoader2, IconPencil } from "@tabler/icons-react";
 import { SparkLogo } from "@/components/brand/spark-logo";
 import { useNavigate } from "@tanstack/react-router";
 import { NoteBlockEditor } from "@/components/companies/note-editor/note-block-editor";
@@ -9,13 +9,15 @@ import { VaultExportButton } from "@/components/companies/vault-export-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   brainFileQueryOptions,
+  brainKeys,
   brainSaveNoteMutationOptions,
+  renameBrainNote,
 } from "@/lib/brain/queries";
 import {
   blocksToMarkdown,
   markdownToBlocks,
 } from "@/lib/companies/notes-markdown";
-import type { NoteBlock } from "@/lib/companies/notes";
+import { setOpenVaultPath, type NoteBlock } from "@/lib/companies/notes";
 
 /**
  * YAML-Frontmatter (`---\n…\n---`) wird vor dem Block-Editor abgetrennt und Byte fuer Byte
@@ -82,11 +84,14 @@ export function VaultNoteEditor({
   path,
   onBack,
   companyId,
+  onPathChange,
 }: {
   path: string;
   onBack?: () => void;
   /** Firma, in deren Arbeitsbereich die Datei offen ist - fuer "Im Brain zeigen" und zurueck. */
   companyId?: string;
+  /** Optionaler Callback, wenn der Pfad durch Umbenennen wechselt. */
+  onPathChange?: (newPath: string) => void;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -100,7 +105,32 @@ export function VaultNoteEditor({
   const fmBase = useRef<string>("");
   const [fm, setFm] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  /*
+   * Umbenennen direkt im Kopf statt in einem Dialog: Klick auf den Titel, tippen,
+   * Enter. Esc bricht ab, ein Klick daneben speichert. Der Server macht die
+   * eigentliche Arbeit (Datei umbenennen, Titel schreiben, Links anpassen).
+   */
+  const [inlineEditing, setInlineEditing] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const renameCancelled = useRef(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  const currentTitle = useMemo(() => {
+    // 1. Frontmatter
+    const match = /^---\r?\n([\s\S]*?)\r?\n?---\r?\n?/.exec(fm);
+    const fmTitle = match ? /^title:\s*(.*)$/m.exec(match[1])?.[1]?.trim().replace(/^["']|["']$/g, "") : null;
+    if (fmTitle) return fmTitle;
+    // 2. Erste H1
+    if (blocks && blocks[0]?.type === "heading1") {
+      const h1Text = blocks[0].spans?.map((s) => s.text).join("").trim();
+      if (h1Text) return h1Text;
+    }
+    // 3. Dateiname
+    return path.split("/").pop()?.replace(/\.md$/i, "") ?? "Notiz";
+  }, [fm, blocks, path]);
   /*
    * Hidden file input used by the slash menu's "Bild" command. The editor
    * delegates the picker to the parent because the parent owns the document
@@ -166,7 +196,61 @@ export function VaultNoteEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, file.data?.path]);
 
-  const { mutate: saveNote } = save;
+  const { mutate: saveNote, mutateAsync: saveNoteAsync } = save;
+
+  const startRename = (value: string) => {
+    setRenameValue(value);
+    setRenameError(null);
+    renameCancelled.current = false;
+    setInlineEditing(true);
+    window.requestAnimationFrame(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    });
+  };
+
+  const cancelRename = () => {
+    renameCancelled.current = true;
+    setInlineEditing(false);
+    setRenameError(null);
+  };
+
+  /*
+   * Erst den offenen Stand schreiben, dann umbenennen – und darauf warten.
+   *
+   * `saveNote` feuert ohne Rückmeldung. Lief der Schreibvorgang noch, während der Server die
+   * Datei schon umbenannt hatte, legte er den alten Pfad erneut an: die Notiz existierte danach
+   * zweimal, einmal unter dem alten und einmal unter dem neuen Namen. Das Warten schließt das
+   * Zeitfenster.
+   */
+  const commitRename = async () => {
+    if (renameCancelled.current) {
+      renameCancelled.current = false;
+      return;
+    }
+    if (renameBusy) return;
+    const next = renameValue.trim();
+    if (!next || next === currentTitle) {
+      setInlineEditing(false);
+      return;
+    }
+    setRenameBusy(true);
+    setRenameError(null);
+    try {
+      if (dirty && blocks) {
+        await saveNoteAsync({ path, content: fm + blocksToMarkdown(blocks), mode: "write" });
+      }
+      const result = await renameBrainNote({ path, newTitle: next, renameFile: true });
+      setInlineEditing(false);
+      void queryClient.invalidateQueries({ queryKey: brainKeys.all });
+      if (companyId) setOpenVaultPath(companyId, result.newPath);
+      onPathChange?.(result.newPath);
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : "Umbenennen fehlgeschlagen.");
+    } finally {
+      setRenameBusy(false);
+    }
+  };
 
   const dirty = useMemo(() => {
     if (!blocks) return false;
@@ -178,7 +262,9 @@ export function VaultNoteEditor({
   // effect down on every render -- which is what made the auto-save timer
   // never fire and the editor trip React's nested-update guard (#185).
   useEffect(() => {
-    if (!blocks || !dirty) return;
+    /* Solange der Titel bearbeitet wird, schreibt nur noch `commitRename` – kein Timer, der
+     * nach dem Rename noch unter dem alten Pfad landen und die alte Datei wieder anlegen kann. */
+    if (!blocks || !dirty || inlineEditing) return;
     const currentMarkdown = blocksToMarkdown(blocks);
     const timer = setTimeout(() => {
       saveNote(
@@ -199,7 +285,7 @@ export function VaultNoteEditor({
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [blocks, dirty, fm, path, saveNote]);
+  }, [blocks, dirty, fm, path, saveNote, inlineEditing]);
 
   // Save on unmount if dirty. `saveNote` is a stable callback returned by
   // React Query, so depending on the whole `save` object is not necessary.
@@ -279,15 +365,54 @@ export function VaultNoteEditor({
             <>
               {/* Document header with clean Notion/Obsidian look */}
               <div className="mb-7">
-                {blocks[0]?.type !== "heading1" ? (
-                  <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 sm:text-4xl dark:text-neutral-100 mb-3">
-                    {path.split("/").pop()?.replace(/\.md$/i, "") ?? "Notiz"}
+                {inlineEditing ? (
+                  <input
+                    aria-label="Notiz umbenennen"
+                    className="mb-3 w-full rounded-md border border-rose-300/70 bg-rose-50/60 px-1 py-0.5 text-3xl font-extrabold tracking-tight text-neutral-900 outline-none disabled:opacity-60 sm:text-4xl dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-neutral-100"
+                    disabled={renameBusy}
+                    onBlur={() => void commitRename()}
+                    onChange={(event) => setRenameValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void commitRename();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelRename();
+                      }
+                    }}
+                    ref={renameInputRef}
+                    spellCheck={false}
+                    value={renameValue}
+                  />
+                ) : blocks[0]?.type !== "heading1" ? (
+                  <h1 className="mb-3 text-3xl font-extrabold tracking-tight text-neutral-900 sm:text-4xl dark:text-neutral-100">
+                    <button
+                      className="group/title flex w-full cursor-text items-center gap-2 text-left font-[inherit] tracking-[inherit]"
+                      onClick={() => startRename(currentTitle)}
+                      title="Klicken zum Umbenennen"
+                      type="button"
+                    >
+                      <span>{currentTitle}</span>
+                      <IconPencil className="size-5 opacity-0 transition-opacity group-hover/title:opacity-40" />
+                    </button>
                   </h1>
                 ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="inline-block rounded border border-rose-200/60 bg-rose-50 px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-rose-500 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-400">
                     {path.split("/").pop() ?? path}
                   </span>
+                  {blocks[0]?.type === "heading1" ? (
+                    <button
+                      aria-label="Titel umbenennen"
+                      className="inline-flex items-center justify-center rounded border border-neutral-200 p-1 text-neutral-500 transition hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:text-white"
+                      onClick={() => startRename(currentTitle)}
+                      title="Titel umbenennen"
+                      type="button"
+                    >
+                      <IconPencil size={12} />
+                    </button>
+                  ) : null}
                   {blocks ? (
                     <VaultExportButton
                       content={fm + (blocks ? blocksToMarkdown(blocks) : "")}
@@ -328,6 +453,11 @@ export function VaultNoteEditor({
                     </span>
                   ) : null}
                 </div>
+                {renameError ? (
+                  <p className="mt-2 text-[11px] text-destructive" role="alert">
+                    {renameError}
+                  </p>
+                ) : null}
               </div>
 
               {fm ? <FrontmatterField onChange={setFm} value={fm} /> : null}
