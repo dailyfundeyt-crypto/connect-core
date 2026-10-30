@@ -36,7 +36,10 @@ import {
   subscribeFocusTimer,
   toggleFocusTimer,
 } from "@/lib/focus-timer";
+import { UsageT3Modal } from "@/components/usage-t3/UsageT3Modal";
+import { PhoneT3Dialog } from "@/components/phone-t3";
 import { getFlag } from "@/contracts/v06/flags";
+import { getT3Flag } from "@/lib/t3/contracts";
 import { cn } from "@/lib/utils";
 
 const userMenuItemClassName = "gap-2.5 px-2.5 py-2 text-xs rounded-lg cursor-pointer";
@@ -50,6 +53,9 @@ export function ProfileFooter() {
   const navigate = useNavigate();
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const isDesignV2 = getFlag("designV2");
+  const t3BridgeEnabled = getT3Flag("bridge");
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
 
   const [timerPanelOpen, setTimerPanelOpen] = useState(false);
   const [timer, setTimer] = useState(() => getFocusTimer());
@@ -227,9 +233,13 @@ export function ProfileFooter() {
                     userMenuItemClassName,
                     isDesignV2 && "rounded-[var(--p-radius-md)] text-[var(--p-text-2)] hover:text-[var(--p-text-1)] hover:bg-[var(--p-surface-3)] transition-colors",
                   )}
-                  onClick={() =>
-                    void navigate({ to: "/settings" as any, hash: "usage" })
-                  }
+                  onClick={() => {
+                    if (t3BridgeEnabled) {
+                      setUsageOpen(true);
+                      return;
+                    }
+                    void navigate({ to: "/settings" as any, hash: "usage" });
+                  }}
                 >
                   <IconChartBar className={cn("size-4", isDesignV2 ? "text-[var(--p-text-3)]" : "")} />
                   Nutzung & Limits
@@ -239,12 +249,16 @@ export function ProfileFooter() {
                     userMenuItemClassName,
                     isDesignV2 && "rounded-[var(--p-radius-md)] text-[var(--p-text-2)] hover:text-[var(--p-text-1)] hover:bg-[var(--p-surface-3)] transition-colors",
                   )}
-                  onClick={() =>
+                  onClick={() => {
+                    if (t3BridgeEnabled) {
+                      setPhoneOpen(true);
+                      return;
+                    }
                     void navigate({
                       to: "/settings" as any,
                       hash: "handy-verbinden",
-                    })
-                  }
+                    });
+                  }}
                 >
                   <IconDeviceMobile className={cn("size-4", isDesignV2 ? "text-[var(--p-text-3)]" : "")} />
                   Handy verbinden
@@ -352,6 +366,12 @@ export function ProfileFooter() {
           </DropdownMenu>
         </SidebarMenuItem>
       </SidebarMenu>
+      {t3BridgeEnabled ? (
+        <>
+          <UsageT3Modal isOpen={usageOpen} onClose={() => setUsageOpen(false)} />
+          <PhoneT3Dialog isOpen={phoneOpen} onClose={() => setPhoneOpen(false)} />
+        </>
+      ) : null}
     </SidebarFooter>
   );
 }

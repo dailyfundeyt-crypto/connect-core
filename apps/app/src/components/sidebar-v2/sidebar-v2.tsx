@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sidebar, SidebarContent, SidebarRail } from "@/components/ui/sidebar";
+import { AgentGrid } from "@/components/app-sidebar/agent-grid";
 import { CompanyHeader } from "./company-header";
 import { AppsSection } from "./apps-section";
 import { BotFolders } from "./bot-folders";
@@ -9,6 +10,7 @@ import { ProfileFooter } from "./profile-footer";
 import { SidebarSectionOrder } from "@/v06/sidebar/SidebarSectionOrder";
 import { AppsSectionV06 } from "@/v06/sidebar/AppsSectionV06";
 import { getFlag } from "@/contracts/v06/flags";
+import { getT3Flag } from "@/lib/t3/contracts";
 import { cn } from "@/lib/utils";
 import type { ChannelSummary } from "@/lib/channels/queries";
 import "@/v06/design/tokens.css";
@@ -37,6 +39,21 @@ export function SidebarV2({
 }: SidebarV2ComponentProps) {
   const [search, setSearch] = useState("");
   const isDesignV2 = getFlag("designV2");
+  /**
+   * A28/A39: hinter `mascot` ersetzt das Grok-Bot-Raster die alten Bot-Ordner-
+   * und Unfiled-Listen. APPS/PC-APPS und Tools bleiben unverändert (I3/I4).
+   * SidebarV2 ist die Live-Sidebar (`sidebarV2`-Flag) — ohne diese Verdrahtung
+   * bleibt die T3-UI unsichtbar, obwohl AgentGrid in app-sidebar hängt.
+   */
+  const agentGridEnabled = getT3Flag("mascot");
+  const foldersSlot = agentGridEnabled ? (
+    <AgentGrid search={search} />
+  ) : (
+    <BotFolders channels={channels} search={search} />
+  );
+  const unfiledSlot = agentGridEnabled ? null : (
+    <UnfiledBots channels={channels} search={search} />
+  );
 
   if (getFlag("sidebarV2Order")) {
     return (
@@ -53,8 +70,8 @@ export function SidebarV2({
         <SidebarSectionOrder
           header={<CompanyHeader search={search} onSearchChange={setSearch} />}
           apps={<AppsSectionV06 />}
-          folders={<BotFolders channels={channels} search={search} />}
-          unfiled={<UnfiledBots channels={channels} search={search} />}
+          folders={foldersSlot}
+          unfiled={unfiledSlot}
           tools={<ToolsSection />}
           profile={<ProfileFooter />}
         />
@@ -95,19 +112,24 @@ export function SidebarV2({
           )}
         />
 
-        {/* 3. Bot-Ordner */}
-        <BotFolders channels={channels} search={search} />
+        {/* 3+4. Agenten-Raster (T3) oder Bot-Ordner + Unfiled */}
+        {agentGridEnabled ? (
+          <AgentGrid search={search} />
+        ) : (
+          <>
+            <BotFolders channels={channels} search={search} />
 
-        <div
-          className={cn(
-            isDesignV2
-              ? "h-px bg-[var(--p-border-subtle)] mx-3 my-0.5"
-              : "h-px bg-sidebar-border/40 mx-2",
-          )}
-        />
+            <div
+              className={cn(
+                isDesignV2
+                  ? "h-px bg-[var(--p-border-subtle)] mx-3 my-0.5"
+                  : "h-px bg-sidebar-border/40 mx-2",
+              )}
+            />
 
-        {/* 4. Bots ohne Ordner */}
-        <UnfiledBots channels={channels} search={search} />
+            <UnfiledBots channels={channels} search={search} />
+          </>
+        )}
       </SidebarContent>
 
       {/* 5. Tools aktivierbar - fixiert ganz unten über dem Profil-Footer */}
